@@ -42,6 +42,13 @@ Cloudflare's own `cloudflared` if it is not already installed.
 
 From source, with Rust: `cargo install --git https://github.com/mirkobozzetto/bunflared`.
 
+Then, once, so your coding agents know to reach for it when you ask to share
+something:
+
+```sh
+bunflared agents
+```
+
 ## Use
 
 ```sh
@@ -79,10 +86,30 @@ bunflared ls --json
 bunflared down 4242             # or: bunflared down --all
 ```
 
-`skills/bunflared/SKILL.md` is a ready-made skill. For Claude Code:
+### Teach your agents
+
+`bunflared agents` writes a five-line note into the global instructions of
+every coding agent it finds, so any session knows the command without being
+told:
+
+| Agent | Where the note goes |
+| --- | --- |
+| Claude Code | `~/.claude/rules/bunflared.md` |
+| omp | `~/.omp/agent/rules/bunflared.md` |
+| pi | `~/.pi/agent/AGENTS.md`, in a marked block |
+| prime-agent | `~/.prime/agent/AGENTS.md`, in a marked block |
+| Codex | `~/.codex/AGENTS.md`, in a marked block |
+
+Run it again after an update to refresh the note, `bunflared agents --remove`
+to take it back out. For any other agent, paste the output of
+`bunflared agents --print` into its rules.
+
+Prefer skills? `skills/bunflared/SKILL.md` follows the Agent Skills format, and
+[skills](https://github.com/vercel-labs/skills) installs it into Claude Code,
+Codex, Cursor, pi and many more in one line:
 
 ```sh
-cp -r skills/bunflared ~/.claude/skills/
+npx skills add mirkobozzetto/bunflared -g
 ```
 
 ## Limits
