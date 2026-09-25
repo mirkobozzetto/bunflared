@@ -36,7 +36,7 @@ That is all: no Rust, no `cloudflared` to install first. You get `bunflared`
 and its short name `bunf`. On the first share, bunflared downloads
 Cloudflare's own `cloudflared` if it is not already installed.
 
-From source, with Rust: `cargo install --git https://github.com/mirkobozzetto/bunflared`.
+With Rust: `cargo install bunflared`.
 
 Then, once, so your coding agents know to reach for it when you ask to share
 something:
