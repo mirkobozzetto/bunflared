@@ -39,14 +39,13 @@ impl Drop for Tunnel {
 }
 
 pub fn kill_orphan() {
-    let pid = PID.swap(0, Ordering::Relaxed);
-    if pid != 0 {
-        unsafe { libc::kill(pid as i32, libc::SIGKILL) };
-    }
+    crate::os::kill(PID.swap(0, Ordering::Relaxed));
 }
 
 pub async fn open(cloudflared: &Path, proxy_port: u16, tx: &Tx) -> Result<Tunnel, Failure> {
-    let mut child = Command::new(cloudflared)
+    let mut command = Command::new(cloudflared);
+    crate::os::no_window(&mut command);
+    let mut child = command
         .args(["tunnel", "--no-autoupdate", "--url"])
         .arg(format!("http://127.0.0.1:{proxy_port}"))
         .stdin(Stdio::null())

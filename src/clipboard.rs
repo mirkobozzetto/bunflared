@@ -1,12 +1,18 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-const COPIERS: [&[&str]; 3] = [
+#[cfg(windows)]
+const COPIERS: &[&[&str]] = &[&["clip"]];
+#[cfg(not(windows))]
+const COPIERS: &[&[&str]] = &[
     &["pbcopy"],
     &["wl-copy"],
     &["xclip", "-selection", "clipboard"],
 ];
-const OPENERS: [&str; 2] = ["open", "xdg-open"];
+#[cfg(windows)]
+const OPENERS: &[&[&str]] = &[&["cmd", "/C", "start", ""]];
+#[cfg(not(windows))]
+const OPENERS: &[&[&str]] = &[&["open"], &["xdg-open"]];
 
 pub fn copy(text: &str) -> bool {
     COPIERS.iter().any(|argv| {
@@ -28,8 +34,9 @@ pub fn copy(text: &str) -> bool {
 }
 
 pub fn open(url: &str) -> bool {
-    OPENERS.iter().any(|opener| {
-        Command::new(opener)
+    OPENERS.iter().any(|argv| {
+        Command::new(argv[0])
+            .args(&argv[1..])
             .arg(url)
             .stdout(Stdio::null())
             .stderr(Stdio::null())

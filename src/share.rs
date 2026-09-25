@@ -3,11 +3,10 @@ use std::sync::mpsc::Sender;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::net::TcpStream;
-use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::watch;
 use tokio::time::{sleep, timeout};
 
-use crate::{clipboard, proxy, state, tunnel};
+use crate::{clipboard, cloudflared, os, proxy, state, tunnel};
 
 pub const EXIT_TUNNEL_CLOSED: i32 = 1;
 pub const EXIT_NO_CLOUDFLARED: i32 = 3;
@@ -53,6 +52,7 @@ pub enum Event {
         port: u16,
         ok: bool,
     },
+    FetchingCloudflared,
     TunnelStarting,
     TunnelUrl(String),
     TunnelRegistered,
@@ -73,16 +73,10 @@ pub enum Event {
 /// Shares `ports` until `stop` flips, a signal arrives, or the tunnel dies.
 /// Dropping the share on the way out kills cloudflared and removes its record.
 pub async fn run(ports: &[u16], tx: &Tx, mut stop: watch::Receiver<bool>) -> Result<(), Failure> {
-    let handler = |kind| signal(kind).expect("signal handler");
-    let mut interrupt = handler(SignalKind::interrupt());
-    let mut terminate = handler(SignalKind::terminate());
-    let mut hangup = handler(SignalKind::hangup());
     let hung_up = tokio::select! {
         result = serve(ports, tx) => return result,
         _ = stop.changed() => false,
-        _ = interrupt.recv() => false,
-        _ = terminate.recv() => false,
-        _ = hangup.recv() => true,
+        hung_up = os::quit() => hung_up,
     };
     // The share is dropped by now. With the terminal gone, the dashboard's
     // input loop spins on a dead tty and would never see Done: leave here.
@@ -93,12 +87,6 @@ pub async fn run(ports: &[u16], tx: &Tx, mut stop: watch::Receiver<bool>) -> Res
 }
 
 async fn serve(ports: &[u16], tx: &Tx) -> Result<(), Failure> {
-    let cloudflared = which("cloudflared").ok_or_else(|| {
-        Failure::new(
-            EXIT_NO_CLOUDFLARED,
-            "cloudflared is missing: brew install cloudflared",
-        )
-    })?;
     if let Some(config) = quick_tunnel_blocker() {
         return Err(Failure::new(
             EXIT_CONFIG_YAML,
@@ -118,6 +106,22 @@ async fn serve(ports: &[u16], tx: &Tx) -> Result<(), Failure> {
             ));
         }
     }
+
+    let cloudflared = match cloudflared::find() {
+        Some(path) => path,
+        None => {
+            let _ = tx.send(Event::FetchingCloudflared);
+            cloudflared::fetch().await.map_err(|err| {
+                Failure::new(
+                    EXIT_NO_CLOUDFLARED,
+                    format!(
+                        "cloudflared is missing and could not be downloaded ({err}). Install it: {}",
+                        cloudflared::install_hint()
+                    ),
+                )
+            })?
+        }
+    };
 
     let proxy_port = proxy::start(ports, tx.clone()).await.map_err(|err| {
         Failure::new(EXIT_TUNNEL_FAILED, format!("cannot start the proxy: {err}"))
@@ -178,15 +182,8 @@ async fn watch_health(ports: Vec<u16>, tx: Tx) {
     }
 }
 
-fn which(name: &str) -> Option<PathBuf> {
-    let paths = std::env::var_os("PATH")?;
-    std::env::split_paths(&paths)
-        .map(|dir| dir.join(name))
-        .find(|path| path.is_file())
-}
-
 fn quick_tunnel_blocker() -> Option<PathBuf> {
-    let dir = PathBuf::from(std::env::var_os("HOME")?).join(".cloudflared");
+    let dir = os::home()?.join(".cloudflared");
     ["config.yaml", "config.yml"]
         .into_iter()
         .map(|name| dir.join(name))

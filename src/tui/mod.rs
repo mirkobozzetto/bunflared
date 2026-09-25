@@ -183,9 +183,10 @@ pub fn run(rx: Receiver<Event>, stop: &watch::Sender<bool>, ports: &[u16], theme
         let budget = if app.busy() { FAST_FRAME } else { SLOW_FRAME };
         if event::poll(budget).unwrap_or(false)
             && let Ok(Term::Key(key)) = event::read()
-                && key.kind == KeyEventKind::Press {
-                    app.on_key(key, stop);
-                }
+            && key.kind == KeyEventKind::Press
+        {
+            app.on_key(key, stop);
+        }
     };
     ratatui::restore();
     app.farewell();
@@ -330,6 +331,10 @@ impl App {
                     state.checked = Some(ok);
                     state.up = ok;
                 }
+            }
+            Event::FetchingCloudflared => {
+                self.target = self.target.max(0.08);
+                self.stage = "Fetching cloudflared, first run only".into();
             }
             Event::TunnelStarting => {
                 self.target = self.target.max(0.12);
@@ -720,20 +725,10 @@ fn qr(url: &str) -> Option<Qr> {
     Some(Qr { size, dark })
 }
 
-fn local_time() -> libc::tm {
-    unsafe {
-        let now = libc::time(std::ptr::null_mut());
-        let mut tm: libc::tm = std::mem::zeroed();
-        libc::localtime_r(&now, &mut tm);
-        tm
-    }
-}
-
-fn local_hour() -> i32 {
-    local_time().tm_hour
+fn local_hour() -> u32 {
+    chrono::Timelike::hour(&chrono::Local::now())
 }
 
 fn clock() -> String {
-    let tm = local_time();
-    format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)
+    chrono::Local::now().format("%H:%M:%S").to_string()
 }

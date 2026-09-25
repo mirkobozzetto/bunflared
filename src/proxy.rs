@@ -88,10 +88,11 @@ impl Ctx {
         for &port in &self.others {
             let prefix = mount(port);
             if let Some(rest) = path.strip_prefix(&prefix)
-                && (rest.is_empty() || rest.starts_with('/')) {
-                    let rest = if rest.is_empty() { "/" } else { rest };
-                    return (port, format!("{rest}{query}"));
-                }
+                && (rest.is_empty() || rest.starts_with('/'))
+            {
+                let rest = if rest.is_empty() { "/" } else { rest };
+                return (port, format!("{rest}{query}"));
+            }
         }
         (self.main, format!("{path}{query}"))
     }
@@ -111,9 +112,10 @@ impl Ctx {
             .headers
             .get(header::LOCATION)
             .and_then(|v| v.to_str().ok())
-            && let Ok(value) = HeaderValue::from_str(&self.rewrite(location)) {
-                parts.headers.insert(header::LOCATION, value);
-            }
+            && let Ok(value) = HeaderValue::from_str(&self.rewrite(location))
+        {
+            parts.headers.insert(header::LOCATION, value);
+        }
         let content_type = parts
             .headers
             .get(header::CONTENT_TYPE)

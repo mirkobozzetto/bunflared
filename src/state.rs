@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
-use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+
+use crate::os;
 
 const DOWN_GRACE: Duration = Duration::from_secs(3);
 
@@ -21,12 +22,7 @@ pub struct Record {
 }
 
 fn dir() -> Option<PathBuf> {
-    let base = std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state"))
-        })?;
-    Some(base.join("bunflared"))
+    crate::os::data_dir()
 }
 
 fn file(id: &str) -> Option<PathBuf> {
@@ -56,10 +52,6 @@ impl Drop for Saved {
     }
 }
 
-fn alive(pid: u32) -> bool {
-    pid != 0 && unsafe { libc::kill(pid as i32, 0) } == 0
-}
-
 /// Live shares; records left by a dead process are deleted on the way.
 fn live() -> Vec<Record> {
     let Some(entries) = dir().and_then(|dir| fs::read_dir(dir).ok()) else {
@@ -71,7 +63,7 @@ fn live() -> Vec<Record> {
         .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
         .filter_map(|path| {
             let record: Record = serde_json::from_slice(&fs::read(&path).ok()?).ok()?;
-            if alive(record.pid) {
+            if os::alive(record.pid) {
                 Some(record)
             } else {
                 let _ = fs::remove_file(&path);
@@ -134,21 +126,19 @@ pub fn down(id: Option<String>, all: bool) -> i32 {
         return if all { 0 } else { 1 };
     }
     for record in &targets {
-        unsafe { libc::kill(record.pid as i32, libc::SIGTERM) };
+        os::terminate(record.pid);
     }
     let deadline = Instant::now() + DOWN_GRACE;
-    while Instant::now() < deadline && targets.iter().any(|record| alive(record.pid)) {
+    while Instant::now() < deadline && targets.iter().any(|record| os::alive(record.pid)) {
         std::thread::sleep(Duration::from_millis(50));
     }
     for record in &targets {
-        if alive(record.pid) {
-            unsafe {
-                libc::kill(record.pid as i32, libc::SIGKILL);
-                libc::kill(record.tunnel_pid as i32, libc::SIGKILL);
-            }
-            if let Some(path) = file(&record.id) {
-                let _ = fs::remove_file(path);
-            }
+        if os::alive(record.pid) {
+            os::kill(record.pid);
+            os::kill(record.tunnel_pid);
+        }
+        if let Some(path) = file(&record.id) {
+            let _ = fs::remove_file(path);
         }
         println!("Stopped {} {}", record.id, record.url);
     }
@@ -169,12 +159,7 @@ pub fn detach(ports: &[u16]) -> i32 {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    unsafe {
-        command.pre_exec(|| {
-            libc::setsid();
-            Ok(())
-        });
-    }
+    os::detach(&mut command);
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(err) => {

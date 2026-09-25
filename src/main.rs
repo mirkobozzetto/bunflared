@@ -1,4 +1,6 @@
 mod clipboard;
+mod cloudflared;
+mod os;
 mod proxy;
 mod share;
 mod state;
@@ -30,8 +32,11 @@ ready line is one JSON object on stdout:
    "routes":{"/":5173,"/_port/3000":3000},"started_at":1790000000}
 and a failure is one JSON object on stderr: {"error":"...","code":N}.
 
-Exit codes: 0 ok, 1 tunnel closed, 2 bad arguments, 3 cloudflared missing,
-4 a port is not answering, 5 ~/.cloudflared/config.yaml blocks quick tunnels,
+cloudflared is fetched from Cloudflare's releases on the first run when it is
+not installed.
+
+Exit codes: 0 ok, 1 tunnel closed, 2 bad arguments, 3 cloudflared missing and
+not downloadable, 4 a port is not answering, 5 ~/.cloudflared/config.yaml blocks quick tunnels,
 6 the tunnel failed to start.
 
 Limits: anyone with the link reaches your app. Quick tunnels allow 200

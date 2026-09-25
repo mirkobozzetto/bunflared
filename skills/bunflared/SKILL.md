@@ -6,7 +6,8 @@ description: Share a local dev server on a temporary public https link through a
 # bunflared
 
 Puts local ports on a temporary `https://<words>.trycloudflare.com` link.
-Needs `cloudflared` installed (`brew install cloudflared`).
+When `cloudflared` is not installed, bunflared downloads Cloudflare's build on
+the first run.
 
 ## Share
 
@@ -46,7 +47,7 @@ One JSON line on stderr, `{"error":"...","code":N}`, with the same exit code:
 | --- | --- | --- |
 | 1 | the tunnel closed | share again |
 | 2 | bad arguments | fix the command |
-| 3 | `cloudflared` missing | `brew install cloudflared` |
+| 3 | `cloudflared` missing, download failed | install it, e.g. `brew install cloudflared` |
 | 4 | a port is not answering | start the app first |
 | 5 | `~/.cloudflared/config.yaml` exists | ask the user before renaming it |
 | 6 | the tunnel failed to start | retry; the message has cloudflared's log |

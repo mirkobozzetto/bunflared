@@ -576,21 +576,22 @@ fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
 pub fn overlays(app: &mut App, frame: &mut Frame) {
     let area = frame.area();
     if app.qr
-        && let Some(qr) = &app.qr_code {
-            let rect = centered_rect(area, qr.size as u16 + 4, qr.size.div_ceil(2) as u16 + 4);
-            frame.render_widget(Clear, rect);
-            let block = panel(app, "scan me").title_bottom(Line::from(" esc to close ").centered());
-            let inner = block.inner(rect);
-            frame.render_widget(block, rect);
-            draw_qr(
-                frame.buffer_mut(),
-                &app.theme,
-                qr,
-                inner.x as i32 + 1,
-                inner.y as i32 + 1,
-            );
-            app.keep_clear = Some(rect);
-        }
+        && let Some(qr) = &app.qr_code
+    {
+        let rect = centered_rect(area, qr.size as u16 + 4, qr.size.div_ceil(2) as u16 + 4);
+        frame.render_widget(Clear, rect);
+        let block = panel(app, "scan me").title_bottom(Line::from(" esc to close ").centered());
+        let inner = block.inner(rect);
+        frame.render_widget(block, rect);
+        draw_qr(
+            frame.buffer_mut(),
+            &app.theme,
+            qr,
+            inner.x as i32 + 1,
+            inner.y as i32 + 1,
+        );
+        app.keep_clear = Some(rect);
+    }
     if app.help {
         let rect = centered_rect(area, 38, HELP.len() as u16 + 4);
         frame.render_widget(Clear, rect);
