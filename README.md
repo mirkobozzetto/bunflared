@@ -27,15 +27,18 @@ secrets.
 ```sh
 brew install cloudflared
 cargo install --git https://github.com/mirkobozzetto/bunflared
+ln -sf ~/.cargo/bin/bunflared ~/.cargo/bin/bunf   # the short name
 ```
 
 ## Use
 
 ```sh
-bunflared 5173                  # share one app
-bunflared 5173 3000             # app at /, its API at /_port/3000
-bunflared 5173 --calm           # same dashboard, no animations
+bunf 5173                       # share one app
+bunf 5173 3000                  # app at /, its API at /_port/3000
+bunf 5173 --calm                # same dashboard, no animations
 ```
+
+`bunf` and `bunflared` are the same command.
 
 In the dashboard:
 
