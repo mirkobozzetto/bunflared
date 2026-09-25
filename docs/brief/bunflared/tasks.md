@@ -26,7 +26,7 @@ Closes: AC1, AC2, AC3, AC4, AC5, AC6, AC7, AC8
 - [x] the link is announced after DNS resolves and copied to the clipboard
 - [x] each startup failure has its message, its fix and its exit code
 - [x] a dead port answers viewers with the bunny 503 page
-- [ ] quitting leaves no `cloudflared` process and a clean terminal
+- [x] quitting leaves no `cloudflared` process and a clean terminal
 
 ## T02 - Agent mode
 
@@ -42,31 +42,31 @@ Closes: AC21, AC22, AC23, AC24, AC25
 
 Closes: AC9, AC10, AC11, AC12, AC18, AC19, AC20
 
-- [ ] animated boot logo and bunny, skippable, at most 1.5 s
-- [ ] animated preflight per port
-- [ ] digging scene with particles, a real-progress depth meter and jokes
-- [ ] launch explosion with the big link and the clipboard toast
-- [ ] goodbye animation and a recap card left in the scrollback
-- [ ] live resize and a compact layout for small terminals
-- [ ] `--calm` and `NO_COLOR`
+- [x] animated boot logo and bunny, skippable, at most 1.5 s
+- [x] animated preflight per port
+- [x] digging scene with particles, a real-progress depth meter and jokes
+- [x] launch explosion with the big link and the clipboard toast
+- [x] goodbye animation and a recap card left in the scrollback
+- [x] live resize and a compact layout for small terminals
+- [x] `--calm` and `NO_COLOR`
 
 ## T04 - Live dashboard
 
 Closes: AC13, AC17
 
-- [ ] scannable QR code of the link
-- [ ] port heartbeats with a visible down state
-- [ ] traffic lane of request sprites colored by status class
-- [ ] requests-per-second sparkline, request log, visitors, totals
-- [ ] keys `c`, `o`, `?`, `q`, the help overlay and the footer
+- [x] scannable QR code of the link
+- [x] port heartbeats with a visible down state
+- [x] traffic lane of request sprites colored by status class
+- [x] requests-per-second sparkline, request log, visitors, totals
+- [x] keys `c`, `o`, `?`, `q`, the help overlay and the footer
 
 ## T05 - Personality
 
 Closes: AC14, AC15, AC16
 
-- [ ] bunny moods: asleep, hopping, panicking
-- [ ] at least five animated achievements
-- [ ] Konami disco mode, `f` fireworks, one hidden secret
+- [x] bunny moods: asleep, hopping, panicking
+- [x] at least five animated achievements
+- [x] Konami disco mode, `f` fireworks, one hidden secret
 
 ## T06 - Distribution
 

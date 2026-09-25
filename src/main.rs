@@ -2,6 +2,7 @@ mod clipboard;
 mod proxy;
 mod share;
 mod state;
+mod tui;
 mod tunnel;
 
 use std::io::{IsTerminal, Write};
@@ -59,6 +60,10 @@ struct Cli {
     /// Print the JSON line once live, then return and keep sharing in the background.
     #[arg(long)]
     detach: bool,
+
+    /// No animations. NO_COLOR also turns them off, with the colors.
+    #[arg(long)]
+    calm: bool,
 }
 
 #[derive(Subcommand)]
@@ -78,6 +83,15 @@ enum Command {
 }
 
 fn main() {
+    // A panic on the main thread must not leave cloudflared running.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if std::thread::current().name() == Some("main") {
+            tunnel::kill_orphan();
+        }
+        default_hook(info);
+    }));
+
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(err) if err.use_stderr() && machine_output() => {
@@ -94,7 +108,15 @@ fn main() {
         Some(Command::Ls { json }) => state::list(json),
         Some(Command::Down { id, all }) => state::down(id, all),
         None if cli.detach => state::detach(&cli.ports),
-        None => share(cli.ports),
+        None => {
+            let no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
+            let interactive = !cli.json && std::io::stdout().is_terminal();
+            let theme = interactive.then_some(tui::Theme {
+                calm: cli.calm || no_color,
+                color: !no_color,
+            });
+            share(cli.ports, theme)
+        }
     };
     std::process::exit(code);
 }
@@ -104,16 +126,21 @@ fn machine_output() -> bool {
         || !std::io::stdout().is_terminal()
 }
 
-fn share(ports: Vec<u16>) -> i32 {
+/// Runs the share with the dashboard when a theme is given, JSON otherwise.
+fn share(ports: Vec<u16>, theme: Option<tui::Theme>) -> i32 {
     let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
     let (tx, rx) = mpsc::channel();
     let (stop, stop_rx) = watch::channel(false);
+    let shared = ports.clone();
     let backend = runtime.spawn(async move {
-        let result = share::run(&ports, &tx, stop_rx).await;
+        let result = share::run(&shared, &tx, stop_rx).await;
         let _ = tx.send(Event::Done(result));
     });
 
-    let code = print_json(rx);
+    let code = match theme {
+        Some(theme) => tui::run(rx, &stop, &ports, theme),
+        None => print_json(rx),
+    };
 
     let _ = stop.send(true);
     runtime.block_on(async {
