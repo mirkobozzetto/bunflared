@@ -1,6 +1,6 @@
 # bunflared
 
-![bunflared sharing a frontend and its API: digging the tunnel, going live, live traffic, QR code, session recap](docs/demo/dashboard.gif)
+![bunflared sharing a frontend and its API: digging the tunnel, going live, live traffic, QR code, session recap](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/dashboard.gif)
 
 `bunflared 5173 3000` puts your local app on a temporary
 `https://<words>.trycloudflare.com` link, through a Cloudflare quick tunnel.
