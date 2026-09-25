@@ -1,3 +1,4 @@
+mod agents;
 mod clipboard;
 mod cloudflared;
 mod os;
@@ -25,6 +26,7 @@ const AFTER_HELP: &str = r#"Examples:
   bunflared 5173 3000 --detach    print the ready line, keep sharing in the background
   bunflared ls [--json]           list live shares
   bunflared down <id> | --all     stop shares
+  bunflared agents                teach your coding agents to use bunflared
 
 In a terminal you get the animated dashboard. Otherwise, or with --json, the
 ready line is one JSON object on stdout:
@@ -78,6 +80,15 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Teach the coding agents installed here (Claude Code, Codex, pi, omp, prime-agent) to use bunflared.
+    Agents {
+        /// Print the note instead, to paste into another agent's rules.
+        #[arg(long)]
+        print: bool,
+        /// Take the note back out.
+        #[arg(long, conflicts_with = "print")]
+        remove: bool,
+    },
     /// Stop a share by id, or all of them.
     Down {
         #[arg(required_unless_present = "all")]
@@ -112,6 +123,7 @@ fn main() {
     let code = match cli.command {
         Some(Command::Ls { json }) => state::list(json),
         Some(Command::Down { id, all }) => state::down(id, all),
+        Some(Command::Agents { print, remove }) => agents::run(print, remove),
         None if cli.detach => state::detach(&cli.ports),
         None => {
             let no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
