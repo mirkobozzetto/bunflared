@@ -2,7 +2,8 @@
 type: brief
 slug: bunflared
 title: bunflared, share localhost with a public link and a ridiculous amount of fun
-status: ready
+status: shipped
+shipped_at: 2026-09-25T13:05:00+02:00
 created: 2026-09-25
 next_action: Ship a single Rust binary that shares local ports on a trycloudflare link, with an animated TUI for humans and a JSON mode for agents
 resume_cmd: /ship docs/brief/bunflared
@@ -70,8 +71,9 @@ It stops short in four ways:
   (which port), `~/.cloudflared/config.yaml` present (quick tunnels refuse
   to start with it), invalid arguments.
 - AC7 When a shared port stops answering mid-session, viewers get a small
-  friendly error page (an ASCII bunny looking for its carrot) with a 502,
-  not a browser error.
+  friendly error page (an ASCII bunny looking for its carrot) with a 503,
+  not a browser error. Not a 502: Cloudflare replaces an origin's 502 page
+  with its own.
 - AC8 Quitting (q, Ctrl-C, SIGTERM) stops the proxy and `cloudflared`. No
   `cloudflared` process survives, and the terminal is restored even after a
   crash.
