@@ -30,13 +30,11 @@ pub struct Tunnel {
     pub url: String,
 }
 
-impl Tunnel {
-    // SIGKILL on purpose: on SIGTERM cloudflared lingers through a 30 s grace period.
-    pub async fn close(mut self) -> Result<(), Failure> {
-        let _ = self.child.start_kill();
-        let _ = self.child.wait().await;
+// The child is spawned with kill_on_drop: dropping the tunnel kills cloudflared.
+// SIGKILL on purpose, on SIGTERM cloudflared lingers through a 30 s grace period.
+impl Drop for Tunnel {
+    fn drop(&mut self) {
         PID.store(0, Ordering::Relaxed);
-        Ok(())
     }
 }
 

@@ -14,6 +14,7 @@ pub const EXIT_NO_CLOUDFLARED: i32 = 3;
 pub const EXIT_PORT_DOWN: i32 = 4;
 pub const EXIT_CONFIG_YAML: i32 = 5;
 pub const EXIT_TUNNEL_FAILED: i32 = 6;
+const EXIT_HANGUP: i32 = 129;
 
 const PORT_TIMEOUT: Duration = Duration::from_secs(3);
 const HEALTH_EVERY: Duration = Duration::from_secs(3);
@@ -69,8 +70,29 @@ pub enum Event {
     Done(Result<(), Failure>),
 }
 
-/// Shares `ports` until `stop` flips, SIGINT/SIGTERM arrives, or the tunnel dies.
+/// Shares `ports` until `stop` flips, a signal arrives, or the tunnel dies.
+/// Dropping the share on the way out kills cloudflared and removes its record.
 pub async fn run(ports: &[u16], tx: &Tx, mut stop: watch::Receiver<bool>) -> Result<(), Failure> {
+    let handler = |kind| signal(kind).expect("signal handler");
+    let mut interrupt = handler(SignalKind::interrupt());
+    let mut terminate = handler(SignalKind::terminate());
+    let mut hangup = handler(SignalKind::hangup());
+    let hung_up = tokio::select! {
+        result = serve(ports, tx) => return result,
+        _ = stop.changed() => false,
+        _ = interrupt.recv() => false,
+        _ = terminate.recv() => false,
+        _ = hangup.recv() => true,
+    };
+    // The share is dropped by now. With the terminal gone, the dashboard's
+    // input loop spins on a dead tty and would never see Done: leave here.
+    if hung_up {
+        std::process::exit(EXIT_HANGUP);
+    }
+    Ok(())
+}
+
+async fn serve(ports: &[u16], tx: &Tx) -> Result<(), Failure> {
     let cloudflared = which("cloudflared").ok_or_else(|| {
         Failure::new(
             EXIT_NO_CLOUDFLARED,
@@ -103,15 +125,9 @@ pub async fn run(ports: &[u16], tx: &Tx, mut stop: watch::Receiver<bool>) -> Res
     let _ = tx.send(Event::TunnelStarting);
     let mut tunnel = tunnel::open(&cloudflared, proxy_port, tx).await?;
     let host = tunnel.url.trim_start_matches("https://").to_string();
-
-    let mut interrupt = signal(SignalKind::interrupt()).expect("SIGINT handler");
-    let mut terminate = signal(SignalKind::terminate()).expect("SIGTERM handler");
     let closed = || Failure::new(EXIT_TUNNEL_CLOSED, "The tunnel closed.");
 
     let resolved = tokio::select! {
-        _ = stop.changed() => return tunnel.close().await,
-        _ = interrupt.recv() => return tunnel.close().await,
-        _ = terminate.recv() => return tunnel.close().await,
         _ = tunnel.child.wait() => return Err(closed()),
         resolved = tunnel::wait_dns(&host, tx) => resolved,
     };
@@ -135,12 +151,8 @@ pub async fn run(ports: &[u16], tx: &Tx, mut stop: watch::Receiver<bool>) -> Res
     });
     tokio::spawn(watch_health(ports.to_vec(), tx.clone()));
 
-    tokio::select! {
-        _ = stop.changed() => tunnel.close().await,
-        _ = interrupt.recv() => tunnel.close().await,
-        _ = terminate.recv() => tunnel.close().await,
-        _ = tunnel.child.wait() => Err(closed()),
-    }
+    let _ = tunnel.child.wait().await;
+    Err(closed())
 }
 
 async fn answers(port: u16) -> bool {
