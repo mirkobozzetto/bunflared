@@ -24,11 +24,23 @@ secrets.
 
 ## Install
 
+macOS and Linux:
+
 ```sh
-brew install cloudflared
-cargo install --git https://github.com/mirkobozzetto/bunflared
-ln -sf ~/.cargo/bin/bunflared ~/.cargo/bin/bunf   # the short name
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/mirkobozzetto/bunflared/releases/latest/download/bunflared-installer.sh | sh
 ```
+
+Windows (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/mirkobozzetto/bunflared/releases/latest/download/bunflared-installer.ps1 | iex"
+```
+
+That is all: no Rust, no `cloudflared` to install first. You get `bunflared`
+and its short name `bunf`. On the first share, bunflared downloads
+Cloudflare's own `cloudflared` if it is not already installed.
+
+From source, with Rust: `cargo install --git https://github.com/mirkobozzetto/bunflared`.
 
 ## Use
 
@@ -80,7 +92,8 @@ cp -r skills/bunflared ~/.claude/skills/
 - Quick tunnels allow 200 requests in flight and do not carry Server-Sent
   Events ([Cloudflare docs](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)).
 - Quick tunnels refuse to start while `~/.cloudflared/config.yaml` exists.
-- macOS first; Linux should work.
+- Tested by hand on macOS. The Linux and Windows builds compile in CI but
+  have not been tried by hand yet.
 
 ## License
 
