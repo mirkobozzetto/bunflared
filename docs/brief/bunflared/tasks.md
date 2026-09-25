@@ -72,6 +72,6 @@ Closes: AC14, AC15, AC16
 
 Closes: AC26, AC27
 
-- [ ] `skills/bunflared/SKILL.md` for coding agents
-- [ ] README with install, usage and the agent section
-- [ ] `cargo install --git` produces a working binary
+- [x] `skills/bunflared/SKILL.md` for coding agents
+- [x] README with install, usage and the agent section
+- [x] `cargo install --git` produces a working binary

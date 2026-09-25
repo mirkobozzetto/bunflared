@@ -2,7 +2,8 @@
 type: brief
 slug: bunflared
 title: bunflared, share localhost with a public link and a ridiculous amount of fun
-status: ready
+status: shipped
+shipped_at: 2026-09-25T13:05:00+02:00
 created: 2026-09-25
 next_action: Ship a single Rust binary that shares local ports on a trycloudflare link, with an animated TUI for humans and a JSON mode for agents
 resume_cmd: /ship docs/brief/bunflared
