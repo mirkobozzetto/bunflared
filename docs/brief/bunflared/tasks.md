@@ -19,13 +19,13 @@ Ordered. Each task closes the acceptance criteria it names.
 
 Closes: AC1, AC2, AC3, AC4, AC5, AC6, AC7, AC8
 
-- [ ] `/` and `/_port/<port>` reach the right local port
-- [ ] localhost URLs are rewritten in text bodies and `Location`
-- [ ] local servers receive `Host: localhost:<port>`
-- [ ] WebSocket upgrades are relayed; Vite hot reload works through the link
-- [ ] the link is announced after DNS resolves and copied to the clipboard
-- [ ] each startup failure has its message, its fix and its exit code
-- [ ] a dead port answers viewers with the bunny 502 page
+- [x] `/` and `/_port/<port>` reach the right local port
+- [x] localhost URLs are rewritten in text bodies and `Location`
+- [x] local servers receive `Host: localhost:<port>`
+- [x] WebSocket upgrades are relayed; Vite hot reload works through the link
+- [x] the link is announced after DNS resolves and copied to the clipboard
+- [x] each startup failure has its message, its fix and its exit code
+- [x] a dead port answers viewers with the bunny 503 page
 - [ ] quitting leaves no `cloudflared` process and a clean terminal
 
 ## T02 - Agent mode
