@@ -32,11 +32,11 @@ Closes: AC1, AC2, AC3, AC4, AC5, AC6, AC7, AC8
 
 Closes: AC21, AC22, AC23, AC24, AC25
 
-- [ ] non-terminal stdout or `--json` prints one JSON line, no ANSI
-- [ ] `--detach` returns when ready and the share outlives the caller
-- [ ] `ls` and `ls --json` list live shares and drop dead ones
-- [ ] `down <id>` and `down --all` stop shares and their `cloudflared`
-- [ ] `--help` covers share, list and stop
+- [x] non-terminal stdout or `--json` prints one JSON line, no ANSI
+- [x] `--detach` returns when ready and the share outlives the caller
+- [x] `ls` and `ls --json` list live shares and drop dead ones
+- [x] `down <id>` and `down --all` stop shares and their `cloudflared`
+- [x] `--help` covers share, list and stop
 
 ## T03 - The show: scenes from boot to goodbye
 

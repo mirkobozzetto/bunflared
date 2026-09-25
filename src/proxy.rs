@@ -128,10 +128,7 @@ impl Ctx {
             return Response::from_parts(parts, body.boxed());
         }
         let Ok(collected) = body.collect().await else {
-            return plain(
-                DOWN,
-                "The shared app stopped mid-answer.",
-            );
+            return plain(DOWN, "The shared app stopped mid-answer.");
         };
         let bytes = collected.to_bytes();
         let bytes = match std::str::from_utf8(&bytes).map(|text| self.rewrite(text)) {
@@ -174,14 +171,8 @@ async fn handle(
             Response::from_parts(parts, Empty::new().map_err(|never| match never {}).boxed())
         }
         Ok(response) => ctx.adapt(response, &method).await,
-        Err(_) if wants_html => html(
-            DOWN,
-            BUNNY_PAGE.replace("{port}", &port.to_string()),
-        ),
-        Err(_) => plain(
-            DOWN,
-            "The shared app is not answering on this computer.",
-        ),
+        Err(_) if wants_html => html(DOWN, BUNNY_PAGE.replace("{port}", &port.to_string())),
+        Err(_) => plain(DOWN, "The shared app is not answering on this computer."),
     };
 
     let _ = ctx.tx.send(Event::Request(Hit {
