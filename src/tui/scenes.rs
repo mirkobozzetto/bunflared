@@ -70,14 +70,34 @@ fn big_text(
     hue: f32,
     palette: fn(f32) -> Color,
 ) {
-    for (row, line) in art::big(text).iter().enumerate() {
-        for (col, ch) in line.chars().enumerate() {
-            let col = col as i32;
-            if ch != ' ' && col <= reveal {
-                let color = palette(col as f32 * 7.0 + hue);
-                put(buf, x + col, y + row as i32, "█", theme.fg(color));
-            }
+    let cells: Vec<(i32, i32)> = art::big(text)
+        .iter()
+        .enumerate()
+        .flat_map(|(row, line)| {
+            line.chars()
+                .enumerate()
+                .filter(|&(col, ch)| ch != ' ' && col as i32 <= reveal)
+                .map(move |(col, _)| (col as i32, row as i32))
+        })
+        .collect();
+    // A dark outline cut into whatever burns behind, so the letters read.
+    for &(col, row) in &cells {
+        for (dx, dy) in [
+            (-1, -1),
+            (0, -1),
+            (1, -1),
+            (-1, 0),
+            (1, 0),
+            (-1, 1),
+            (0, 1),
+            (1, 1),
+        ] {
+            put(buf, x + col + dx, y + row + dy, " ", Style::new());
         }
+    }
+    for (col, row) in cells {
+        let color = palette(col as f32 * 7.0 + hue);
+        put(buf, x + col, y + row, "█", theme.fg(color));
     }
 }
 
@@ -111,6 +131,12 @@ pub fn boot(app: &mut App, frame: &mut Frame) {
             t * 120.0,
             fx::blaze,
         );
+        app.keep_clear = Some(Rect::new(
+            (x0 - 1).max(0) as u16,
+            top.max(0) as u16,
+            logo_width as u16 + 2,
+            6,
+        ));
         let col = if reveal < logo_width {
             reveal
         } else {
