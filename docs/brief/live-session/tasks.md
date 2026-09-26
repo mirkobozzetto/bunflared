@@ -76,10 +76,10 @@ Closes: AC12, AC13
 
 Closes: AC14, AC15
 
-- [ ] tachyonfx works with ratatui 0.30, or the gap is reported
-- [ ] entry, arrival, 5xx, disco and goodbye effects
-- [ ] `--calm` and `NO_COLOR` switch every effect off
-- [ ] `r` flashes the QR panel when it is on screen, opens the big QR otherwise
+- [x] tachyonfx works with ratatui 0.30, or the gap is reported
+- [x] entry, arrival, 5xx, disco and goodbye effects
+- [x] `--calm` and `NO_COLOR` switch every effect off
+- [x] `r` flashes the QR panel when it is on screen, opens the big QR otherwise
 
 ## T08 - Docs and demo
 
