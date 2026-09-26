@@ -80,6 +80,13 @@ pub async fn open(cloudflared: &Path, proxy_port: u16, tx: &Tx) -> Result<Tunnel
     .await;
     let Ok(Some(url)) = found else {
         let _ = child.start_kill();
+        if tail.iter().any(|line| line.contains("status 429")) {
+            return Err(Failure::new(
+                EXIT_TUNNEL_FAILED,
+                "Cloudflare hands out a limited number of new links in a short time, \
+                 and this computer reached it. Wait a few minutes, then try again.",
+            ));
+        }
         let start = tail.len().saturating_sub(LOG_TAIL);
         let log = tail[start..].join("\n");
         return Err(Failure::new(
