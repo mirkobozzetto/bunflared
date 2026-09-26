@@ -87,4 +87,4 @@ Closes: AC16
 
 - [ ] README, `--help`, help overlay, `SKILL.md` and agents note updated
 - [ ] JSON and `--detach` output unchanged
-- [ ] the README GIF re-recorded with a chat exchange and a reaction
+- [x] the README GIF re-recorded with a chat exchange and a reaction
