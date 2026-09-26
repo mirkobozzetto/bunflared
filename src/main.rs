@@ -1,6 +1,7 @@
 mod agents;
 mod clipboard;
 mod cloudflared;
+mod live;
 mod os;
 mod proxy;
 mod share;
@@ -29,8 +30,13 @@ const AFTER_HELP: &str = r#"Examples:
   bunflared down <id> | --all     stop shares
   bunflared agents                teach your coding agents to use bunflared
 
-In a terminal you get the animated dashboard. Otherwise, or with --json, the
-ready line is one JSON object on stdout:
+In a terminal you get the animated dashboard: ? lists its keys. m messages the
+visitors, g sends them to a page, R reloads it, Enter on a request shows it and
+p replays it. Picking a visitor with the arrows follows their pointer, and their
+page shows a "Live" pill meanwhile. Notes, chat and reactions are saved in
+bunflared-feedback/.
+
+Otherwise, or with --json, the ready line is one JSON object on stdout:
   {"id":"4242","pid":4242,"tunnel_pid":4243,"url":"https://....trycloudflare.com",
    "routes":{"/":5173,"/_port/3000":3000},"started_at":1790000000}
 and a failure is one JSON object on stderr: {"error":"...","code":N}.
@@ -73,7 +79,7 @@ struct Cli {
     #[arg(long)]
     calm: bool,
 
-    /// Leave the pages as they are: no feedback button, no live presence.
+    /// Leave the pages as they are: no feedback button, no live session.
     #[arg(long)]
     no_widget: bool,
 
@@ -173,14 +179,20 @@ fn share(ports: Vec<u16>, theme: Option<tui::Theme>, feedback: Option<std::path:
     let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
     let (tx, rx) = mpsc::channel();
     let (stop, stop_rx) = watch::channel(false);
+    let hub = std::sync::Arc::new(live::Hub::new(tx.clone(), feedback.clone()));
     let shared = ports.clone();
+    let backend_hub = hub.clone();
+    let replayer = proxy::Replayer {
+        runtime: runtime.handle().clone(),
+        tx: tx.clone(),
+    };
     let backend = runtime.spawn(async move {
-        let result = share::run(&shared, &tx, stop_rx, feedback).await;
+        let result = share::run(&shared, &tx, stop_rx, feedback, backend_hub).await;
         let _ = tx.send(Event::Done(result));
     });
 
     let code = match theme {
-        Some(theme) => tui::run(rx, &stop, &ports, theme),
+        Some(theme) => tui::run(rx, &stop, &ports, theme, hub, replayer),
         None => print_json(rx),
     };
 

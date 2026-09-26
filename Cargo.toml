@@ -1,6 +1,6 @@
 [package]
 name = "bunflared"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 description = "Share localhost on a public link, with an absurdly fun terminal show and an agent mode"
 license = "MIT"
@@ -8,12 +8,13 @@ repository = "https://github.com/mirkobozzetto/bunflared"
 readme = "README.md"
 keywords = ["tunnel", "localhost", "cloudflare", "share", "tui"]
 categories = ["command-line-utilities", "development-tools", "network-programming"]
-include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE"]
+include = ["/src/**", "/Cargo.toml", "/Cargo.lock", "/README.md", "/LICENSE"]
 
 [dependencies]
 bytes = "1.12.1"
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 clap = { version = "4.6.7", features = ["derive"] }
+futures-util = { version = "0.3.34", default-features = false, features = ["sink", "std"] }
 http-body-util = "0.1.5"
 hyper = { version = "1.11.1", features = ["http1", "server", "client"] }
 hyper-util = { version = "0.1.21", features = ["tokio"] }
@@ -22,7 +23,9 @@ ratatui = "0.30.2"
 regex = "1.13.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+tachyonfx = { version = "0.25", default-features = false, features = ["std"] }
 tokio = { version = "1.53.1", features = ["full"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 
 [target."cfg(unix)".dependencies]
 libc = "0.2.189"

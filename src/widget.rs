@@ -4,6 +4,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 
 use bytes::Bytes;
 use http_body_util::{BodyExt, Limited};
@@ -12,6 +13,7 @@ use hyper::header::{self, HeaderValue};
 use hyper::{Method, Request, Response, StatusCode};
 use serde::Deserialize;
 
+use crate::live::{self, Hub};
 use crate::proxy::{Body, full};
 use crate::share::{Event, Tx};
 
@@ -22,6 +24,7 @@ const TAG: &str = r#"<script src="/_bunflared/widget.js" defer></script>"#;
 const MAX_PING: usize = 4 * 1024;
 const MAX_NOTE: usize = 64 * 1024;
 const MAX_SHOT: usize = 12 * 1024 * 1024;
+const MAX_PINNED: usize = 300;
 
 #[derive(Debug, Clone)]
 pub struct Presence {
@@ -58,6 +61,46 @@ struct Note {
     message: String,
     screen: Option<String>,
     shot: Option<String>,
+    element: Option<Element>,
+}
+
+/// The element a visitor pointed at, so whoever reads the note finds it.
+#[derive(Deserialize)]
+struct Element {
+    selector: String,
+    text: String,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+}
+
+impl Element {
+    fn markdown(&self) -> String {
+        // Browser text goes inside backticks and quotes: keep it on one line
+        // and unable to close them.
+        let clean = |text: &str| -> String {
+            text.split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .replace(['`', '"'], "'")
+                .chars()
+                .take(MAX_PINNED)
+                .collect()
+        };
+        let mut lines = format!("- Element: `{}`\n", clean(&self.selector));
+        if !self.text.trim().is_empty() {
+            lines.push_str(&format!("- Text: \"{}\"\n", clean(&self.text)));
+        }
+        lines.push_str(&format!(
+            "- Position: {}, {} ({}×{}) from the top left of the page\n",
+            self.x.round(),
+            self.y.round(),
+            self.w.round(),
+            self.h.round()
+        ));
+        lines
+    }
 }
 
 /// Adds the script tag before `</body>`, or at the end when there is none.
@@ -70,18 +113,25 @@ pub fn inject(html: &str) -> String {
     }
 }
 
-pub async fn handle(request: Request<Incoming>, folder: &Path, tx: &Tx) -> Response<Body> {
-    let device = device(
+pub async fn handle(
+    request: Request<Incoming>,
+    folder: &Path,
+    tx: &Tx,
+    hub: &Arc<Hub>,
+) -> Response<Body> {
+    let value = |name: &str| {
         request
             .headers()
-            .get(header::USER_AGENT)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or(""),
-    );
+            .get(name)
+            .and_then(|v: &HeaderValue| v.to_str().ok())
+            .unwrap_or("")
+    };
+    let device = device(value("user-agent"), value("sec-ch-ua"));
     let route = request.uri().path().trim_start_matches(PREFIX).to_string();
     let method = request.method().clone();
     match (method, route.as_str()) {
         (Method::GET, "widget.js") => script(),
+        (Method::GET, "live") => live::accept(request, hub.clone(), device),
         (Method::POST, "ping") => match read(request, MAX_PING).await {
             Some(body) => {
                 if let Ok(ping) = serde_json::from_slice::<Ping>(&body) {
@@ -115,7 +165,8 @@ pub async fn handle(request: Request<Incoming>, folder: &Path, tx: &Tx) -> Respo
                 return status(StatusCode::BAD_REQUEST);
             };
             match save_note(folder, &note, &device) {
-                Ok(()) => {
+                Ok(name) => {
+                    hub.noted(&device, &note.page, &name);
                     let _ = tx.send(Event::Feedback(Feedback {
                         device,
                         page: note.page,
@@ -140,7 +191,7 @@ async fn read(request: Request<Incoming>, max: usize) -> Option<Bytes> {
 
 /// The feedback folder, created with a `.gitignore` of its own so no project
 /// ever commits a client's notes by accident.
-fn folder_ready(folder: &Path) -> std::io::Result<()> {
+pub fn folder_ready(folder: &Path) -> std::io::Result<()> {
     fs::create_dir_all(folder)?;
     let ignore = folder.join(".gitignore");
     if !ignore.exists() {
@@ -149,7 +200,7 @@ fn folder_ready(folder: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn stamp() -> String {
+pub fn stamp() -> String {
     chrono::Local::now()
         .format("%Y-%m-%d_%H-%M-%S%.3f")
         .to_string()
@@ -182,7 +233,7 @@ fn save_shot(folder: &Path, image: &[u8]) -> std::io::Result<String> {
     Ok(name)
 }
 
-fn save_note(folder: &Path, note: &Note, device: &str) -> std::io::Result<()> {
+fn save_note(folder: &Path, note: &Note, device: &str) -> std::io::Result<String> {
     folder_ready(folder)?;
     // Only a name this module gave out, never a path from the browser.
     let shot = note.shot.as_deref().filter(|name| {
@@ -197,22 +248,31 @@ fn save_note(folder: &Path, note: &Note, device: &str) -> std::io::Result<()> {
         .lines()
         .map(|line| format!("> {line}"))
         .collect();
+    let pinned = note.element.as_ref().map(Element::markdown);
     let mut text = format!(
-        "# Feedback, {}\n\n- Page: `{}`\n- Device: {device}\n- Screen: {}\n- Visitor: {}\n\n{}\n",
+        "# Feedback, {}\n\n- Page: `{}`\n- Device: {device}\n- Screen: {}\n- Visitor: {}\n{}\n{}\n",
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
         note.page,
         note.screen.as_deref().unwrap_or("unknown"),
         note.sid,
+        pinned.unwrap_or_default(),
         quoted.join("\n"),
     );
     if let Some(shot) = shot {
-        text.push_str(&format!("\n![Screenshot]({shot})\n"));
+        let outlined = if note.element.is_some() {
+            ", the element outlined"
+        } else {
+            ""
+        };
+        text.push_str(&format!("\n![Screenshot{outlined}]({shot})\n"));
     }
-    fs::write(folder.join(format!("{}.md", stamp())), text)
+    let name = format!("{}.md", stamp());
+    fs::write(folder.join(&name), text)?;
+    Ok(name)
 }
 
-/// "iPhone · Safari", from the User-Agent header.
-pub fn device(agent: &str) -> String {
+/// "iPhone · Safari", from the User-Agent and the `Sec-CH-UA` client hint.
+pub fn device(agent: &str, hints: &str) -> String {
     let system = [
         ("iPhone", "iPhone"),
         ("iPad", "iPad"),
@@ -224,9 +284,14 @@ pub fn device(agent: &str) -> String {
     .into_iter()
     .find(|(needle, _)| agent.contains(needle))
     .map_or("Unknown", |(_, name)| name);
+    // Brave reads as Safari on iOS and as Chrome elsewhere, but names itself
+    // at the end of the iOS agent and in the client hint.
+    let brave = agent.contains("Brave") || hints.contains("\"Brave\"");
     let browser = [
         ("Edg/", "Edge"),
+        ("EdgiOS/", "Edge"),
         ("OPR/", "Opera"),
+        ("OPT/", "Opera"),
         ("Firefox/", "Firefox"),
         ("FxiOS/", "Firefox"),
         ("CriOS/", "Chrome"),
@@ -236,6 +301,7 @@ pub fn device(agent: &str) -> String {
     .into_iter()
     .find(|(needle, _)| agent.contains(needle))
     .map_or("browser", |(_, name)| name);
+    let browser = if brave { "Brave" } else { browser };
     format!("{system} · {browser}")
 }
 

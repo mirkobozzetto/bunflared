@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+use std::sync::Arc;
+
 use std::sync::mpsc::Sender;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -6,6 +8,7 @@ use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio::time::{sleep, timeout};
 
+use crate::live::{Hub, Pointer, Reacted, Said};
 use crate::{clipboard, cloudflared, os, proxy, state, tunnel, widget};
 
 pub const EXIT_TUNNEL_CLOSED: i32 = 1;
@@ -44,6 +47,7 @@ pub struct Hit {
     pub port: u16,
     pub visitor: String,
     pub upgrade: bool,
+    pub exchange: Arc<proxy::Exchange>,
 }
 
 #[derive(Debug)]
@@ -65,6 +69,14 @@ pub enum Event {
     Request(Hit),
     Presence(widget::Presence),
     Feedback(widget::Feedback),
+    Chat(Said),
+    Pointer(Pointer),
+    Reacted(Reacted),
+    Replayed {
+        n: u32,
+        status: Result<u16, String>,
+        ms: u32,
+    },
     PortHealth {
         port: u16,
         ok: bool,
@@ -79,9 +91,10 @@ pub async fn run(
     tx: &Tx,
     mut stop: watch::Receiver<bool>,
     feedback: Option<PathBuf>,
+    hub: Arc<Hub>,
 ) -> Result<(), Failure> {
     let hung_up = tokio::select! {
-        result = serve(ports, tx, feedback) => return result,
+        result = serve(ports, tx, feedback, hub) => return result,
         _ = stop.changed() => false,
         hung_up = os::quit() => hung_up,
     };
@@ -93,7 +106,12 @@ pub async fn run(
     Ok(())
 }
 
-async fn serve(ports: &[u16], tx: &Tx, feedback: Option<PathBuf>) -> Result<(), Failure> {
+async fn serve(
+    ports: &[u16],
+    tx: &Tx,
+    feedback: Option<PathBuf>,
+    hub: Arc<Hub>,
+) -> Result<(), Failure> {
     if let Some(config) = quick_tunnel_blocker() {
         return Err(Failure::new(
             EXIT_CONFIG_YAML,
@@ -130,7 +148,7 @@ async fn serve(ports: &[u16], tx: &Tx, feedback: Option<PathBuf>) -> Result<(), 
         }
     };
 
-    let proxy_port = proxy::start(ports, tx.clone(), feedback)
+    let proxy_port = proxy::start(ports, tx.clone(), feedback, hub)
         .await
         .map_err(|err| {
             Failure::new(EXIT_TUNNEL_FAILED, format!("cannot start the proxy: {err}"))

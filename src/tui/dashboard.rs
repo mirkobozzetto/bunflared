@@ -2,14 +2,17 @@ use std::time::Duration;
 
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 
 use super::art::{self, Frame3};
 use super::fx::{self, put};
-use super::{App, LANE_TRIP, Qr, Session, Theme, plural};
+use super::scenes::wrap;
+use super::{App, Ask, Focus, LANE_TRIP, Qr, Replay, Row, Session, Theme, plural};
+use crate::live::REACTIONS;
+use crate::proxy::{CAPTURE, Capture};
 
 const MIN_WIDTH: u16 = 64;
 const MIN_HEIGHT: u16 = 20;
@@ -22,28 +25,62 @@ const PANIC_FOR: f32 = 3.0;
 const LEFT_AFTER: Duration = Duration::from_secs(20);
 const IDLE_AFTER: u64 = 30;
 const HOP_FOR: f32 = 1.2;
-const KEYS: [(&str, &str); 6] = [
+const KEYS: [(&str, &str); 7] = [
     ("c", "copy"),
     ("o", "open"),
     ("r", "qr"),
-    ("f", "fireworks"),
+    ("m", "message"),
+    ("g", "go"),
     ("?", "help"),
     ("q", "quit"),
 ];
-const HELP: [&str; 9] = [
-    "c   copy the link",
-    "o   open it in your browser",
-    "r   big QR code for phones",
-    "f   fireworks",
-    "?   this help",
-    "q   stop sharing",
+const HELP: [&str; 18] = [
+    "c    copy the link",
+    "o    open it in your browser",
+    "r    big QR code for phones",
+    "f    fireworks",
     "",
+    "↑ ↓  pick a visitor",
+    "tab  switch to the requests",
+    "     enter: its details, p: replay it",
+    "esc  pick nobody: everyone again",
+    "m    message them",
+    "g    send them to a page",
+    "R    reload their page",
+    "e    send them a reaction",
+    "",
+    "?    this help",
+    "q    stop sharing",
     "psst: there are secrets.",
     "the bunny knows a few codes.",
 ];
+const HELP_WIDTH: u16 = 40;
 
 fn hms(secs: u64) -> String {
     format!("{:02}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60)
+}
+
+/// A panel whose border shows it has the keyboard focus.
+fn focusable<'a>(app: &App, title: &str, focus: Focus) -> Block<'a> {
+    let block = panel(app, title);
+    if app.focus == Some(focus) {
+        block.border_style(app.theme.fg(fx::PINK))
+    } else {
+        block
+    }
+}
+
+/// The first line to draw so that the selected one stays in view.
+fn scroll(selected: Option<usize>, height: usize) -> usize {
+    selected.map_or(0, |i| (i + 1).saturating_sub(height))
+}
+
+fn highlight(line: Line<'_>, selected: bool) -> Line<'_> {
+    if selected {
+        line.style(Style::new().add_modifier(Modifier::REVERSED))
+    } else {
+        line
+    }
 }
 
 fn panel<'a>(app: &App, title: &str) -> Block<'a> {
@@ -87,6 +124,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         let block = panel(app, "scan me");
         let inner = block.inner(side);
         frame.render_widget(block, side);
+        app.spots.qr = Some(side);
         if let Some(qr) = &app.qr_code {
             draw_qr(
                 frame.buffer_mut(),
@@ -125,7 +163,13 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     if let Some(area) = visitors {
         draw_visitors(app, frame, area);
     }
+    app.spots.visitors = visitors;
+    let (log, side) = split_side(app, log);
+    app.spots.log = Some(log);
     draw_log(app, frame, log);
+    if let Some(side) = side {
+        draw_side(app, frame, side);
+    }
     draw_footer(app, frame, footer);
 }
 
@@ -211,6 +255,18 @@ fn mood(app: &App) -> Mood {
             jitter: 0,
             color: fx::rainbow(e * 200.0),
         }
+    } else if app.worried_until.is_some() {
+        let pose = if alt(3.0) {
+            &art::WORRIED_B
+        } else {
+            &art::WORRIED_A
+        };
+        Mood {
+            label: "worried",
+            pose,
+            jitter: 0,
+            color: fx::YELLOW,
+        }
     } else if recent(app.last_error, PANIC_FOR) {
         let pose = if alt(7.0) {
             &art::PANIC_B
@@ -256,7 +312,18 @@ fn draw_lane(app: &mut App, frame: &mut Frame, area: Rect) {
         app.theme.fg(mood.color),
     ))
     .right_aligned();
-    let block = panel(app, "traffic").title_bottom(caption);
+    let mut block = panel(app, "traffic").title_bottom(caption);
+    if app.reactions.iter().any(|&n| n > 0) {
+        let counts: Vec<String> = REACTIONS
+            .iter()
+            .zip(app.reactions)
+            .map(|((emoji, _), n)| format!("{emoji} {n}"))
+            .collect();
+        block = block.title_bottom(Span::styled(
+            format!(" {} ", counts.join("  ")),
+            app.theme.fg(fx::FG),
+        ));
+    }
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let e = app.elapsed();
@@ -470,6 +537,13 @@ fn presence(app: &App, session: &Session) -> (&'static str, String, Color) {
     }
 }
 
+/// The visitors in the order they are listed: by arrival, those who left last.
+pub fn roster(app: &App) -> Vec<&Session> {
+    let mut sessions: Vec<&Session> = app.sessions.values().collect();
+    sessions.sort_by_key(|s| (presence(app, s).1 == "left", s.first));
+    sessions
+}
+
 pub fn here(app: &App) -> usize {
     app.sessions
         .values()
@@ -478,7 +552,11 @@ pub fn here(app: &App) -> usize {
 }
 
 fn draw_visitors(app: &App, frame: &mut Frame, area: Rect) {
-    let block = panel(app, &format!("visitors · {} here", here(app)));
+    let block = focusable(
+        app,
+        &format!("visitors · {} here", here(app)),
+        Focus::Visitors,
+    );
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let theme = &app.theme;
@@ -487,15 +565,19 @@ fn draw_visitors(app: &App, frame: &mut Frame, area: Rect) {
         frame.render_widget(Paragraph::new(line), inner);
         return;
     }
-    let mut sessions: Vec<&Session> = app.sessions.values().collect();
-    sessions.sort_by_key(|s| (presence(app, s).1 == "left", std::cmp::Reverse(s.seen)));
+    let sessions = roster(app);
+    let at = sessions
+        .iter()
+        .position(|s| app.selected.as_ref() == Some(&s.presence.sid));
     let lines: Vec<Line> = sessions
         .into_iter()
+        .skip(scroll(at, inner.height as usize))
         .take(inner.height as usize)
         .map(|session| {
             let (dot, state, color) = presence(app, session);
             let p = &session.presence;
-            Line::from(vec![
+            let selected = app.selected.as_ref() == Some(&p.sid);
+            let line = Line::from(vec![
                 Span::styled(format!("{dot} "), theme.fg(color)),
                 Span::styled(format!("{}  ", p.device), theme.fg(fx::FG)),
                 Span::styled(format!("{}  ", p.page), theme.fg(fx::CYAN)),
@@ -504,7 +586,8 @@ fn draw_visitors(app: &App, frame: &mut Frame, area: Rect) {
                     format!("  {}", plural(p.clicks as usize, "click")),
                     theme.fg(fx::DIM),
                 ),
-            ])
+            ]);
+            highlight(line, selected)
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), inner);
@@ -520,7 +603,7 @@ fn status_color(status: u16) -> Color {
 }
 
 fn draw_log(app: &App, frame: &mut Frame, area: Rect) {
-    let block = panel(app, "requests");
+    let block = focusable(app, "requests", Focus::Log);
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let theme = &app.theme;
@@ -539,13 +622,24 @@ fn draw_log(app: &App, frame: &mut Frame, area: Rect) {
         frame.render_widget(Paragraph::new(waiting), middle);
         return;
     }
+    let at = app.rows.iter().position(|row| Some(row.n) == app.picked);
     let lines: Vec<Line> = app
         .rows
         .iter()
+        .skip(scroll(at, inner.height as usize))
         .take(inner.height as usize)
         .map(|row| {
             let hit = &row.hit;
-            Line::from(vec![
+            let replayed = match row.replayed {
+                None => Span::raw(""),
+                Some(Replay::Pending) => Span::styled("↻ …  ", theme.fg(fx::DIM)),
+                Some(Replay::Done { status, .. }) => Span::styled(
+                    format!("↻ {status} "),
+                    theme.fg(status_color(status)).add_modifier(Modifier::BOLD),
+                ),
+                Some(Replay::Failed) => Span::styled("↻ ✖   ", theme.fg(fx::RED)),
+            };
+            let line = Line::from(vec![
                 Span::styled(format!("{} ", row.clock), theme.fg(fx::DIM)),
                 Span::styled(format!("{:<7}", hit.method), theme.fg(fx::PURPLE)),
                 Span::styled(
@@ -554,13 +648,131 @@ fn draw_log(app: &App, frame: &mut Frame, area: Rect) {
                         .fg(status_color(hit.status))
                         .add_modifier(Modifier::BOLD),
                 ),
+                replayed,
                 Span::styled(format!("{:>5}ms ", hit.ms), theme.fg(fx::FG)),
                 Span::styled(format!(":{:<5} ", hit.port), theme.fg(fx::DIM)),
                 Span::styled(hit.path.clone(), theme.fg(fx::FG)),
-            ])
+            ]);
+            highlight(line, Some(row.n) == app.picked)
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), inner);
+}
+
+/// The radar of the selected visitor and the chat, once someone has talked,
+/// take the right of the request log.
+fn split_side(app: &App, log: Rect) -> (Rect, Option<Rect>) {
+    if app.chat.is_empty() && app.selected.is_none() {
+        return (log, None);
+    }
+    let [log, side] =
+        Layout::horizontal([Constraint::Min(0), Constraint::Percentage(42)]).areas(log);
+    (log, Some(side))
+}
+
+fn draw_side(app: &App, frame: &mut Frame, area: Rect) {
+    match (app.selected.is_some(), app.chat.is_empty()) {
+        (true, false) => {
+            let [radar, chat] =
+                Layout::vertical([Constraint::Percentage(50), Constraint::Min(0)]).areas(area);
+            draw_radar(app, frame, radar);
+            draw_chat(app, frame, chat);
+        }
+        (true, true) => draw_radar(app, frame, area),
+        _ => draw_chat(app, frame, area),
+    }
+}
+
+/// The selected visitor's viewport, scaled, with their pointer in it.
+fn draw_radar(app: &App, frame: &mut Frame, area: Rect) {
+    let session = app.selected.as_ref().and_then(|sid| app.sessions.get(sid));
+    let device = session.map_or("nobody", |s| s.presence.device.as_str());
+    let block = panel(app, &format!("radar · {device}"));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let theme = &app.theme;
+    let Some((pointer, at)) = session.and_then(|s| s.pointer.as_ref()) else {
+        let line = Line::from(Span::styled(
+            "Their pointer shows here once it moves.",
+            theme.fg(fx::DIM),
+        ));
+        frame.render_widget(Paragraph::new(line), inner);
+        return;
+    };
+    let still = (app.now - *at).as_secs();
+    let caption = match still {
+        0 => format!("{}×{} · moving", pointer.w, pointer.h),
+        secs => format!("{}×{} · still for {secs}s", pointer.w, pointer.h),
+    };
+    let [room, bottom] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(caption, theme.fg(fx::DIM))).centered()),
+        bottom,
+    );
+    if room.width < 4 || room.height < 3 {
+        return;
+    }
+    // A cell is about twice as tall as it is wide.
+    let ratio = pointer.w.max(1.0) / pointer.h.max(1.0);
+    let (mut width, mut height) = (room.height as f32 * 2.0 * ratio, room.height as f32);
+    if width > room.width as f32 {
+        (width, height) = (room.width as f32, room.width as f32 / 2.0 / ratio);
+    }
+    let width = (width as u16).clamp(4, room.width);
+    let height = (height as u16).clamp(3, room.height);
+    let screen = Rect::new(room.x + (room.width - width) / 2, room.y, width, height);
+    frame.render_widget(Block::bordered().border_style(theme.fg(fx::DIM)), screen);
+    let inside = screen.inner(Margin::new(1, 1));
+    let spot = |value: f32, size: f32, start: u16, cells: u16| {
+        start as i32
+            + ((value / size.max(1.0)).clamp(0.0, 1.0) * cells.saturating_sub(1) as f32).round()
+                as i32
+    };
+    let x = spot(pointer.x, pointer.w, inside.x, inside.width);
+    let y = spot(pointer.y, pointer.h, inside.y, inside.height);
+    let glyph = if still == 0 { "◉" } else { "●" };
+    put(
+        frame.buffer_mut(),
+        x,
+        y,
+        glyph,
+        theme.fg(fx::PINK).add_modifier(Modifier::BOLD),
+    );
+}
+
+fn draw_chat(app: &App, frame: &mut Frame, area: Rect) {
+    let block = panel(app, "chat");
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let theme = &app.theme;
+    let width = inner.width.saturating_sub(2).max(8) as usize;
+    let mut lines = Vec::new();
+    for message in &app.chat {
+        let (who, color) = if message.mine {
+            (format!("you → {}", message.who), fx::PINK)
+        } else {
+            (message.who.clone(), fx::CYAN)
+        };
+        let mut head = vec![
+            Span::styled(format!("{} ", message.clock), theme.fg(fx::DIM)),
+            Span::styled(who, theme.fg(color).add_modifier(Modifier::BOLD)),
+        ];
+        if !message.page.is_empty() {
+            head.push(Span::styled(
+                format!(" {}", message.page),
+                theme.fg(fx::DIM),
+            ));
+        }
+        lines.push(Line::from(head));
+        for text in wrap(&message.text, width) {
+            lines.push(Line::from(Span::styled(
+                format!("  {text}"),
+                theme.fg(fx::FG),
+            )));
+        }
+    }
+    let newest = lines.split_off(lines.len().saturating_sub(inner.height as usize));
+    frame.render_widget(Paragraph::new(newest), inner);
 }
 
 fn draw_footer(app: &App, frame: &mut Frame, area: Rect) {
@@ -608,7 +820,7 @@ fn compact(app: &App, frame: &mut Frame, area: Rect) {
             theme.fg(fx::FG),
         )),
         Line::from(Span::styled(
-            "c copy · o open · r qr · q quit",
+            "c copy · o open · r qr · m message · q quit",
             theme.fg(fx::DIM),
         )),
     ];
@@ -642,6 +854,204 @@ fn draw_qr(buf: &mut Buffer, theme: &Theme, qr: &Qr, x: i32, y: i32) {
     }
 }
 
+const TEXT_TYPES: [&str; 8] = [
+    "text/",
+    "json",
+    "javascript",
+    "xml",
+    "html",
+    "css",
+    "form-urlencoded",
+    "graphql",
+];
+const BODY_LINES: usize = 400;
+
+fn kib(bytes: usize) -> String {
+    format!("{:.1} KiB", bytes as f32 / 1024.0)
+}
+
+/// The start of a body as text, or what it is when it is not text.
+fn body_lines(theme: &Theme, headers: &hyper::HeaderMap, capture: &Capture) -> Vec<Line<'static>> {
+    let kind = headers
+        .get(hyper::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let encoded = headers.contains_key(hyper::header::CONTENT_ENCODING);
+    let text = !encoded
+        && if kind.is_empty() {
+            std::str::from_utf8(&capture.bytes).is_ok()
+        } else {
+            TEXT_TYPES.iter().any(|t| kind.contains(t))
+        };
+    let note = |text: String| Line::from(Span::styled(format!("  {text}"), theme.fg(fx::DIM)));
+    if capture.total == 0 {
+        return vec![note("empty".into())];
+    }
+    if !text {
+        let what = if kind.is_empty() { "binary" } else { kind };
+        return vec![note(format!("{what}, {}, not shown", kib(capture.total)))];
+    }
+    let mut lines: Vec<Line> = String::from_utf8_lossy(&capture.bytes)
+        .lines()
+        .take(BODY_LINES)
+        .map(|line| Line::from(Span::styled(format!("  {line}"), theme.fg(fx::FG))))
+        .collect();
+    if !capture.complete() {
+        lines.push(note(format!(
+            "… the first {} KiB of {} are kept",
+            CAPTURE / 1024,
+            kib(capture.total)
+        )));
+    }
+    lines
+}
+
+fn header_lines(theme: &Theme, headers: &hyper::HeaderMap) -> Vec<Line<'static>> {
+    headers
+        .iter()
+        .map(|(name, value)| {
+            Line::from(vec![
+                Span::styled(format!("  {name}: "), theme.fg(fx::CYAN)),
+                Span::styled(
+                    String::from_utf8_lossy(value.as_bytes()).into_owned(),
+                    theme.fg(fx::FG),
+                ),
+            ])
+        })
+        .collect()
+}
+
+fn details_lines(app: &App, row: &Row) -> Vec<Line<'static>> {
+    let theme = &app.theme;
+    let hit = &row.hit;
+    let exchange = &hit.exchange;
+    let section = |title: &str| {
+        Line::from(Span::styled(
+            title.to_string(),
+            theme.fg(fx::PINK).add_modifier(Modifier::BOLD),
+        ))
+    };
+    let mut lines = vec![Line::from(vec![
+        Span::styled(format!("{} ", hit.method), theme.fg(fx::PURPLE)),
+        Span::styled(format!("{}  ", hit.path), theme.fg(fx::FG)),
+        Span::styled(
+            hit.status.to_string(),
+            theme
+                .fg(status_color(hit.status))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(
+                " · {} ms · :{} · {} · from {}",
+                hit.ms, hit.port, row.clock, hit.visitor
+            ),
+            theme.fg(fx::DIM),
+        ),
+    ])];
+    let replay = match row.replayed {
+        Some(Replay::Done { status, ms }) => format!("replayed: {status} in {ms} ms"),
+        Some(Replay::Pending) => "replaying…".into(),
+        Some(Replay::Failed) => "the replay failed".into(),
+        None if hit.upgrade => "a WebSocket, cannot be replayed".into(),
+        None if !exchange.request_body.lock().unwrap().complete() => format!(
+            "its body is over {} KiB, cannot be replayed",
+            CAPTURE / 1024
+        ),
+        None => "p replays it to your local server".into(),
+    };
+    lines.push(Line::from(Span::styled(
+        format!("↻ {replay}"),
+        theme.fg(fx::DIM),
+    )));
+    lines.push(Line::raw(""));
+    lines.push(section("Request headers"));
+    lines.extend(header_lines(theme, &exchange.request_headers));
+    lines.push(section("Request body"));
+    let request = exchange.request_body.lock().unwrap();
+    lines.extend(body_lines(theme, &exchange.request_headers, &request));
+    lines.push(Line::raw(""));
+    lines.push(section("Response headers"));
+    lines.extend(header_lines(theme, &exchange.response_headers));
+    lines.push(section("Response body"));
+    let response = exchange.response_body.lock().unwrap();
+    lines.extend(body_lines(theme, &exchange.response_headers, &response));
+    lines
+}
+
+/// Enter on a request: everything that went through, scrollable.
+fn draw_details(app: &mut App, frame: &mut Frame, area: Rect) {
+    let Some(row) = app
+        .details
+        .and_then(|n| app.rows.iter().find(|row| row.n == n))
+    else {
+        return;
+    };
+    let lines = details_lines(app, row);
+    let rect = centered_rect(
+        area,
+        area.width.saturating_sub(8).min(110),
+        area.height.saturating_sub(4),
+    );
+    frame.render_widget(Clear, rect);
+    let block = panel(app, "request")
+        .border_style(app.theme.fg(fx::PINK))
+        .title_bottom(Line::from(" ↑ ↓ scroll · p replay · esc close ").right_aligned());
+    let inner = block.inner(rect).inner(Margin::new(1, 0));
+    frame.render_widget(block, rect);
+    let most = lines.len().saturating_sub(inner.height as usize) as u16;
+    app.details_scroll = app.details_scroll.min(most);
+    frame.render_widget(Paragraph::new(lines).scroll((app.details_scroll, 0)), inner);
+    app.keep_clear = Some(rect);
+}
+
+/// The text box of `g`, low on the screen so the panels stay readable.
+fn draw_prompt(app: &App, frame: &mut Frame, area: Rect) {
+    let Some(prompt) = &app.prompt else {
+        return;
+    };
+    let suggestions = app.suggestions(prompt);
+    let (title, hint) = match prompt.ask {
+        Ask::Go => (
+            format!("send {} to", app.target()),
+            " enter send · tab pick · esc cancel ",
+        ),
+        Ask::Chat => (
+            format!("message to {}", app.target()),
+            " enter send · esc close ",
+        ),
+        Ask::React => (
+            format!("react to {}", app.target()),
+            " 1-4 or tab, enter send · esc cancel ",
+        ),
+    };
+    let typed = prompt.ask != Ask::React;
+    let width = 60.min(area.width.saturating_sub(2));
+    let height = 2 + u16::from(typed) + suggestions.len() as u16;
+    let x = area.x + (area.width - width) / 2;
+    let y = area.bottom().saturating_sub(height + 2).max(area.y);
+    let rect = Rect::new(x, y, width, height.min(area.height));
+    frame.render_widget(Clear, rect);
+    let block = panel(app, &title)
+        .border_style(app.theme.fg(fx::PINK))
+        .title_bottom(Line::from(hint).right_aligned());
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+    let theme = &app.theme;
+    let mut lines = Vec::new();
+    if typed {
+        lines.push(Line::from(vec![
+            Span::styled("› ", theme.fg(fx::PINK).add_modifier(Modifier::BOLD)),
+            Span::styled(prompt.text.clone(), theme.fg(fx::FG)),
+            Span::styled("▏", theme.fg(fx::PINK)),
+        ]));
+    }
+    lines.extend(suggestions.into_iter().enumerate().map(|(i, page)| {
+        let line = Line::from(Span::styled(format!("  {page}"), theme.fg(fx::CYAN)));
+        highlight(line, prompt.pick == Some(i))
+    }));
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
 fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
     let width = width.min(area.width);
     let height = height.min(area.height);
@@ -673,7 +1083,7 @@ pub fn overlays(app: &mut App, frame: &mut Frame) {
         app.keep_clear = Some(rect);
     }
     if app.help {
-        let rect = centered_rect(area, 38, HELP.len() as u16 + 4);
+        let rect = centered_rect(area, HELP_WIDTH, HELP.len() as u16 + 4);
         frame.render_widget(Clear, rect);
         let block = panel(app, "keys");
         let inner = block.inner(rect);
@@ -694,9 +1104,14 @@ pub fn overlays(app: &mut App, frame: &mut Frame) {
             inner.inner(ratatui::layout::Margin::new(0, 1)),
         );
     }
+    draw_details(app, frame, area);
+    draw_prompt(app, frame, area);
     for (i, toast) in app.toasts.iter().enumerate() {
-        let width = (toast.title.chars().count().max(toast.body.chars().count()) as u16 + 4)
-            .min(area.width);
+        let width = (Span::raw(toast.title.as_str())
+            .width()
+            .max(Span::raw(toast.body.as_str()).width()) as u16
+            + 4)
+        .min(area.width);
         let age = (app.now - toast.born).as_secs_f32();
         let slide = if app.theme.calm {
             0

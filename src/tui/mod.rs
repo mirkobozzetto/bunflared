@@ -2,8 +2,11 @@ mod art;
 mod dashboard;
 mod fx;
 mod scenes;
+mod shaders;
+mod spectacle;
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
@@ -16,12 +19,13 @@ use ratatui::style::{Color, Style};
 use tokio::sync::watch;
 
 use crate::clipboard;
-use crate::proxy::mount;
+use crate::live::{Command, Hub, Pointer, REACTIONS};
+use crate::proxy::{CAPTURE, Replayer, mount};
 use crate::share::{Event, Failure, Hit};
 use crate::state::{Record, uptime};
 use crate::widget::{self, Presence};
 
-const BOOT: f32 = 1.5;
+const BOOT: f32 = 2.2;
 const LAUNCH: f32 = 3.2;
 const GOODBYE: f32 = 1.6;
 const SNIFF: f32 = 0.35;
@@ -34,6 +38,12 @@ const MARATHON: f32 = 3600.0;
 const STAMPEDE_PRESSES: usize = 5;
 const STAMPEDE_WINDOW: Duration = Duration::from_millis(1500);
 const PYRO: u32 = 10;
+const PAGES_KEEP: usize = 20;
+const SUGGESTIONS: usize = 5;
+const CHAT_KEEP: usize = 60;
+const WORRY_FOR: Duration = Duration::from_secs(3);
+// Past this, a reaction still counts and toasts, without more confetti.
+const MAX_PARTICLES: usize = 800;
 // No command key in it, or typing it would copy, open or quit.
 const CARROT_WORD: &str = "yum";
 const FAST_FRAME: Duration = Duration::from_millis(33);
@@ -95,6 +105,8 @@ pub enum Phase {
     Digging,
     Launch,
     Dashboard,
+    /// The dashboard fading out, between `q` and the goodbye.
+    Dissolve,
     Goodbye,
     Failed,
 }
@@ -110,6 +122,15 @@ pub struct PortState {
 pub struct Row {
     pub hit: Hit,
     pub clock: String,
+    /// Its rank since the start, a key that survives new rows.
+    pub n: u32,
+    pub replayed: Option<Replay>,
+}
+
+pub enum Replay {
+    Pending,
+    Done { status: u16, ms: u32 },
+    Failed,
 }
 
 pub struct Sprite {
@@ -136,6 +157,38 @@ pub struct Runner {
 pub struct Session {
     pub presence: Presence,
     pub seen: Instant,
+    pub first: Instant,
+    pub pointer: Option<(Pointer, Instant)>,
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum Focus {
+    Visitors,
+    Log,
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum Ask {
+    Go,
+    Chat,
+    React,
+}
+
+/// A line of the chat panel, sent or received.
+pub struct Message {
+    pub mine: bool,
+    /// The visitor's device, or who a message of ours went to.
+    pub who: String,
+    pub page: String,
+    pub text: String,
+    pub clock: String,
+}
+
+/// A text box open over the dashboard: while it is, keys are text.
+pub struct Prompt {
+    pub ask: Ask,
+    pub text: String,
+    pub pick: Option<usize>,
 }
 
 pub struct Qr {
@@ -152,6 +205,11 @@ pub struct App {
     pub dt: f32,
     pub rng: fx::Rng,
     pub particles: fx::Particles,
+    pub fire: fx::Fire,
+    pub inferno: fx::Fire,
+    pub spectacle: spectacle::Spectacle,
+    shaders: shaders::Shaders,
+    pub spots: shaders::Spots,
     pub sprites: Vec<Sprite>,
     pub toasts: Vec<Toast>,
     pub runners: Vec<Runner>,
@@ -183,6 +241,21 @@ pub struct App {
     pub unlocked: Vec<&'static art::Achievement>,
     pub sessions: HashMap<String, Session>,
     pub feedback: u32,
+    pub hub: Arc<Hub>,
+    pub focus: Option<Focus>,
+    /// The visitor that commands go to; everyone when `None`.
+    pub selected: Option<String>,
+    pub picked: Option<u32>,
+    pub prompt: Option<Prompt>,
+    /// Pages the visitors were on, the most recent first.
+    pub pages: Vec<String>,
+    pub chat: VecDeque<Message>,
+    pub reactions: [u32; REACTIONS.len()],
+    pub worried_until: Option<Instant>,
+    replayer: Replayer,
+    /// The request whose details are open, by rank.
+    pub details: Option<u32>,
+    pub details_scroll: u16,
 
     pub disco: bool,
     pub qr: bool,
@@ -196,9 +269,16 @@ pub struct App {
     exit: Option<i32>,
 }
 
-pub fn run(rx: Receiver<Event>, stop: &watch::Sender<bool>, ports: &[u16], theme: Theme) -> i32 {
+pub fn run(
+    rx: Receiver<Event>,
+    stop: &watch::Sender<bool>,
+    ports: &[u16],
+    theme: Theme,
+    hub: Arc<Hub>,
+    replayer: Replayer,
+) -> i32 {
     let mut terminal = ratatui::init();
-    let mut app = App::new(ports, theme);
+    let mut app = App::new(ports, theme, hub, replayer);
     let code = loop {
         let now = Instant::now();
         while let Ok(event) = rx.try_recv() {
@@ -225,7 +305,8 @@ pub fn run(rx: Receiver<Event>, stop: &watch::Sender<bool>, ports: &[u16], theme
 }
 
 impl App {
-    fn new(ports: &[u16], theme: Theme) -> Self {
+    fn new(ports: &[u16], theme: Theme, hub: Arc<Hub>, replayer: Replayer) -> Self {
+        let calm = theme.calm;
         let now = Instant::now();
         let ports = ports
             .iter()
@@ -247,6 +328,11 @@ impl App {
             dt: 0.0,
             rng: fx::Rng::seeded(),
             particles: fx::Particles::default(),
+            fire: fx::Fire::default(),
+            inferno: fx::Fire::default(),
+            spectacle: spectacle::Spectacle::default(),
+            shaders: shaders::Shaders::new(calm),
+            spots: shaders::Spots::default(),
             sprites: Vec::new(),
             toasts: Vec::new(),
             runners: Vec::new(),
@@ -276,6 +362,18 @@ impl App {
             unlocked: Vec::new(),
             sessions: HashMap::new(),
             feedback: 0,
+            hub,
+            focus: None,
+            selected: None,
+            picked: None,
+            prompt: None,
+            pages: Vec::new(),
+            chat: VecDeque::new(),
+            reactions: [0; REACTIONS.len()],
+            worried_until: None,
+            replayer,
+            details: None,
+            details_scroll: 0,
             disco: false,
             qr: false,
             help: false,
@@ -301,6 +399,9 @@ impl App {
     fn go(&mut self, phase: Phase) {
         self.phase = phase;
         self.phase_at = self.now;
+        if phase == Phase::Dashboard {
+            self.shaders.entry();
+        }
     }
 
     /// Animations need 30 fps; a quiet dashboard is fine at 10.
@@ -312,7 +413,8 @@ impl App {
                 || !self.toasts.is_empty()
                 || !self.runners.is_empty()
                 || self.disco
-                || self.carrots_until.is_some())
+                || self.carrots_until.is_some()
+                || self.shaders.busy())
     }
 
     pub fn live_for(&self) -> u64 {
@@ -405,9 +507,21 @@ impl App {
             }
             Event::Request(hit) => self.on_hit(hit),
             Event::Presence(presence) => {
-                let seen = now;
-                self.sessions
-                    .insert(presence.sid.clone(), Session { presence, seen });
+                self.remember(&presence.page);
+                if !presence.gone && !self.sessions.contains_key(&presence.sid) {
+                    self.shaders.arrival();
+                }
+                let (first, pointer) = self
+                    .sessions
+                    .remove(&presence.sid)
+                    .map_or((now, None), |s| (s.first, s.pointer));
+                let session = Session {
+                    presence,
+                    seen: now,
+                    first,
+                    pointer,
+                };
+                self.sessions.insert(session.presence.sid.clone(), session);
             }
             Event::Feedback(note) => {
                 self.feedback += 1;
@@ -418,6 +532,51 @@ impl App {
                     false,
                 );
                 self.unlock("critic");
+            }
+            Event::Chat(said) => {
+                let excerpt: String = said.text.chars().take(40).collect();
+                self.toast(
+                    format!("✉ {} on {}", said.device, said.page),
+                    excerpt,
+                    false,
+                );
+                self.remember_message(Message {
+                    mine: false,
+                    who: said.device,
+                    page: said.page,
+                    text: said.text,
+                    clock: clock(),
+                });
+            }
+            Event::Pointer(pointer) => {
+                if let Some(session) = self.sessions.get_mut(&pointer.sid) {
+                    session.pointer = Some((pointer, now));
+                }
+            }
+            Event::Reacted(reaction) => {
+                self.reactions[reaction.kind] += 1;
+                let (emoji, label) = REACTIONS[reaction.kind];
+                self.toast(format!("{emoji} from {}", reaction.device), label, false);
+                if !self.theme.calm && self.particles.0.len() < MAX_PARTICLES {
+                    self.celebrate(reaction.kind);
+                }
+            }
+            Event::Replayed { n, status, ms } => {
+                let Some(row) = self.rows.iter_mut().find(|row| row.n == n) else {
+                    return;
+                };
+                let title = format!("↻ {} {}", row.hit.method, row.hit.path);
+                let body = match status {
+                    Ok(status) => {
+                        row.replayed = Some(Replay::Done { status, ms });
+                        format!("{} before, {status} now, in {ms} ms.", row.hit.status)
+                    }
+                    Err(err) => {
+                        row.replayed = Some(Replay::Failed);
+                        format!("Failed: {err}")
+                    }
+                };
+                self.toast(title, body, false);
             }
             Event::PortHealth { port, ok } => {
                 if let Some(state) = self.ports.iter_mut().find(|p| p.port == port) {
@@ -488,6 +647,7 @@ impl App {
         }
         if hit.status >= 500 {
             self.last_error = Some(self.now);
+            self.shaders.crash();
             self.unlock("survivor");
         }
         self.last_hit = Some(self.now);
@@ -510,6 +670,8 @@ impl App {
         self.rows.push_front(Row {
             hit,
             clock: clock(),
+            n: self.total,
+            replayed: None,
         });
         self.rows.truncate(LOG_KEEP);
     }
@@ -534,6 +696,7 @@ impl App {
                 Phase::Launch
             }),
             Phase::Launch if t >= LAUNCH => self.go(Phase::Dashboard),
+            Phase::Dissolve if t * 1000.0 >= shaders::DISSOLVE_MS as f32 => self.go(Phase::Goodbye),
             Phase::Goodbye if calm || t >= GOODBYE => self.exit = Some(0),
             _ => {}
         }
@@ -569,14 +732,20 @@ impl App {
         if self.carrots_until.is_some_and(|until| now >= until) {
             self.carrots_until = None;
         }
+        if self.worried_until.is_some_and(|until| now >= until) {
+            self.worried_until = None;
+        }
     }
 
     fn on_key(&mut self, key: KeyEvent, stop: &watch::Sender<bool>) {
         let ctrl_c =
             key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL);
+        if self.prompt.is_some() && self.phase == Phase::Dashboard && !ctrl_c {
+            return self.on_prompt_key(key);
+        }
         let quit = ctrl_c || key.code == KeyCode::Char('q');
         match self.phase {
-            Phase::Goodbye => {
+            Phase::Goodbye | Phase::Dissolve => {
                 if quit {
                     self.exit = Some(0);
                 }
@@ -590,8 +759,16 @@ impl App {
                 self.quitting = Some(self.now);
                 self.help = false;
                 self.qr = false;
+                self.prompt = None;
+                self.details = None;
                 let _ = stop.send(true);
-                self.go(Phase::Goodbye);
+                let leaving = if self.phase == Phase::Dashboard && !self.theme.calm {
+                    self.shaders.dissolve();
+                    Phase::Dissolve
+                } else {
+                    Phase::Goodbye
+                };
+                self.go(leaving);
                 return;
             }
             Phase::Boot => return self.go(Phase::Preflight),
@@ -604,7 +781,8 @@ impl App {
             self.keys.pop_front();
         }
         if self.keys.iter().eq(KONAMI.iter()) {
-            self.disco = !self.disco;
+            self.disco = !self.disco && !self.theme.calm;
+            self.shaders.disco(self.disco);
             self.keys.clear();
             self.unlock("disco");
         }
@@ -620,13 +798,82 @@ impl App {
             }
         }
 
+        let dashboard = self.phase == Phase::Dashboard;
+        if let (Some(n), true) = (self.details, dashboard) {
+            match key.code {
+                KeyCode::Esc | KeyCode::Enter => self.details = None,
+                KeyCode::Up => self.details_scroll = self.details_scroll.saturating_sub(1),
+                KeyCode::Down => self.details_scroll = self.details_scroll.saturating_add(1),
+                KeyCode::PageUp => self.details_scroll = self.details_scroll.saturating_sub(10),
+                KeyCode::PageDown => self.details_scroll = self.details_scroll.saturating_add(10),
+                KeyCode::Char('p') => self.replay(n),
+                _ => {}
+            }
+            return;
+        }
         match key.code {
-            KeyCode::Esc => {
+            KeyCode::Esc if self.help || self.qr => {
                 self.help = false;
                 self.qr = false;
             }
+            KeyCode::Esc => {
+                self.focus = None;
+                self.select(None);
+                self.picked = None;
+            }
+            KeyCode::Tab if dashboard => {
+                self.focus = Some(match self.focus {
+                    Some(Focus::Visitors) => Focus::Log,
+                    _ => Focus::Visitors,
+                });
+            }
+            KeyCode::Up | KeyCode::Down if dashboard => self.step(key.code == KeyCode::Down),
+            KeyCode::Char('g') if dashboard => {
+                self.prompt = Some(Prompt {
+                    ask: Ask::Go,
+                    text: String::new(),
+                    pick: None,
+                });
+            }
+            KeyCode::Char('m') if dashboard => {
+                self.prompt = Some(Prompt {
+                    ask: Ask::Chat,
+                    text: String::new(),
+                    pick: None,
+                });
+            }
+            KeyCode::Enter if dashboard && self.focus == Some(Focus::Log) => {
+                if self.picked.is_some() {
+                    self.details = self.picked;
+                    self.details_scroll = 0;
+                }
+            }
+            KeyCode::Char('p') if dashboard => match self.picked {
+                Some(n) => self.replay(n),
+                None => self.toast("Pick a request first", "Tab, then ↑ ↓.", false),
+            },
+            KeyCode::Char('e') if dashboard => {
+                self.prompt = Some(Prompt {
+                    ask: Ask::React,
+                    text: String::new(),
+                    pick: Some(0),
+                });
+            }
+            KeyCode::Char('R') if dashboard => {
+                let reached = self.hub.send(self.selected.as_deref(), &Command::Reload);
+                self.sent("↻ Reload", reached);
+            }
             KeyCode::Char('?') => self.help = !self.help,
-            KeyCode::Char('r') if self.qr_code.is_some() => self.qr = !self.qr,
+            // The code already on screen flashes instead of opening twice.
+            KeyCode::Char('r') if self.qr_code.is_some() => {
+                if self.qr || self.spots.qr.is_none() {
+                    self.qr = !self.qr;
+                } else if self.theme.calm {
+                    self.toast("The code is on the right", "Scan it with a phone.", false);
+                } else {
+                    self.shaders.flash_qr();
+                }
+            }
             KeyCode::Char('c') => {
                 if let Some(url) = &self.url {
                     self.copied = clipboard::copy(url);
@@ -675,6 +922,238 @@ impl App {
         }
     }
 
+    /// Moves the selection in the focused panel, the visitors by default.
+    fn step(&mut self, down: bool) {
+        match *self.focus.get_or_insert(Focus::Visitors) {
+            Focus::Visitors => {
+                let sids: Vec<String> = dashboard::roster(self)
+                    .iter()
+                    .map(|s| s.presence.sid.clone())
+                    .collect();
+                let next = stepped(&sids, self.selected.as_ref(), down);
+                self.select(next);
+            }
+            Focus::Log => {
+                let ranks: Vec<u32> = self.rows.iter().map(|row| row.n).collect();
+                self.picked = stepped(&ranks, self.picked.as_ref(), down);
+            }
+        }
+    }
+
+    /// The selected visitor is the one whose pointer the radar follows.
+    fn select(&mut self, sid: Option<String>) {
+        self.hub.follow(sid.as_deref());
+        self.selected = sid;
+    }
+
+    fn on_prompt_key(&mut self, key: KeyEvent) {
+        let count = self
+            .prompt
+            .as_ref()
+            .map_or(0, |prompt| self.suggestions(prompt).len());
+        let Some(prompt) = self.prompt.as_mut() else {
+            return;
+        };
+        let digit = match key.code {
+            KeyCode::Char(ch) => ch.to_digit(10).map(|d| d as usize),
+            _ => None,
+        };
+        if prompt.ask == Ask::React {
+            if let Some(n) = digit.filter(|n| (1..=REACTIONS.len()).contains(n)) {
+                prompt.pick = Some(n - 1);
+                if let Some(prompt) = self.prompt.take() {
+                    self.submit(prompt);
+                }
+            } else if let KeyCode::Char(_) = key.code {
+                return;
+            }
+        }
+        let Some(prompt) = self.prompt.as_mut() else {
+            return;
+        };
+        match key.code {
+            KeyCode::Esc => self.prompt = None,
+            KeyCode::Enter => {
+                if let Some(prompt) = self.prompt.take() {
+                    self.submit(prompt);
+                }
+            }
+            KeyCode::Backspace => {
+                prompt.text.pop();
+                prompt.pick = None;
+            }
+            KeyCode::Tab | KeyCode::Down if count > 0 => {
+                prompt.pick = Some(prompt.pick.map_or(0, |i| (i + 1) % count));
+            }
+            KeyCode::BackTab | KeyCode::Up if count > 0 => {
+                prompt.pick = Some(prompt.pick.map_or(count - 1, |i| (i + count - 1) % count));
+            }
+            KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                prompt.text.push(ch);
+                prompt.pick = None;
+            }
+            _ => {}
+        }
+    }
+
+    fn submit(&mut self, prompt: Prompt) {
+        match prompt.ask {
+            Ask::Go => {
+                let path = prompt
+                    .pick
+                    .and_then(|i| self.suggestions(&prompt).into_iter().nth(i))
+                    .unwrap_or_else(|| prompt.text.trim().to_string());
+                if path.is_empty() {
+                    return;
+                }
+                let path = if path.starts_with('/') {
+                    path
+                } else {
+                    format!("/{path}")
+                };
+                let command = Command::Go { path: path.clone() };
+                let reached = self.hub.send(self.selected.as_deref(), &command);
+                self.sent(&format!("→ {path}"), reached);
+            }
+            Ask::React => {
+                let kind = prompt.pick.unwrap_or(0);
+                let emoji = REACTIONS[kind].0.to_string();
+                let reached = self
+                    .hub
+                    .react(self.selected.as_deref(), &self.target(), &emoji);
+                self.sent(&format!("{emoji} sent"), reached);
+            }
+            Ask::Chat => {
+                let text = prompt.text.trim().to_string();
+                let to = self.target();
+                let reached = if text.is_empty() {
+                    0
+                } else {
+                    self.hub.say(self.selected.as_deref(), &to, &text)
+                };
+                // The box stays open for the next line; a message nobody got stays typed.
+                let kept = if reached == 0 {
+                    prompt.text
+                } else {
+                    String::new()
+                };
+                self.prompt = Some(Prompt {
+                    ask: Ask::Chat,
+                    text: kept,
+                    pick: None,
+                });
+                if text.is_empty() {
+                    return;
+                }
+                if reached == 0 {
+                    self.sent("✉ Not sent", 0);
+                    return;
+                }
+                self.remember_message(Message {
+                    mine: true,
+                    who: to,
+                    page: String::new(),
+                    text,
+                    clock: clock(),
+                });
+            }
+        }
+    }
+
+    /// Sends a request of the log again, unless it cannot be sent as it was.
+    fn replay(&mut self, n: u32) {
+        let Some(row) = self.rows.iter().find(|row| row.n == n) else {
+            return;
+        };
+        let refusal = if row.hit.upgrade {
+            Some("A WebSocket cannot be sent again.".to_string())
+        } else if !row.hit.exchange.request_body.lock().unwrap().complete() {
+            Some(format!(
+                "Its body is over {} KiB: only the start was kept.",
+                CAPTURE / 1024
+            ))
+        } else {
+            None
+        };
+        if let Some(reason) = refusal {
+            return self.toast("✖ Not replayable", reason, false);
+        }
+        self.replayer.replay(n, &row.hit);
+        if let Some(row) = self.rows.iter_mut().find(|row| row.n == n) {
+            row.replayed = Some(Replay::Pending);
+        }
+    }
+
+    /// Each reaction gets its own show.
+    fn celebrate(&mut self, kind: usize) {
+        let area = self.area();
+        let x = self
+            .rng
+            .range(10.0, area.width.saturating_sub(10).max(11) as f32);
+        let y = area.height as f32 * 0.4;
+        match kind {
+            0 => self.particles.confetti(&mut self.rng, x, y, 60),
+            1 => self.particles.fireworks(&mut self.rng, x, y),
+            2 => {
+                let bottom = area.height.saturating_sub(4) as f32;
+                self.particles.hearts(&mut self.rng, x, bottom);
+            }
+            _ => self.worried_until = Some(self.now + WORRY_FOR),
+        }
+    }
+
+    fn remember_message(&mut self, message: Message) {
+        self.chat.push_back(message);
+        if self.chat.len() > CHAT_KEEP {
+            self.chat.pop_front();
+        }
+    }
+
+    /// The pages offered under the go box, filtered by what is typed, or
+    /// the reactions to pick from.
+    pub fn suggestions(&self, prompt: &Prompt) -> Vec<String> {
+        match prompt.ask {
+            Ask::Chat => return Vec::new(),
+            Ask::React => {
+                return REACTIONS
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (emoji, label))| format!("{}  {emoji}  {label}", i + 1))
+                    .collect();
+            }
+            Ask::Go => {}
+        }
+        let text = prompt.text.trim();
+        self.pages
+            .iter()
+            .filter(|page| page.contains(text))
+            .take(SUGGESTIONS)
+            .cloned()
+            .collect()
+    }
+
+    fn remember(&mut self, page: &str) {
+        self.pages.retain(|seen| seen != page);
+        self.pages.insert(0, page.to_string());
+        self.pages.truncate(PAGES_KEEP);
+    }
+
+    /// Who commands go to, for titles and toasts.
+    pub fn target(&self) -> String {
+        self.selected
+            .as_ref()
+            .and_then(|sid| self.sessions.get(sid))
+            .map_or_else(|| "everyone".into(), |s| s.presence.device.clone())
+    }
+
+    fn sent(&mut self, title: &str, reached: usize) {
+        let body = match reached {
+            0 => "No page is connected live.".to_string(),
+            n => format!("{}, {}.", self.target(), plural(n, "page")),
+        };
+        self.toast(title, body, false);
+    }
+
     fn stampede(&mut self) {
         let area = self.area();
         for _ in 0..10 {
@@ -689,19 +1168,31 @@ impl App {
 
     fn render(&mut self, frame: &mut Frame) {
         self.keep_clear = None;
+        self.spots = shaders::Spots::default();
         match self.phase {
             Phase::Boot => scenes::boot(self, frame),
             Phase::Preflight => scenes::preflight(self, frame),
             Phase::Digging => scenes::digging(self, frame),
             Phase::Launch => scenes::launch(self, frame),
-            Phase::Dashboard => dashboard::render(self, frame),
+            Phase::Dashboard | Phase::Dissolve => dashboard::render(self, frame),
             Phase::Goodbye => scenes::goodbye(self, frame),
             Phase::Failed => scenes::failed(self, frame),
         }
+        let area = frame.area();
+        self.shaders
+            .render(frame.buffer_mut(), area, &self.spots, self.dt);
         if !self.theme.calm {
             scenes::fun(self, frame);
             self.particles
                 .draw(frame.buffer_mut(), &self.theme, self.keep_clear);
+            if self.spectacle.shaking(self.now) {
+                let dx = if (self.elapsed() * 30.0) as i32 % 2 == 0 {
+                    1
+                } else {
+                    -1
+                };
+                fx::shake(frame.buffer_mut(), dx);
+            }
         }
         dashboard::overlays(self, frame);
     }
@@ -764,6 +1255,19 @@ impl App {
 
 pub fn plural(count: usize, word: &str) -> String {
     format!("{count} {word}{}", if count == 1 { "" } else { "s" })
+}
+
+/// The next item up or down from `current`, entering at either end.
+fn stepped<T: PartialEq + Clone>(items: &[T], current: Option<&T>, down: bool) -> Option<T> {
+    let last = items.len().checked_sub(1)?;
+    let at = current.and_then(|c| items.iter().position(|item| item == c));
+    let next = match (at, down) {
+        (None, true) => 0,
+        (None, false) => last,
+        (Some(i), true) => (i + 1).min(last),
+        (Some(i), false) => i.saturating_sub(1),
+    };
+    Some(items[next].clone())
 }
 
 fn qr(url: &str) -> Option<Qr> {

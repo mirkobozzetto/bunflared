@@ -2,7 +2,7 @@
 type: brief
 slug: live-session
 title: Live session, talk to the people on the link
-status: ready
+status: shipped
 created: 2026-09-26
 next_action: Turn the dashboard into a live session with visitors: chat, send them to a page, see their pointer, reactions, pinned feedback, request inspector and replay, richer animations
 resume_cmd: /ship docs/brief/live-session

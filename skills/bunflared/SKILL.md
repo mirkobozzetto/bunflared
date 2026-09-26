@@ -20,7 +20,8 @@ keeps sharing in the background:
 - `http://localhost:<port>` inside HTML, JS, CSS and JSON responses is
   rewritten to the public path, so a frontend calling its API on localhost
   keeps working. WebSockets pass through, so hot reload works.
-- It takes 10 to 40 seconds, the time for the new name to exist in DNS.
+- It usually takes under 10 seconds, up to 40 when DNS is slow: the time for
+  the new name to exist.
 
 On success it prints one JSON line:
 
@@ -35,9 +36,16 @@ opens an interactive dashboard, elsewhere it prints the JSON line and waits.
 
 Each shared page carries a feedback button. Notes from visitors are saved in
 `bunflared-feedback/` in the folder bunflared runs from: one Markdown file per
-note (page, device, message) with its screenshot next to it. Read them when
-the user asks what their client thought. The folder is git-ignored by itself.
-`--no-widget` shares the pages untouched.
+note (page, device, message) with its screenshot next to it. A note made with
+"Point at it" also names the element: CSS selector, text, position, and the
+screenshot outlines it. `session_<date>.md` there keeps the chat, the
+reactions and a link to each note, in order. Read them when the user asks what
+their client thought, or to find what to fix. The folder is git-ignored by
+itself. When the user follows a visitor's pointer from the dashboard, that
+visitor's page shows a "Live" pill. `--no-widget` shares the pages untouched.
+
+The user can leave notes on their own app while you keep it shared with
+`--detach`: read the folder when they say they left feedback.
 
 ## List and stop
 
@@ -58,7 +66,7 @@ One JSON line on stderr, `{"error":"...","code":N}`, with the same exit code:
 | 3 | `cloudflared` missing, download failed | install it, e.g. `brew install cloudflared` |
 | 4 | a port is not answering | start the app first |
 | 5 | `~/.cloudflared/config.yaml` exists | ask the user before renaming it |
-| 6 | the tunnel failed to start | retry; the message has cloudflared's log |
+| 6 | the tunnel failed to start | retry; when the message names Cloudflare's limit on new links, wait a few minutes first |
 
 ## Tell the user
 

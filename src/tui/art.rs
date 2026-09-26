@@ -7,13 +7,28 @@ pub const HOP: Frame3 = [r" (\(\ ", r" ( ^o^)", r#"  (")(")"#];
 pub const SLEEP: Frame3 = [r" (\(\ ", r" ( -.-)", r#" o_(")(")"#];
 pub const PANIC_A: Frame3 = [r"  \\//", r" ( O_O)!!", r#" o_(")(")"#];
 pub const PANIC_B: Frame3 = [r"  //\\", r" ( O_O)!!", r#" o_(")(")"#];
+pub const WORRIED_A: Frame3 = [r" (\(\ ", r" ( •~•)", r#" o_(")(")"#];
+pub const WORRIED_B: Frame3 = [r" (\(\ '", r" ( •~•)", r#" o_(")(")"#];
 pub const SAD: Frame3 = [r" (\(\ ", r" ( ;_;)", r#" o_(")(")"#];
-pub const DIG_A: Frame3 = [r"  (\(\", r" (>.< )", r#"  (")(")~"#];
-pub const DIG_B: Frame3 = [r"  /)/)", r" ( >.<)", r#" (")(")≈"#];
 pub const WAVE_A: Frame3 = [r" (\(\  ", r" ( ^.^)/", r#" o_(")(")"#];
 pub const WAVE_B: Frame3 = [r" (\(\  ", r" ( ^.^)_", r#" o_(")(")"#];
 pub const DANCE_A: Frame3 = [r"  (\(\", r#"\( ^o^)"#, r#"  (")(")/"#];
 pub const DANCE_B: Frame3 = [r" /)/)", r" (^o^ )/", r#"\(")(")"#];
+pub const FIREFIGHTER_THROW: Frame3 = [r" (\(\ ", r" (>.<)", r#" o_(")(")"#];
+pub const PHOENIX_UP: [&str; 5] = [
+    r"\\\\         ////",
+    r" \\\\   ^   //// ",
+    r"   \\\ (o) ///   ",
+    r"      ~/V\~      ",
+    r"       ' '       ",
+];
+pub const PHOENIX_DOWN: [&str; 5] = [
+    r"        ^        ",
+    r"  ____ (o) ____  ",
+    r" ///\\ /V\ //\\\ ",
+    r"///    ' '    \\\",
+    r"                 ",
+];
 pub const RUN_A: Frame3 = [r" /)/)", r" (•.• )", r#"(")(")~"#];
 pub const RUN_B: Frame3 = [r" /)/)", r" (•.• )", r#" (")(") ~"#];
 

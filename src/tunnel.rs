@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::LazyLock;
@@ -17,8 +18,12 @@ static TUNNEL_URL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"https://[a-z0-9]+(?:-[a-z0-9]+)+\.trycloudflare\.com").unwrap());
 
 const URL_TIMEOUT: Duration = Duration::from_secs(45);
-const DNS_SERVER: &str = "1.1.1.1:53";
-const DNS_ATTEMPTS: u32 = 90;
+// One of Cloudflare's name servers for trycloudflare.com, and a resolver in
+// case its address cannot be found.
+const AUTHORITY: &str = "kevin.ns.cloudflare.com:53";
+const RESOLVER: &str = "1.1.1.1:53";
+const DNS_EVERY: Duration = Duration::from_millis(500);
+const DNS_ATTEMPTS: u32 = 180;
 const DNS_TIMEOUT: Duration = Duration::from_secs(2);
 const LOG_TAIL: usize = 12;
 
@@ -75,6 +80,13 @@ pub async fn open(cloudflared: &Path, proxy_port: u16, tx: &Tx) -> Result<Tunnel
     .await;
     let Ok(Some(url)) = found else {
         let _ = child.start_kill();
+        if tail.iter().any(|line| line.contains("status 429")) {
+            return Err(Failure::new(
+                EXIT_TUNNEL_FAILED,
+                "Cloudflare hands out a limited number of new links in a short time, \
+                 and this computer reached it. Wait a few minutes, then try again.",
+            ));
+        }
         let start = tail.len().saturating_sub(LOG_TAIL);
         let log = tail[start..].join("\n");
         return Err(Failure::new(
@@ -100,26 +112,36 @@ pub async fn open(cloudflared: &Path, proxy_port: u16, tx: &Tx) -> Result<Tunnel
     Ok(Tunnel { child, url })
 }
 
-/// A new tunnel name takes a few seconds to exist, and a lookup made before that
-/// is cached as "not found" for minutes by the local resolver. Ask 1.1.1.1
-/// directly and report once the name resolves.
+/// A new tunnel name takes a few seconds to exist, and a resolver asked
+/// before that keeps "not found" for the zone's 60 s negative TTL. Cloudflare's
+/// own name server has no such memory: ask it, and report once the name exists.
 pub async fn wait_dns(host: &str, tx: &Tx) -> bool {
+    let server = authority().await;
     for attempt in 1..=DNS_ATTEMPTS {
         let _ = tx.send(Event::DnsAttempt(attempt));
-        if resolves(host).await {
+        if resolves(host, server).await {
             return true;
         }
-        sleep(Duration::from_secs(1)).await;
+        sleep(DNS_EVERY).await;
     }
     false
 }
 
-async fn resolves(host: &str) -> bool {
+async fn authority() -> SocketAddr {
+    let found = timeout(DNS_TIMEOUT, tokio::net::lookup_host(AUTHORITY)).await;
+    found
+        .ok()
+        .and_then(Result::ok)
+        .and_then(|mut addresses| addresses.find(SocketAddr::is_ipv4))
+        .unwrap_or_else(|| RESOLVER.parse().expect("a socket address"))
+}
+
+async fn resolves(host: &str, server: SocketAddr) -> bool {
     let Ok(socket) = UdpSocket::bind("0.0.0.0:0").await else {
         return false;
     };
     let query = dns_query(host);
-    if socket.send_to(&query, DNS_SERVER).await.is_err() {
+    if socket.send_to(&query, server).await.is_err() {
         return false;
     }
     let mut answer = [0u8; 512];

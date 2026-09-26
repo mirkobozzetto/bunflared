@@ -1,6 +1,6 @@
 # bunflared
 
-![bunflared sharing a frontend and its API: digging the tunnel, going live, live traffic, QR code, session recap](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/dashboard.gif)
+![bunflared: the tunnel dug in flames, a client opens the link, a chat both ways and a reaction, cut between the browser and the terminal](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/dashboard.gif)
 
 `bunflared 5173 3000` puts your local app on a temporary
 `https://<words>.trycloudflare.com` link, through a Cloudflare quick tunnel.
@@ -13,10 +13,15 @@ and `http://localhost:<port>` inside your pages and scripts is rewritten to
 match. WebSockets pass through, so hot reload keeps working for the person on
 the other end.
 
-And it is a show. A bunny digs the tunnel while DNS catches up, the link lands
-in a burst of confetti, every request flies across a traffic lane, the bunny
-naps when nobody visits and panics on a 5xx. There are achievements. There are
-secrets.
+And it is a show. The screen catches fire while the tunnel opens, meteors
+crash into the flames, a firefighter bunny tries his best, and a phoenix rises
+out of the fire carrying your link. Then every request flies across a traffic
+lane, the bunny naps when nobody visits and panics on a 5xx. There are
+achievements. There are secrets.
+
+And it is a live session with the people on the link: chat with them, send
+them to the page you just fixed, see where their pointer is, get their
+reactions and their notes pinned on the exact element they mean.
 
 ## Install
 
@@ -61,8 +66,17 @@ In the dashboard:
 | --- | --- |
 | `c` | copy the link (it is already in your clipboard) |
 | `o` | open it in your browser |
-| `r` | big QR code, for phones |
+| `r` | big QR code, for phones (it flashes when already on screen) |
 | `f` | fireworks |
+| `↑` `↓` | pick a visitor; commands then go to them only |
+| `Tab` | switch between the visitors and the requests |
+| `Esc` | pick nobody: commands go to everyone again |
+| `m` | message the visitor, or everyone |
+| `g` | send them to a page (the pages already seen are offered) |
+| `R` | reload their page, after a fix |
+| `e` | send them a reaction |
+| `Enter` | on a request: its headers and bodies |
+| `p` | replay the picked request to your local server |
 | `?` | help |
 | `q` | stop sharing |
 
@@ -76,12 +90,47 @@ small bunny page that retries by itself.
 Every shared page gets a small **✎ Feedback** button. Your client writes a
 remark, a screenshot of the page is attached (or they paste their own), and it
 lands in `bunflared-feedback/`, in the folder you ran bunflared from: one
-Markdown file per note, the image next to it. That folder ignores itself in
-git, so client notes never end up in a commit. Hand it to your coding agent:
-"read the feedback and fix what they found".
+Markdown file per note, the image next to it. With **Point at it** they click
+the element they mean first: the note records its CSS selector, its text and
+its position, and the screenshot shows it outlined.
+
+![A note pinned on the pay button: the element's selector, and a screenshot of the page to send with it](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/note.png)
+
+That folder ignores itself
+in git, so client notes never end up in a commit. Hand it to your coding
+agent: "read the feedback and fix what they found".
 
 Meanwhile the dashboard shows who is on which page, whether their tab is in
 front, how long they have been idle and how many times they clicked.
+
+## Live session
+
+Each page holds a live connection to the dashboard, and reconnects by itself.
+The GIF at the top is one: a message from the terminal, the answer from the
+page, a reaction.
+
+- **Chat**: `m` opens a message box. The message pops up on their page, they
+  answer from it, and the answer lands in the chat panel and as a toast.
+- **Drive the demo**: `g` sends them to a page, `R` reloads it.
+- **Radar**: pick a visitor and the radar draws their pointer on an outline of
+  their screen. Their page shows a small "Live" pill while it is followed, and
+  nothing is sent while the pointer rests.
+
+![Driving the demo: pick a visitor, their page says it is followed, the radar draws their pointer, g sends them to the checkout](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/drive.gif)
+
+- **Reactions**: 👍 🔥 😍 😕 next to the feedback button. Each one has its own
+  show in the dashboard, confetti, fireworks, hearts or a worried bunny, and a
+  counter. `e` sends one back.
+- **Inspector**: `Tab` to the requests, pick one, `Enter` shows its headers
+  and the start of its bodies, `p` replays it to your local server and shows
+  the new status next to the old one.
+
+![The inspector: a 500 makes the log glitch, Enter opens its headers and bodies, p replays it](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/inspect.gif)
+
+The chat, the reactions and a link to every note are kept in one
+`session_<date>.md` next to the notes, so the whole conversation is there for
+you or your coding agent afterwards. The widget adapts to phones and follows
+the page's light or dark look.
 
 Tell the people you share with that their visit is followed. `--no-widget`
 leaves the pages untouched. The screenshot library is loaded from jsDelivr
@@ -100,9 +149,13 @@ bunflared ls --json
 bunflared down 4242             # or: bunflared down --all
 ```
 
+The feedback button stays on the pages of a detached share: you can leave
+notes on your app while your agent works, and it reads them in
+`bunflared-feedback/`.
+
 ### Teach your agents
 
-`bunflared agents` writes a five-line note into the global instructions of
+`bunflared agents` writes a short note into the global instructions of
 every coding agent it finds, so any session knows the command without being
 told:
 
@@ -133,6 +186,10 @@ npx skills add mirkobozzetto/bunflared -g
 - Quick tunnels allow 200 requests in flight and do not carry Server-Sent
   Events ([Cloudflare docs](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)).
 - Quick tunnels refuse to start while `~/.cloudflared/config.yaml` exists.
+- Cloudflare hands out a limited number of new quick links in a short time.
+  Past it, bunflared says so: wait a few minutes.
+- The inspector keeps the first 32 KiB of each body, in memory, for the last
+  200 requests. A request with a bigger body cannot be replayed.
 - Tested by hand on macOS. The Linux and Windows builds compile in CI but
   have not been tried by hand yet.
 
