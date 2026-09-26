@@ -54,6 +54,7 @@
   const host = document.createElement("bunflared-feedback");
   const root = host.attachShadow({ mode: "open" });
   const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  const phone = matchMedia("(pointer: coarse)").matches;
   root.innerHTML = `
     <style>
       :host { all: initial; position: fixed; right: 16px; bottom: 16px; z-index: 2147483647;
@@ -97,11 +98,6 @@
       }
       @keyframes fade { to { opacity: 0; } }
       /* 16px keeps iOS from zooming into the page when a field gets focus. */
-      @media (pointer: coarse) {
-        textarea, input { font-size: 16px; }
-        .hint { display: none; }
-        .chat .hide { padding: 6px 12px; }
-      }
       textarea { font: inherit; width: 100%; box-sizing: border-box; border-radius: 8px;
         padding: 8px; border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); resize: vertical; }
       label { display: flex; gap: 6px; align-items: center; font-size: 13px; }
@@ -116,6 +112,16 @@
       .hint { margin-right: auto; font-size: 12px; opacity: 0.6; }
       .send, .answer { background: #ff79c6; color: #1f2430; font-weight: 600; }
       .close { background: transparent; color: inherit; }
+      /* On a phone the note stays small: no title, a thumbnail, no keyboard
+         until the visitor taps the field. */
+      @media (pointer: coarse) {
+        textarea, input { font-size: 16px; }
+        .hint, .note > strong { display: none; }
+        .card { padding: 12px; gap: 8px; }
+        figure img { max-height: 64px; }
+        .status:empty { display: none; }
+        .chat .hide { padding: 6px 12px; }
+      }
     </style>
     <p class="watch" hidden>Live: the developer sees your pointer</p>
     <section class="card chat" hidden>
@@ -137,7 +143,7 @@
     </div>
     <form class="card note" hidden>
       <strong>What should change?</strong>
-      <textarea rows="4" placeholder="One remark at a time. Paste an image to attach it."></textarea>
+      <textarea rows="${phone ? 2 : 4}" placeholder="${phone ? "What should change?" : "One remark at a time. Paste an image to attach it."}"></textarea>
       <label><input type="checkbox" checked> Attach a screenshot of this page</label>
       <figure hidden>
         <a target="_blank" rel="noopener" title="Open it in a new tab"><img alt="Image sent with the note"></a>
@@ -230,7 +236,7 @@
     form.hidden = !visible;
     bar.hidden = visible;
     if (!visible) return;
-    textarea.focus();
+    if (!phone) textarea.focus();
     if (checkbox.checked && !image) retake();
   };
   open.addEventListener("click", () => toggle(true));
@@ -277,7 +283,7 @@
       return;
     }
     textarea.value = "";
-    textarea.focus();
+    if (!phone) textarea.focus();
     status.textContent = shot ? "Sent with its image. Anything else?" : "Sent. Anything else?";
     // The next note deserves a fresh picture of the page.
     if (checkbox.checked) {
