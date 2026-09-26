@@ -16,7 +16,7 @@ pub const EXIT_NO_CLOUDFLARED: i32 = 3;
 pub const EXIT_PORT_DOWN: i32 = 4;
 pub const EXIT_CONFIG_YAML: i32 = 5;
 pub const EXIT_TUNNEL_FAILED: i32 = 6;
-const EXIT_HANGUP: i32 = 129;
+pub const EXIT_HANGUP: i32 = 129;
 
 const PORT_TIMEOUT: Duration = Duration::from_secs(3);
 const HEALTH_EVERY: Duration = Duration::from_secs(3);

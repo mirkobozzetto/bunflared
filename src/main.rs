@@ -186,9 +186,13 @@ fn share(ports: Vec<u16>, theme: Option<tui::Theme>, feedback: Option<std::path:
         runtime: runtime.handle().clone(),
         tx: tx.clone(),
     };
+    let dashboard = theme.is_some();
     let backend = runtime.spawn(async move {
         let result = share::run(&shared, &tx, stop_rx, feedback, backend_hub).await;
         let _ = tx.send(Event::Done(result));
+        if dashboard {
+            tokio::spawn(leave_on_signal());
+        }
     });
 
     let code = match theme {
@@ -201,6 +205,17 @@ fn share(ports: Vec<u16>, theme: Option<tui::Theme>, feedback: Option<std::path:
         let _ = tokio::time::timeout(SHUTDOWN_TIMEOUT, backend).await;
     });
     code
+}
+
+/// The share is gone but the dashboard can still be on screen, playing its
+/// goodbye or showing a failure. Its input loop spins on a dead tty without
+/// ever returning, so a signal from now on ends the process from here.
+async fn leave_on_signal() {
+    let hung_up = os::quit().await;
+    if !hung_up {
+        ratatui::restore();
+    }
+    std::process::exit(if hung_up { share::EXIT_HANGUP } else { 0 });
 }
 
 // Writes ignore errors: a detached share outlives the pipe it was started with.
