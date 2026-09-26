@@ -16,8 +16,9 @@ It prints one JSON line with the public `url` once the link works: give that
 to the user. The first port is served at `/`, the others under
 `/_port/<port>`. `bunflared ls --json` lists shares, `bunflared down <id>`
 stops one. Notes visitors leave with the page's feedback button land in
-`bunflared-feedback/` in that folder, Markdown with screenshots. Everything
-else: `bunflared --help`.
+`bunflared-feedback/` in that folder, Markdown with screenshots and the element
+they pointed at; `session_<date>.md` there keeps the chat and the reactions.
+Everything else: `bunflared --help`.
 ";
 
 // omp loads a rule into every session only when it says so.

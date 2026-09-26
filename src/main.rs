@@ -30,8 +30,11 @@ const AFTER_HELP: &str = r#"Examples:
   bunflared down <id> | --all     stop shares
   bunflared agents                teach your coding agents to use bunflared
 
-In a terminal you get the animated dashboard. Otherwise, or with --json, the
-ready line is one JSON object on stdout:
+In a terminal you get the animated dashboard: ? lists its keys. m messages the
+visitors, g sends them to a page, R reloads it, Enter on a request shows it and
+p replays it. Notes, chat and reactions are saved in bunflared-feedback/.
+
+Otherwise, or with --json, the ready line is one JSON object on stdout:
   {"id":"4242","pid":4242,"tunnel_pid":4243,"url":"https://....trycloudflare.com",
    "routes":{"/":5173,"/_port/3000":3000},"started_at":1790000000}
 and a failure is one JSON object on stderr: {"error":"...","code":N}.
@@ -74,7 +77,7 @@ struct Cli {
     #[arg(long)]
     calm: bool,
 
-    /// Leave the pages as they are: no feedback button, no live presence.
+    /// Leave the pages as they are: no feedback button, no live session.
     #[arg(long)]
     no_widget: bool,
 
