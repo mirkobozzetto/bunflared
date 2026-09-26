@@ -65,7 +65,7 @@
       .open { background: #1f2430; color: #fff; box-shadow: 0 4px 14px rgb(0 0 0 / 25%); }
       .card { width: min(320px, calc(var(--room, 100vw) - 32px)); padding: 14px; border-radius: 14px; box-sizing: border-box;
         background: Canvas; color: CanvasText; box-shadow: 0 8px 30px rgb(0 0 0 / 30%);
-        display: grid; gap: 10px; }
+        display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
       .chat header { display: flex; justify-content: space-between; align-items: center; }
       .chat .hide { padding: 2px 8px; background: transparent; color: inherit; }
       .thread { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px;
