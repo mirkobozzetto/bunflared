@@ -1,5 +1,6 @@
 // bunflared companion, injected into shared pages: tells the dashboard who is
-// on which page, and adds a feedback button whose notes land in the project.
+// on which page, adds a feedback button whose notes land in the project, and
+// keeps a live channel open so the dashboard can drive the demo.
 (() => {
   if (window.__bunflared) return;
   window.__bunflared = true;
@@ -7,6 +8,8 @@
   const BASE = "/_bunflared";
   const SCREENSHOT_LIB = "https://cdn.jsdelivr.net/npm/modern-screenshot@4.7.0/+esm";
   const PING_EVERY_MS = 5000;
+  const RETRY_MIN_MS = 1000;
+  const RETRY_MAX_MS = 30000;
 
   const sid = sessionStorage.getItem("bunflared-sid") || Math.random().toString(36).slice(2, 10);
   sessionStorage.setItem("bunflared-sid", sid);
@@ -203,6 +206,37 @@
       });
     }
   });
+
+  // Presence above does not depend on this channel: a page whose policy
+  // blocks it keeps reporting, it just cannot be driven.
+  const handlers = {
+    go: ({ path }) => {
+      const target = new URL(path, location.origin);
+      if (target.origin === location.origin) location.assign(target);
+    },
+    reload: () => location.reload(),
+  };
+  let retry = RETRY_MIN_MS;
+  const connect = () => {
+    let socket;
+    try {
+      const scheme = location.protocol === "https:" ? "wss" : "ws";
+      socket = new WebSocket(`${scheme}://${location.host}${BASE}/live?sid=${sid}`);
+    } catch {
+      return;
+    }
+    socket.addEventListener("open", () => { retry = RETRY_MIN_MS; });
+    socket.addEventListener("message", (event) => {
+      let message;
+      try { message = JSON.parse(event.data); } catch { return; }
+      if (Object.hasOwn(handlers, message.type)) handlers[message.type](message);
+    });
+    socket.addEventListener("close", () => {
+      setTimeout(connect, retry);
+      retry = Math.min(retry * 2, RETRY_MAX_MS);
+    });
+  };
+  connect();
 
   document.body.append(host);
 })();

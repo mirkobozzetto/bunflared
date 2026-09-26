@@ -18,6 +18,7 @@ use hyper_util::rt::TokioIo;
 use regex::{Captures, Regex};
 use tokio::net::{TcpListener, TcpStream};
 
+use crate::live::Hub;
 use crate::share::{Event, Hit, Tx};
 use crate::widget;
 
@@ -47,6 +48,7 @@ struct Ctx {
     tx: Tx,
     /// Where feedback lands; `None` keeps the widget out of the pages.
     feedback: Option<PathBuf>,
+    hub: Arc<Hub>,
 }
 
 pub fn mount(port: u16) -> String {
@@ -59,7 +61,12 @@ pub fn routes(ports: &[u16]) -> BTreeMap<String, u16> {
     routes
 }
 
-pub async fn start(ports: &[u16], tx: Tx, feedback: Option<PathBuf>) -> std::io::Result<u16> {
+pub async fn start(
+    ports: &[u16],
+    tx: Tx,
+    feedback: Option<PathBuf>,
+    hub: Arc<Hub>,
+) -> std::io::Result<u16> {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     let port = listener.local_addr()?.port();
     let ctx = Arc::new(Ctx {
@@ -67,6 +74,7 @@ pub async fn start(ports: &[u16], tx: Tx, feedback: Option<PathBuf>) -> std::io:
         others: ports[1..].to_vec(),
         tx,
         feedback,
+        hub,
     });
     tokio::spawn(async move {
         loop {
@@ -154,7 +162,7 @@ async fn handle(
     if let Some(folder) = &ctx.feedback
         && request.uri().path().starts_with(widget::PREFIX)
     {
-        return Ok(widget::handle(request, folder, &ctx.tx).await);
+        return Ok(widget::handle(request, folder, &ctx.tx, &ctx.hub).await);
     }
     let started = Instant::now();
     let (port, path) = ctx.target(request.uri());

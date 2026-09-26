@@ -1,6 +1,7 @@
 mod agents;
 mod clipboard;
 mod cloudflared;
+mod live;
 mod os;
 mod proxy;
 mod share;
@@ -173,14 +174,16 @@ fn share(ports: Vec<u16>, theme: Option<tui::Theme>, feedback: Option<std::path:
     let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
     let (tx, rx) = mpsc::channel();
     let (stop, stop_rx) = watch::channel(false);
+    let hub = std::sync::Arc::new(live::Hub::default());
     let shared = ports.clone();
+    let backend_hub = hub.clone();
     let backend = runtime.spawn(async move {
-        let result = share::run(&shared, &tx, stop_rx, feedback).await;
+        let result = share::run(&shared, &tx, stop_rx, feedback, backend_hub).await;
         let _ = tx.send(Event::Done(result));
     });
 
     let code = match theme {
-        Some(theme) => tui::run(rx, &stop, &ports, theme),
+        Some(theme) => tui::run(rx, &stop, &ports, theme, hub),
         None => print_json(rx),
     };
 

@@ -25,11 +25,11 @@ each other and can run in one `ship` pass.
 
 Closes: AC1, AC2, AC3, AC4
 
-- [ ] each widget page keeps a reconnecting live connection to the dashboard
-- [ ] presence still works when that connection cannot open
-- [ ] visitors are selectable, `Tab` switches panels, `Esc` clears
-- [ ] `g` sends the selected visitor, or everyone, to a path
-- [ ] `R` reloads the selected visitor's page, or every page
+- [x] each widget page keeps a reconnecting live connection to the dashboard
+- [x] presence still works when that connection cannot open
+- [x] visitors are selectable, `Tab` switches panels, `Esc` clears
+- [x] `g` sends the selected visitor, or everyone, to a path
+- [x] `R` reloads the selected visitor's page, or every page
 
 ## T02 - Chat both ways
 

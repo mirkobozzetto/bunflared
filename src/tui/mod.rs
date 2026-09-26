@@ -4,6 +4,7 @@ mod fx;
 mod scenes;
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
@@ -16,6 +17,7 @@ use ratatui::style::{Color, Style};
 use tokio::sync::watch;
 
 use crate::clipboard;
+use crate::live::{Command, Hub};
 use crate::proxy::mount;
 use crate::share::{Event, Failure, Hit};
 use crate::state::{Record, uptime};
@@ -34,6 +36,8 @@ const MARATHON: f32 = 3600.0;
 const STAMPEDE_PRESSES: usize = 5;
 const STAMPEDE_WINDOW: Duration = Duration::from_millis(1500);
 const PYRO: u32 = 10;
+const PAGES_KEEP: usize = 20;
+const SUGGESTIONS: usize = 5;
 // No command key in it, or typing it would copy, open or quit.
 const CARROT_WORD: &str = "yum";
 const FAST_FRAME: Duration = Duration::from_millis(33);
@@ -110,6 +114,8 @@ pub struct PortState {
 pub struct Row {
     pub hit: Hit,
     pub clock: String,
+    /// Its rank since the start, a key that survives new rows.
+    pub n: u32,
 }
 
 pub struct Sprite {
@@ -136,6 +142,25 @@ pub struct Runner {
 pub struct Session {
     pub presence: Presence,
     pub seen: Instant,
+    pub first: Instant,
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum Focus {
+    Visitors,
+    Log,
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum Ask {
+    Go,
+}
+
+/// A text box open over the dashboard: while it is, keys are text.
+pub struct Prompt {
+    pub ask: Ask,
+    pub text: String,
+    pub pick: Option<usize>,
 }
 
 pub struct Qr {
@@ -183,6 +208,14 @@ pub struct App {
     pub unlocked: Vec<&'static art::Achievement>,
     pub sessions: HashMap<String, Session>,
     pub feedback: u32,
+    pub hub: Arc<Hub>,
+    pub focus: Option<Focus>,
+    /// The visitor that commands go to; everyone when `None`.
+    pub selected: Option<String>,
+    pub picked: Option<u32>,
+    pub prompt: Option<Prompt>,
+    /// Pages the visitors were on, the most recent first.
+    pub pages: Vec<String>,
 
     pub disco: bool,
     pub qr: bool,
@@ -196,9 +229,15 @@ pub struct App {
     exit: Option<i32>,
 }
 
-pub fn run(rx: Receiver<Event>, stop: &watch::Sender<bool>, ports: &[u16], theme: Theme) -> i32 {
+pub fn run(
+    rx: Receiver<Event>,
+    stop: &watch::Sender<bool>,
+    ports: &[u16],
+    theme: Theme,
+    hub: Arc<Hub>,
+) -> i32 {
     let mut terminal = ratatui::init();
-    let mut app = App::new(ports, theme);
+    let mut app = App::new(ports, theme, hub);
     let code = loop {
         let now = Instant::now();
         while let Ok(event) = rx.try_recv() {
@@ -225,7 +264,7 @@ pub fn run(rx: Receiver<Event>, stop: &watch::Sender<bool>, ports: &[u16], theme
 }
 
 impl App {
-    fn new(ports: &[u16], theme: Theme) -> Self {
+    fn new(ports: &[u16], theme: Theme, hub: Arc<Hub>) -> Self {
         let now = Instant::now();
         let ports = ports
             .iter()
@@ -276,6 +315,12 @@ impl App {
             unlocked: Vec::new(),
             sessions: HashMap::new(),
             feedback: 0,
+            hub,
+            focus: None,
+            selected: None,
+            picked: None,
+            prompt: None,
+            pages: Vec::new(),
             disco: false,
             qr: false,
             help: false,
@@ -405,9 +450,14 @@ impl App {
             }
             Event::Request(hit) => self.on_hit(hit),
             Event::Presence(presence) => {
-                let seen = now;
-                self.sessions
-                    .insert(presence.sid.clone(), Session { presence, seen });
+                self.remember(&presence.page);
+                let first = self.sessions.get(&presence.sid).map_or(now, |s| s.first);
+                let session = Session {
+                    presence,
+                    seen: now,
+                    first,
+                };
+                self.sessions.insert(session.presence.sid.clone(), session);
             }
             Event::Feedback(note) => {
                 self.feedback += 1;
@@ -510,6 +560,7 @@ impl App {
         self.rows.push_front(Row {
             hit,
             clock: clock(),
+            n: self.total,
         });
         self.rows.truncate(LOG_KEEP);
     }
@@ -574,6 +625,9 @@ impl App {
     fn on_key(&mut self, key: KeyEvent, stop: &watch::Sender<bool>) {
         let ctrl_c =
             key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL);
+        if self.prompt.is_some() && self.phase == Phase::Dashboard && !ctrl_c {
+            return self.on_prompt_key(key);
+        }
         let quit = ctrl_c || key.code == KeyCode::Char('q');
         match self.phase {
             Phase::Goodbye => {
@@ -590,6 +644,7 @@ impl App {
                 self.quitting = Some(self.now);
                 self.help = false;
                 self.qr = false;
+                self.prompt = None;
                 let _ = stop.send(true);
                 self.go(Phase::Goodbye);
                 return;
@@ -620,10 +675,34 @@ impl App {
             }
         }
 
+        let dashboard = self.phase == Phase::Dashboard;
         match key.code {
-            KeyCode::Esc => {
+            KeyCode::Esc if self.help || self.qr => {
                 self.help = false;
                 self.qr = false;
+            }
+            KeyCode::Esc => {
+                self.focus = None;
+                self.selected = None;
+                self.picked = None;
+            }
+            KeyCode::Tab if dashboard => {
+                self.focus = Some(match self.focus {
+                    Some(Focus::Visitors) => Focus::Log,
+                    _ => Focus::Visitors,
+                });
+            }
+            KeyCode::Up | KeyCode::Down if dashboard => self.step(key.code == KeyCode::Down),
+            KeyCode::Char('g') if dashboard => {
+                self.prompt = Some(Prompt {
+                    ask: Ask::Go,
+                    text: String::new(),
+                    pick: None,
+                });
+            }
+            KeyCode::Char('R') if dashboard => {
+                let reached = self.hub.send(self.selected.as_deref(), &Command::Reload);
+                self.sent("↻ Reload", reached);
             }
             KeyCode::Char('?') => self.help = !self.help,
             KeyCode::Char('r') if self.qr_code.is_some() => self.qr = !self.qr,
@@ -673,6 +752,114 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    /// Moves the selection in the focused panel, the visitors by default.
+    fn step(&mut self, down: bool) {
+        match *self.focus.get_or_insert(Focus::Visitors) {
+            Focus::Visitors => {
+                let sids: Vec<String> = dashboard::roster(self)
+                    .iter()
+                    .map(|s| s.presence.sid.clone())
+                    .collect();
+                self.selected = stepped(&sids, self.selected.as_ref(), down);
+            }
+            Focus::Log => {
+                let ranks: Vec<u32> = self.rows.iter().map(|row| row.n).collect();
+                self.picked = stepped(&ranks, self.picked.as_ref(), down);
+            }
+        }
+    }
+
+    fn on_prompt_key(&mut self, key: KeyEvent) {
+        let count = self
+            .prompt
+            .as_ref()
+            .map_or(0, |prompt| self.suggestions(prompt).len());
+        let Some(prompt) = self.prompt.as_mut() else {
+            return;
+        };
+        match key.code {
+            KeyCode::Esc => self.prompt = None,
+            KeyCode::Enter => {
+                if let Some(prompt) = self.prompt.take() {
+                    self.submit(prompt);
+                }
+            }
+            KeyCode::Backspace => {
+                prompt.text.pop();
+                prompt.pick = None;
+            }
+            KeyCode::Tab | KeyCode::Down if count > 0 => {
+                prompt.pick = Some(prompt.pick.map_or(0, |i| (i + 1) % count));
+            }
+            KeyCode::BackTab | KeyCode::Up if count > 0 => {
+                prompt.pick = Some(prompt.pick.map_or(count - 1, |i| (i + count - 1) % count));
+            }
+            KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                prompt.text.push(ch);
+                prompt.pick = None;
+            }
+            _ => {}
+        }
+    }
+
+    fn submit(&mut self, prompt: Prompt) {
+        match prompt.ask {
+            Ask::Go => {
+                let path = prompt
+                    .pick
+                    .and_then(|i| self.suggestions(&prompt).into_iter().nth(i))
+                    .unwrap_or_else(|| prompt.text.trim().to_string());
+                if path.is_empty() {
+                    return;
+                }
+                let path = if path.starts_with('/') {
+                    path
+                } else {
+                    format!("/{path}")
+                };
+                let command = Command::Go { path: path.clone() };
+                let reached = self.hub.send(self.selected.as_deref(), &command);
+                self.sent(&format!("→ {path}"), reached);
+            }
+        }
+    }
+
+    /// The pages offered under the go box, filtered by what is typed.
+    pub fn suggestions(&self, prompt: &Prompt) -> Vec<String> {
+        if prompt.ask != Ask::Go {
+            return Vec::new();
+        }
+        let text = prompt.text.trim();
+        self.pages
+            .iter()
+            .filter(|page| page.contains(text))
+            .take(SUGGESTIONS)
+            .cloned()
+            .collect()
+    }
+
+    fn remember(&mut self, page: &str) {
+        self.pages.retain(|seen| seen != page);
+        self.pages.insert(0, page.to_string());
+        self.pages.truncate(PAGES_KEEP);
+    }
+
+    /// Who commands go to, for titles and toasts.
+    pub fn target(&self) -> String {
+        self.selected
+            .as_ref()
+            .and_then(|sid| self.sessions.get(sid))
+            .map_or_else(|| "everyone".into(), |s| s.presence.device.clone())
+    }
+
+    fn sent(&mut self, title: &str, reached: usize) {
+        let body = match reached {
+            0 => "No page is connected live.".to_string(),
+            n => format!("{}, {}.", self.target(), plural(n, "page")),
+        };
+        self.toast(title, body, false);
     }
 
     fn stampede(&mut self) {
@@ -764,6 +951,19 @@ impl App {
 
 pub fn plural(count: usize, word: &str) -> String {
     format!("{count} {word}{}", if count == 1 { "" } else { "s" })
+}
+
+/// The next item up or down from `current`, entering at either end.
+fn stepped<T: PartialEq + Clone>(items: &[T], current: Option<&T>, down: bool) -> Option<T> {
+    let last = items.len().checked_sub(1)?;
+    let at = current.and_then(|c| items.iter().position(|item| item == c));
+    let next = match (at, down) {
+        (None, true) => 0,
+        (None, false) => last,
+        (Some(i), true) => (i + 1).min(last),
+        (Some(i), false) => i.saturating_sub(1),
+    };
+    Some(items[next].clone())
 }
 
 fn qr(url: &str) -> Option<Qr> {

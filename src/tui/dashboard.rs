@@ -9,7 +9,7 @@ use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 
 use super::art::{self, Frame3};
 use super::fx::{self, put};
-use super::{App, LANE_TRIP, Qr, Session, Theme, plural};
+use super::{App, Ask, Focus, LANE_TRIP, Qr, Session, Theme, plural};
 
 const MIN_WIDTH: u16 = 64;
 const MIN_HEIGHT: u16 = 20;
@@ -44,6 +44,29 @@ const HELP: [&str; 9] = [
 
 fn hms(secs: u64) -> String {
     format!("{:02}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60)
+}
+
+/// A panel whose border shows it has the keyboard focus.
+fn focusable<'a>(app: &App, title: &str, focus: Focus) -> Block<'a> {
+    let block = panel(app, title);
+    if app.focus == Some(focus) {
+        block.border_style(app.theme.fg(fx::PINK))
+    } else {
+        block
+    }
+}
+
+/// The first line to draw so that the selected one stays in view.
+fn scroll(selected: Option<usize>, height: usize) -> usize {
+    selected.map_or(0, |i| (i + 1).saturating_sub(height))
+}
+
+fn highlight(line: Line<'_>, selected: bool) -> Line<'_> {
+    if selected {
+        line.style(Style::new().add_modifier(Modifier::REVERSED))
+    } else {
+        line
+    }
 }
 
 fn panel<'a>(app: &App, title: &str) -> Block<'a> {
@@ -470,6 +493,13 @@ fn presence(app: &App, session: &Session) -> (&'static str, String, Color) {
     }
 }
 
+/// The visitors in the order they are listed: by arrival, those who left last.
+pub fn roster(app: &App) -> Vec<&Session> {
+    let mut sessions: Vec<&Session> = app.sessions.values().collect();
+    sessions.sort_by_key(|s| (presence(app, s).1 == "left", s.first));
+    sessions
+}
+
 pub fn here(app: &App) -> usize {
     app.sessions
         .values()
@@ -478,7 +508,11 @@ pub fn here(app: &App) -> usize {
 }
 
 fn draw_visitors(app: &App, frame: &mut Frame, area: Rect) {
-    let block = panel(app, &format!("visitors · {} here", here(app)));
+    let block = focusable(
+        app,
+        &format!("visitors · {} here", here(app)),
+        Focus::Visitors,
+    );
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let theme = &app.theme;
@@ -487,15 +521,19 @@ fn draw_visitors(app: &App, frame: &mut Frame, area: Rect) {
         frame.render_widget(Paragraph::new(line), inner);
         return;
     }
-    let mut sessions: Vec<&Session> = app.sessions.values().collect();
-    sessions.sort_by_key(|s| (presence(app, s).1 == "left", std::cmp::Reverse(s.seen)));
+    let sessions = roster(app);
+    let at = sessions
+        .iter()
+        .position(|s| app.selected.as_ref() == Some(&s.presence.sid));
     let lines: Vec<Line> = sessions
         .into_iter()
+        .skip(scroll(at, inner.height as usize))
         .take(inner.height as usize)
         .map(|session| {
             let (dot, state, color) = presence(app, session);
             let p = &session.presence;
-            Line::from(vec![
+            let selected = app.selected.as_ref() == Some(&p.sid);
+            let line = Line::from(vec![
                 Span::styled(format!("{dot} "), theme.fg(color)),
                 Span::styled(format!("{}  ", p.device), theme.fg(fx::FG)),
                 Span::styled(format!("{}  ", p.page), theme.fg(fx::CYAN)),
@@ -504,7 +542,8 @@ fn draw_visitors(app: &App, frame: &mut Frame, area: Rect) {
                     format!("  {}", plural(p.clicks as usize, "click")),
                     theme.fg(fx::DIM),
                 ),
-            ])
+            ]);
+            highlight(line, selected)
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), inner);
@@ -520,7 +559,7 @@ fn status_color(status: u16) -> Color {
 }
 
 fn draw_log(app: &App, frame: &mut Frame, area: Rect) {
-    let block = panel(app, "requests");
+    let block = focusable(app, "requests", Focus::Log);
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let theme = &app.theme;
@@ -539,13 +578,15 @@ fn draw_log(app: &App, frame: &mut Frame, area: Rect) {
         frame.render_widget(Paragraph::new(waiting), middle);
         return;
     }
+    let at = app.rows.iter().position(|row| Some(row.n) == app.picked);
     let lines: Vec<Line> = app
         .rows
         .iter()
+        .skip(scroll(at, inner.height as usize))
         .take(inner.height as usize)
         .map(|row| {
             let hit = &row.hit;
-            Line::from(vec![
+            let line = Line::from(vec![
                 Span::styled(format!("{} ", row.clock), theme.fg(fx::DIM)),
                 Span::styled(format!("{:<7}", hit.method), theme.fg(fx::PURPLE)),
                 Span::styled(
@@ -557,7 +598,8 @@ fn draw_log(app: &App, frame: &mut Frame, area: Rect) {
                 Span::styled(format!("{:>5}ms ", hit.ms), theme.fg(fx::FG)),
                 Span::styled(format!(":{:<5} ", hit.port), theme.fg(fx::DIM)),
                 Span::styled(hit.path.clone(), theme.fg(fx::FG)),
-            ])
+            ]);
+            highlight(line, Some(row.n) == app.picked)
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), inner);
@@ -642,6 +684,42 @@ fn draw_qr(buf: &mut Buffer, theme: &Theme, qr: &Qr, x: i32, y: i32) {
     }
 }
 
+/// The text box of `g`, low on the screen so the panels stay readable.
+fn draw_prompt(app: &App, frame: &mut Frame, area: Rect) {
+    let Some(prompt) = &app.prompt else {
+        return;
+    };
+    let suggestions = app.suggestions(prompt);
+    let (title, hint) = match prompt.ask {
+        Ask::Go => (
+            format!("send {} to", app.target()),
+            " enter send · tab pick · esc cancel ",
+        ),
+    };
+    let width = 60.min(area.width.saturating_sub(2));
+    let height = 3 + suggestions.len() as u16;
+    let x = area.x + (area.width - width) / 2;
+    let y = area.bottom().saturating_sub(height + 2).max(area.y);
+    let rect = Rect::new(x, y, width, height.min(area.height));
+    frame.render_widget(Clear, rect);
+    let block = panel(app, &title)
+        .border_style(app.theme.fg(fx::PINK))
+        .title_bottom(Line::from(hint).right_aligned());
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+    let theme = &app.theme;
+    let mut lines = vec![Line::from(vec![
+        Span::styled("› ", theme.fg(fx::PINK).add_modifier(Modifier::BOLD)),
+        Span::styled(prompt.text.clone(), theme.fg(fx::FG)),
+        Span::styled("▏", theme.fg(fx::PINK)),
+    ])];
+    lines.extend(suggestions.into_iter().enumerate().map(|(i, page)| {
+        let line = Line::from(Span::styled(format!("  {page}"), theme.fg(fx::CYAN)));
+        highlight(line, prompt.pick == Some(i))
+    }));
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
 fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
     let width = width.min(area.width);
     let height = height.min(area.height);
@@ -694,6 +772,7 @@ pub fn overlays(app: &mut App, frame: &mut Frame) {
             inner.inner(ratatui::layout::Margin::new(0, 1)),
         );
     }
+    draw_prompt(app, frame, area);
     for (i, toast) in app.toasts.iter().enumerate() {
         let width = (toast.title.chars().count().max(toast.body.chars().count()) as u16 + 4)
             .min(area.width);

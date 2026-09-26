@@ -4,6 +4,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 
 use bytes::Bytes;
 use http_body_util::{BodyExt, Limited};
@@ -12,6 +13,7 @@ use hyper::header::{self, HeaderValue};
 use hyper::{Method, Request, Response, StatusCode};
 use serde::Deserialize;
 
+use crate::live::{self, Hub};
 use crate::proxy::{Body, full};
 use crate::share::{Event, Tx};
 
@@ -70,7 +72,12 @@ pub fn inject(html: &str) -> String {
     }
 }
 
-pub async fn handle(request: Request<Incoming>, folder: &Path, tx: &Tx) -> Response<Body> {
+pub async fn handle(
+    request: Request<Incoming>,
+    folder: &Path,
+    tx: &Tx,
+    hub: &Arc<Hub>,
+) -> Response<Body> {
     let device = device(
         request
             .headers()
@@ -82,6 +89,7 @@ pub async fn handle(request: Request<Incoming>, folder: &Path, tx: &Tx) -> Respo
     let method = request.method().clone();
     match (method, route.as_str()) {
         (Method::GET, "widget.js") => script(),
+        (Method::GET, "live") => live::accept(request, hub.clone()),
         (Method::POST, "ping") => match read(request, MAX_PING).await {
             Some(body) => {
                 if let Ok(ping) = serde_json::from_slice::<Ping>(&body) {
