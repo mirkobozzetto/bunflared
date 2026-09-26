@@ -1,6 +1,6 @@
 # bunflared
 
-![bunflared sharing a frontend and its API: digging the tunnel, going live, live traffic, QR code, session recap](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/dashboard.gif)
+![bunflared: the tunnel dug in flames, a client opens the link, a chat both ways and a reaction, cut between the browser and the terminal](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/dashboard.gif)
 
 `bunflared 5173 3000` puts your local app on a temporary
 `https://<words>.trycloudflare.com` link, through a Cloudflare quick tunnel.
@@ -92,7 +92,11 @@ remark, a screenshot of the page is attached (or they paste their own), and it
 lands in `bunflared-feedback/`, in the folder you ran bunflared from: one
 Markdown file per note, the image next to it. With **Point at it** they click
 the element they mean first: the note records its CSS selector, its text and
-its position, and the screenshot shows it outlined. That folder ignores itself
+its position, and the screenshot shows it outlined.
+
+![A note pinned on the pay button: the element's selector, and a screenshot of the page to send with it](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/note.png)
+
+That folder ignores itself
 in git, so client notes never end up in a commit. Hand it to your coding
 agent: "read the feedback and fix what they found".
 
@@ -102,6 +106,8 @@ front, how long they have been idle and how many times they clicked.
 ## Live session
 
 Each page holds a live connection to the dashboard, and reconnects by itself.
+The GIF at the top is one: a message from the terminal, the answer from the
+page, a reaction.
 
 - **Chat**: `m` opens a message box. The message pops up on their page, they
   answer from it, and the answer lands in the chat panel and as a toast.
@@ -109,12 +115,17 @@ Each page holds a live connection to the dashboard, and reconnects by itself.
 - **Radar**: pick a visitor and the radar draws their pointer on an outline of
   their screen. Their page shows a small "Live" pill while it is followed, and
   nothing is sent while the pointer rests.
+
+![Driving the demo: pick a visitor, their page says it is followed, the radar draws their pointer, g sends them to the checkout](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/drive.gif)
+
 - **Reactions**: 👍 🔥 😍 😕 next to the feedback button. Each one has its own
   show in the dashboard, confetti, fireworks, hearts or a worried bunny, and a
   counter. `e` sends one back.
 - **Inspector**: `Tab` to the requests, pick one, `Enter` shows its headers
   and the start of its bodies, `p` replays it to your local server and shows
   the new status next to the old one.
+
+![The inspector: a 500 makes the log glitch, Enter opens its headers and bodies, p replays it](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/inspect.gif)
 
 The chat, the reactions and a link to every note are kept in one
 `session_<date>.md` next to the notes, so the whole conversation is there for

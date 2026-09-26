@@ -1,3 +1,4 @@
 /target
 docs/brief/**/trace.md
 .worktrees/
+node_modules/
