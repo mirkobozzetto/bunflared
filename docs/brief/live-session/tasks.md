@@ -44,9 +44,9 @@ Closes: AC5, AC6, AC7
 
 Closes: AC8, AC9
 
-- [ ] the radar shows the selected visitor's pointer on their viewport
-- [ ] nothing is sent while the pointer rests
-- [ ] the page shows a "live" indicator while its pointer is followed
+- [x] the radar shows the selected visitor's pointer on their viewport
+- [x] nothing is sent while the pointer rests
+- [x] the page shows a "live" indicator while its pointer is followed
 
 ## T04 - Reactions
 

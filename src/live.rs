@@ -35,9 +35,17 @@ const KEEPALIVE: Duration = Duration::from_secs(30);
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Command {
-    Go { path: String },
+    Go {
+        path: String,
+    },
     Reload,
-    Chat { text: String },
+    Chat {
+        text: String,
+    },
+    /// The dashboard watches this page's pointer, or stops.
+    Follow {
+        on: bool,
+    },
 }
 
 /// What pages send to the dashboard.
@@ -45,6 +53,17 @@ pub enum Command {
 #[serde(tag = "type", rename_all = "lowercase")]
 enum Incoming {
     Chat { text: String, page: String },
+    Pointer { x: f32, y: f32, w: f32, h: f32 },
+}
+
+/// Where a followed visitor's pointer is, in their viewport.
+#[derive(Debug, Clone)]
+pub struct Pointer {
+    pub sid: String,
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
 }
 
 /// A chat message from a visitor.
@@ -67,6 +86,7 @@ pub struct Hub {
     /// The feedback folder, where the chat transcript goes too.
     folder: Option<PathBuf>,
     transcript: Mutex<Option<PathBuf>>,
+    followed: Mutex<Option<String>>,
 }
 
 impl Hub {
@@ -77,6 +97,22 @@ impl Hub {
             tx,
             folder,
             transcript: Mutex::default(),
+            followed: Mutex::default(),
+        }
+    }
+
+    /// Asks one visitor's pages for their pointer, and the previous one's to stop.
+    pub fn follow(&self, sid: Option<&str>) {
+        let mut followed = self.followed.lock().unwrap();
+        if followed.as_deref() == sid {
+            return;
+        }
+        if let Some(old) = followed.take() {
+            self.send(Some(&old), &Command::Follow { on: false });
+        }
+        if let Some(sid) = sid {
+            self.send(Some(sid), &Command::Follow { on: true });
+            *followed = Some(sid.to_string());
         }
     }
 
@@ -104,10 +140,18 @@ impl Hub {
             .count()
     }
 
-    fn receive(&self, device: &str, message: &str) {
-        let Ok(Incoming::Chat { text, page }) = serde_json::from_str(message) else {
-            return;
-        };
+    fn receive(&self, sid: &str, device: &str, message: &str) {
+        match serde_json::from_str(message) {
+            Ok(Incoming::Chat { text, page }) => self.chat(device, text, page),
+            Ok(Incoming::Pointer { x, y, w, h }) => {
+                let sid = sid.to_string();
+                let _ = self.tx.send(Event::Pointer(Pointer { sid, x, y, w, h }));
+            }
+            Err(_) => {}
+        }
+    }
+
+    fn chat(&self, device: &str, text: String, page: String) {
         let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
         let text: String = text.chars().take(MAX_TEXT).collect();
         let page: String = page.chars().take(MAX_TEXT).collect();
@@ -153,7 +197,17 @@ impl Hub {
         let (mut sink, mut stream) = socket.split();
         let (out, mut outbox) = unbounded_channel();
         let id = self.next.fetch_add(1, Ordering::Relaxed);
-        self.sockets.lock().unwrap().insert(id, Socket { sid, out });
+        // A followed visitor's new page is followed too.
+        if self.followed.lock().unwrap().as_deref() == Some(sid.as_str())
+            && let Ok(text) = serde_json::to_string(&Command::Follow { on: true })
+        {
+            let _ = out.send(text);
+        }
+        let socket = Socket {
+            sid: sid.clone(),
+            out,
+        };
+        self.sockets.lock().unwrap().insert(id, socket);
         let mut keepalive = tokio::time::interval(KEEPALIVE);
         loop {
             let sent = tokio::select! {
@@ -163,7 +217,7 @@ impl Hub {
                 incoming = stream.next() => match incoming {
                     Some(Err(_)) | None => break,
                     Some(Ok(Message::Text(text))) => {
-                        self.receive(&device, &text);
+                        self.receive(&sid, &device, &text);
                         Ok(())
                     }
                     Some(Ok(_)) => Ok(()),

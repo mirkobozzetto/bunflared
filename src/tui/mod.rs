@@ -17,7 +17,7 @@ use ratatui::style::{Color, Style};
 use tokio::sync::watch;
 
 use crate::clipboard;
-use crate::live::{Command, Hub};
+use crate::live::{Command, Hub, Pointer};
 use crate::proxy::mount;
 use crate::share::{Event, Failure, Hit};
 use crate::state::{Record, uptime};
@@ -144,6 +144,7 @@ pub struct Session {
     pub presence: Presence,
     pub seen: Instant,
     pub first: Instant,
+    pub pointer: Option<(Pointer, Instant)>,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -465,11 +466,15 @@ impl App {
             Event::Request(hit) => self.on_hit(hit),
             Event::Presence(presence) => {
                 self.remember(&presence.page);
-                let first = self.sessions.get(&presence.sid).map_or(now, |s| s.first);
+                let (first, pointer) = self
+                    .sessions
+                    .remove(&presence.sid)
+                    .map_or((now, None), |s| (s.first, s.pointer));
                 let session = Session {
                     presence,
                     seen: now,
                     first,
+                    pointer,
                 };
                 self.sessions.insert(session.presence.sid.clone(), session);
             }
@@ -497,6 +502,11 @@ impl App {
                     text: said.text,
                     clock: clock(),
                 });
+            }
+            Event::Pointer(pointer) => {
+                if let Some(session) = self.sessions.get_mut(&pointer.sid) {
+                    session.pointer = Some((pointer, now));
+                }
             }
             Event::PortHealth { port, ok } => {
                 if let Some(state) = self.ports.iter_mut().find(|p| p.port == port) {
@@ -712,7 +722,7 @@ impl App {
             }
             KeyCode::Esc => {
                 self.focus = None;
-                self.selected = None;
+                self.select(None);
                 self.picked = None;
             }
             KeyCode::Tab if dashboard => {
@@ -798,13 +808,20 @@ impl App {
                     .iter()
                     .map(|s| s.presence.sid.clone())
                     .collect();
-                self.selected = stepped(&sids, self.selected.as_ref(), down);
+                let next = stepped(&sids, self.selected.as_ref(), down);
+                self.select(next);
             }
             Focus::Log => {
                 let ranks: Vec<u32> = self.rows.iter().map(|row| row.n).collect();
                 self.picked = stepped(&ranks, self.picked.as_ref(), down);
             }
         }
+    }
+
+    /// The selected visitor is the one whose pointer the radar follows.
+    fn select(&mut self, sid: Option<String>) {
+        self.hub.follow(sid.as_deref());
+        self.selected = sid;
     }
 
     fn on_prompt_key(&mut self, key: KeyEvent) {

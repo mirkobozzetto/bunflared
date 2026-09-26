@@ -11,6 +11,7 @@
   const RETRY_MIN_MS = 1000;
   const RETRY_MAX_MS = 30000;
   const THREAD_KEEP = 30;
+  const POINTER_EVERY_MS = 125;
 
   const sid = sessionStorage.getItem("bunflared-sid") || Math.random().toString(36).slice(2, 10);
   sessionStorage.setItem("bunflared-sid", sid);
@@ -72,8 +73,13 @@
       .reply { display: flex; gap: 6px; }
       .reply input { flex: 1; min-width: 0; font: inherit; padding: 6px 12px; border-radius: 999px;
         border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); }
+      .watch { margin: 0; padding: 4px 12px; border-radius: 999px; font-size: 12px;
+        background: #1f2430; color: #fff; box-shadow: 0 4px 14px rgb(0 0 0 / 25%); }
+      .watch::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px;
+        border-radius: 50%; background: #ff5555; animation: blink 1.2s ease-in-out infinite; }
       @keyframes pop { from { transform: scale(0.8); opacity: 0; } }
-      @media (prefers-reduced-motion: reduce) { .thread li { animation: none; } }
+      @keyframes blink { 50% { opacity: 0.3; } }
+      @media (prefers-reduced-motion: reduce) { .thread li, .watch::before { animation: none; } }
       textarea { font: inherit; width: 100%; box-sizing: border-box; border-radius: 8px;
         padding: 8px; border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); resize: vertical; }
       label { display: flex; gap: 6px; align-items: center; font-size: 13px; }
@@ -88,6 +94,7 @@
       .send, .answer { background: #ff79c6; color: #1f2430; font-weight: 600; }
       .close { background: transparent; color: inherit; }
     </style>
+    <p class="watch" hidden>Live: the developer sees your pointer</p>
     <section class="card chat" hidden>
       <header>
         <strong>From the developer</strong>
@@ -233,7 +240,30 @@
   });
 
   const [chat, thread, reply, answer] = [$(".chat"), $(".thread"), $(".reply"), $(".reply input")];
+  const watch = $(".watch");
   let live = null;
+  const say = (message) => live?.readyState === WebSocket.OPEN && live.send(JSON.stringify(message));
+
+  // Only while followed, at most a few times a second, and never at rest: the
+  // last position of a movement is sent once it settles.
+  let following = false;
+  let latest = null;
+  let pending = null;
+  let sentAt = 0;
+  const sendPointer = () => {
+    pending = null;
+    sentAt = Date.now();
+    if (following) say({ type: "pointer", ...latest });
+  };
+  addEventListener("pointermove", (event) => {
+    if (!following) return;
+    latest = { x: Math.round(event.clientX), y: Math.round(event.clientY), w: innerWidth, h: innerHeight };
+    pending ??= setTimeout(sendPointer, Math.max(0, POINTER_EVERY_MS - (Date.now() - sentAt)));
+  }, { passive: true, capture: true });
+  const follow = (on) => {
+    following = on;
+    watch.hidden = !on;
+  };
   const bubble = (text, mine) => {
     const item = document.createElement("li");
     item.textContent = text;
@@ -251,7 +281,7 @@
       answer.placeholder = "Not connected, try again in a moment.";
       return;
     }
-    live.send(JSON.stringify({ type: "chat", text, page: page() }));
+    say({ type: "chat", text, page: page() });
     bubble(text, true);
     answer.value = "";
   });
@@ -269,6 +299,7 @@
       if (target.origin === location.origin) location.assign(target);
     },
     reload: () => location.reload(),
+    follow: ({ on }) => follow(on),
   };
   let retry = RETRY_MIN_MS;
   const connect = () => {
@@ -290,6 +321,7 @@
     });
     socket.addEventListener("close", () => {
       live = null;
+      follow(false);
       setTimeout(connect, retry);
       retry = Math.min(retry * 2, RETRY_MAX_MS);
     });
