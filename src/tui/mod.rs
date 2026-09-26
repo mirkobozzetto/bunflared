@@ -2,6 +2,7 @@ mod art;
 mod dashboard;
 mod fx;
 mod scenes;
+mod shaders;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -23,7 +24,7 @@ use crate::share::{Event, Failure, Hit};
 use crate::state::{Record, uptime};
 use crate::widget::{self, Presence};
 
-const BOOT: f32 = 1.5;
+const BOOT: f32 = 2.2;
 const LAUNCH: f32 = 3.2;
 const GOODBYE: f32 = 1.6;
 const SNIFF: f32 = 0.35;
@@ -103,6 +104,8 @@ pub enum Phase {
     Digging,
     Launch,
     Dashboard,
+    /// The dashboard fading out, between `q` and the goodbye.
+    Dissolve,
     Goodbye,
     Failed,
 }
@@ -201,6 +204,10 @@ pub struct App {
     pub dt: f32,
     pub rng: fx::Rng,
     pub particles: fx::Particles,
+    pub fire: fx::Fire,
+    pub inferno: fx::Fire,
+    shaders: shaders::Shaders,
+    pub spots: shaders::Spots,
     pub sprites: Vec<Sprite>,
     pub toasts: Vec<Toast>,
     pub runners: Vec<Runner>,
@@ -297,6 +304,7 @@ pub fn run(
 
 impl App {
     fn new(ports: &[u16], theme: Theme, hub: Arc<Hub>, replayer: Replayer) -> Self {
+        let calm = theme.calm;
         let now = Instant::now();
         let ports = ports
             .iter()
@@ -318,6 +326,10 @@ impl App {
             dt: 0.0,
             rng: fx::Rng::seeded(),
             particles: fx::Particles::default(),
+            fire: fx::Fire::default(),
+            inferno: fx::Fire::default(),
+            shaders: shaders::Shaders::new(calm),
+            spots: shaders::Spots::default(),
             sprites: Vec::new(),
             toasts: Vec::new(),
             runners: Vec::new(),
@@ -384,6 +396,9 @@ impl App {
     fn go(&mut self, phase: Phase) {
         self.phase = phase;
         self.phase_at = self.now;
+        if phase == Phase::Dashboard {
+            self.shaders.entry();
+        }
     }
 
     /// Animations need 30 fps; a quiet dashboard is fine at 10.
@@ -395,7 +410,8 @@ impl App {
                 || !self.toasts.is_empty()
                 || !self.runners.is_empty()
                 || self.disco
-                || self.carrots_until.is_some())
+                || self.carrots_until.is_some()
+                || self.shaders.busy())
     }
 
     pub fn live_for(&self) -> u64 {
@@ -489,6 +505,9 @@ impl App {
             Event::Request(hit) => self.on_hit(hit),
             Event::Presence(presence) => {
                 self.remember(&presence.page);
+                if !presence.gone && !self.sessions.contains_key(&presence.sid) {
+                    self.shaders.arrival();
+                }
                 let (first, pointer) = self
                     .sessions
                     .remove(&presence.sid)
@@ -625,6 +644,7 @@ impl App {
         }
         if hit.status >= 500 {
             self.last_error = Some(self.now);
+            self.shaders.crash();
             self.unlock("survivor");
         }
         self.last_hit = Some(self.now);
@@ -673,6 +693,7 @@ impl App {
                 Phase::Launch
             }),
             Phase::Launch if t >= LAUNCH => self.go(Phase::Dashboard),
+            Phase::Dissolve if t * 1000.0 >= shaders::DISSOLVE_MS as f32 => self.go(Phase::Goodbye),
             Phase::Goodbye if calm || t >= GOODBYE => self.exit = Some(0),
             _ => {}
         }
@@ -721,7 +742,7 @@ impl App {
         }
         let quit = ctrl_c || key.code == KeyCode::Char('q');
         match self.phase {
-            Phase::Goodbye => {
+            Phase::Goodbye | Phase::Dissolve => {
                 if quit {
                     self.exit = Some(0);
                 }
@@ -736,8 +757,15 @@ impl App {
                 self.help = false;
                 self.qr = false;
                 self.prompt = None;
+                self.details = None;
                 let _ = stop.send(true);
-                self.go(Phase::Goodbye);
+                let leaving = if self.phase == Phase::Dashboard && !self.theme.calm {
+                    self.shaders.dissolve();
+                    Phase::Dissolve
+                } else {
+                    Phase::Goodbye
+                };
+                self.go(leaving);
                 return;
             }
             Phase::Boot => return self.go(Phase::Preflight),
@@ -751,6 +779,7 @@ impl App {
         }
         if self.keys.iter().eq(KONAMI.iter()) {
             self.disco = !self.disco;
+            self.shaders.disco(self.disco);
             self.keys.clear();
             self.unlock("disco");
         }
@@ -832,7 +861,16 @@ impl App {
                 self.sent("↻ Reload", reached);
             }
             KeyCode::Char('?') => self.help = !self.help,
-            KeyCode::Char('r') if self.qr_code.is_some() => self.qr = !self.qr,
+            // The code already on screen flashes instead of opening twice.
+            KeyCode::Char('r') if self.qr_code.is_some() => {
+                if self.qr || self.spots.qr.is_none() {
+                    self.qr = !self.qr;
+                } else if self.theme.calm {
+                    self.toast("The code is on the right", "Scan it with a phone.", false);
+                } else {
+                    self.shaders.flash_qr();
+                }
+            }
             KeyCode::Char('c') => {
                 if let Some(url) = &self.url {
                     self.copied = clipboard::copy(url);
@@ -1127,15 +1165,19 @@ impl App {
 
     fn render(&mut self, frame: &mut Frame) {
         self.keep_clear = None;
+        self.spots = shaders::Spots::default();
         match self.phase {
             Phase::Boot => scenes::boot(self, frame),
             Phase::Preflight => scenes::preflight(self, frame),
             Phase::Digging => scenes::digging(self, frame),
             Phase::Launch => scenes::launch(self, frame),
-            Phase::Dashboard => dashboard::render(self, frame),
+            Phase::Dashboard | Phase::Dissolve => dashboard::render(self, frame),
             Phase::Goodbye => scenes::goodbye(self, frame),
             Phase::Failed => scenes::failed(self, frame),
         }
+        let area = frame.area();
+        self.shaders
+            .render(frame.buffer_mut(), area, &self.spots, self.dt);
         if !self.theme.calm {
             scenes::fun(self, frame);
             self.particles

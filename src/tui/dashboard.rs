@@ -124,6 +124,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         let block = panel(app, "scan me");
         let inner = block.inner(side);
         frame.render_widget(block, side);
+        app.spots.qr = Some(side);
         if let Some(qr) = &app.qr_code {
             draw_qr(
                 frame.buffer_mut(),
@@ -162,7 +163,9 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     if let Some(area) = visitors {
         draw_visitors(app, frame, area);
     }
+    app.spots.visitors = visitors;
     let (log, side) = split_side(app, log);
+    app.spots.log = Some(log);
     draw_log(app, frame, log);
     if let Some(side) = side {
         draw_side(app, frame, side);

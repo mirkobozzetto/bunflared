@@ -101,6 +101,83 @@ pub fn rainbow(hue: f32) -> Color {
     hsv(hue, 0.65, 1.0)
 }
 
+/// White-hot yellows, for letters standing in the fire.
+pub fn blaze(hue: f32) -> Color {
+    hsv(40.0 + hue.rem_euclid(30.0) / 2.0, 0.3, 1.0)
+}
+
+pub const FIRE_HOT: u8 = 36;
+
+/// A small heat simulation: the bottom row burns, the heat climbs a row per
+/// frame, drifting sideways and cooling as it goes. That is how flames flicker.
+#[derive(Default)]
+pub struct Fire {
+    width: usize,
+    heat: Vec<u8>,
+}
+
+impl Fire {
+    /// `fuel` is the share of the bottom row alight, `cooling` how fast the
+    /// flames die down on their way up: the higher, the shorter.
+    pub fn step(&mut self, rng: &mut Rng, width: usize, height: usize, fuel: f32, cooling: usize) {
+        if width == 0 || height == 0 {
+            return;
+        }
+        if self.width != width || self.heat.len() != width * height {
+            self.width = width;
+            self.heat = vec![0; width * height];
+            // Start ablaze rather than from cold embers.
+            for _ in 0..height {
+                self.burn(rng, height, fuel, cooling);
+            }
+        }
+        self.burn(rng, height, fuel, cooling);
+    }
+
+    fn burn(&mut self, rng: &mut Rng, height: usize, fuel: f32, cooling: usize) {
+        let width = self.width;
+        let bottom = (height - 1) * width;
+        for x in 0..width {
+            self.heat[bottom + x] = if rng.range(0.0, 1.0) < fuel {
+                FIRE_HOT - rng.below(6) as u8
+            } else {
+                rng.below(8) as u8
+            };
+        }
+        for y in 0..height - 1 {
+            for x in 0..width {
+                let below = self.heat[(y + 1) * width + x];
+                let cool = rng.below(cooling + 1) as u8;
+                let drift = (x + rng.below(3)).saturating_sub(1).min(width - 1);
+                self.heat[y * width + drift] = below.saturating_sub(cool);
+            }
+        }
+    }
+
+    pub fn draw(&self, buf: &mut Buffer, theme: &Theme, x: i32, y: i32) {
+        for (i, &heat) in self.heat.iter().enumerate() {
+            if heat > 0 {
+                let (ch, color) = flame(heat);
+                let (col, row) = ((i % self.width) as i32, (i / self.width) as i32);
+                put(buf, x + col, y + row, ch, theme.fg(color));
+            }
+        }
+    }
+}
+
+/// Embers are sparse and deep red, the core is a white-hot yellow.
+fn flame(heat: u8) -> (&'static str, Color) {
+    let t = heat as f32 / FIRE_HOT as f32;
+    let ch = match t {
+        ..0.12 => "·",
+        ..0.28 => "░",
+        ..0.45 => "▒",
+        ..0.65 => "▓",
+        _ => "█",
+    };
+    (ch, hsv(t * 50.0, 1.0 - t * t * 0.35, 0.6 + t * 0.4))
+}
+
 /// Writes `text` at (x, y), clipped to the buffer; never panics off-screen.
 pub fn put(buf: &mut Buffer, x: i32, y: i32, text: &str, style: Style) {
     let area = *buf.area();
@@ -232,22 +309,6 @@ impl Particles {
                 life: rng.range(1.2, 2.4),
                 ch: if rng.below(3) == 0 { '♡' } else { '♥' },
                 color: hsv(rng.range(330.0, 360.0), 0.6, 1.0),
-                leaf: false,
-            });
-        }
-    }
-
-    pub fn dirt(&mut self, rng: &mut Rng, x: f32, y: f32) {
-        for _ in 0..3 {
-            self.0.push(Particle {
-                x,
-                y,
-                vx: rng.range(-16.0, -4.0),
-                vy: rng.range(-9.0, -2.0),
-                gravity: 20.0,
-                life: rng.range(0.4, 0.9),
-                ch: rng.pick(".,'`:;"),
-                color: hsv(28.0, 0.65, rng.range(0.45, 0.8)),
                 leaf: false,
             });
         }
