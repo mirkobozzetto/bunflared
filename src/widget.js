@@ -435,7 +435,7 @@
   };
   reactions.addEventListener("click", (event) => {
     const emoji = event.target.closest("button")?.textContent;
-    if (!emoji || !say({ type: "react", emoji })) return;
+    if (!emoji || !say({ type: "react", emoji, page: page() })) return;
     float(emoji, false);
   });
   const follow = (on) => {

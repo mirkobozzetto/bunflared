@@ -165,7 +165,8 @@ pub async fn handle(
                 return status(StatusCode::BAD_REQUEST);
             };
             match save_note(folder, &note, &device) {
-                Ok(()) => {
+                Ok(name) => {
+                    hub.noted(&device, &note.page, &name);
                     let _ = tx.send(Event::Feedback(Feedback {
                         device,
                         page: note.page,
@@ -232,7 +233,7 @@ fn save_shot(folder: &Path, image: &[u8]) -> std::io::Result<String> {
     Ok(name)
 }
 
-fn save_note(folder: &Path, note: &Note, device: &str) -> std::io::Result<()> {
+fn save_note(folder: &Path, note: &Note, device: &str) -> std::io::Result<String> {
     folder_ready(folder)?;
     // Only a name this module gave out, never a path from the browser.
     let shot = note.shot.as_deref().filter(|name| {
@@ -265,7 +266,9 @@ fn save_note(folder: &Path, note: &Note, device: &str) -> std::io::Result<()> {
         };
         text.push_str(&format!("\n![Screenshot{outlined}]({shot})\n"));
     }
-    fs::write(folder.join(format!("{}.md", stamp())), text)
+    let name = format!("{}.md", stamp());
+    fs::write(folder.join(&name), text)?;
+    Ok(name)
 }
 
 /// "iPhone · Safari", from the User-Agent and the `Sec-CH-UA` client hint.

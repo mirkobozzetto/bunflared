@@ -63,9 +63,21 @@ pub enum Command {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum Incoming {
-    Chat { text: String, page: String },
-    Pointer { x: f32, y: f32, w: f32, h: f32 },
-    React { emoji: String },
+    Chat {
+        text: String,
+        page: String,
+    },
+    Pointer {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    },
+    React {
+        emoji: String,
+        #[serde(default)]
+        page: String,
+    },
 }
 
 /// A reaction from a visitor, as an index in `REACTIONS`.
@@ -161,11 +173,13 @@ impl Hub {
 
     fn receive(&self, sid: &str, device: &str, message: &str, reacted: &mut Option<Instant>) {
         match serde_json::from_str(message) {
-            Ok(Incoming::React { emoji }) => {
+            Ok(Incoming::React { emoji, page }) => {
                 let kind = REACTIONS.iter().position(|(known, _)| *known == emoji);
                 let calm = reacted.is_none_or(|at| at.elapsed() >= REACT_EVERY);
                 if let (Some(kind), true) = (kind, calm) {
                     *reacted = Some(Instant::now());
+                    let page: String = page.chars().take(MAX_TEXT).collect();
+                    self.keep(&format!("**{device}** on `{page}` reacted {emoji}"));
                     let device = device.to_string();
                     let _ = self.tx.send(Event::Reacted(Reacted { device, kind }));
                 }
@@ -195,13 +209,35 @@ impl Hub {
     }
 
     /// Appends a line to this share's chat transcript, next to the notes.
+    /// Sends a reaction, and keeps it in the session log once a page has it.
+    pub fn react(&self, sid: Option<&str>, to: &str, emoji: &str) -> usize {
+        let emoji = emoji.to_string();
+        let reached = self.send(
+            sid,
+            &Command::React {
+                emoji: emoji.clone(),
+            },
+        );
+        if reached > 0 {
+            self.keep(&format!("**you → {to}** reacted {emoji}"));
+        }
+        reached
+    }
+
+    /// Points the session log at a note saved next to it.
+    pub fn noted(&self, device: &str, page: &str, note: &str) {
+        self.keep(&format!(
+            "**{device}** on `{page}` left a note: [{note}]({note})"
+        ));
+    }
+
     fn keep(&self, line: &str) {
         let Some(folder) = &self.folder else {
             return;
         };
         let mut transcript = self.transcript.lock().unwrap();
-        let path =
-            transcript.get_or_insert_with(|| folder.join(format!("chat_{}.md", widget::stamp())));
+        let path = transcript
+            .get_or_insert_with(|| folder.join(format!("session_{}.md", widget::stamp())));
         let fresh = !path.exists();
         if widget::folder_ready(folder).is_err() {
             return;
@@ -211,7 +247,7 @@ impl Hub {
         };
         let now = chrono::Local::now();
         if fresh {
-            let _ = writeln!(file, "# Chat, {}\n", now.format("%Y-%m-%d %H:%M"));
+            let _ = writeln!(file, "# Live session, {}\n", now.format("%Y-%m-%d %H:%M"));
         }
         let _ = writeln!(file, "- {} {line}", now.format("%H:%M:%S"));
     }

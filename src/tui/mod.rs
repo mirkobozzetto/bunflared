@@ -977,12 +977,9 @@ impl App {
             Ask::React => {
                 let kind = prompt.pick.unwrap_or(0);
                 let emoji = REACTIONS[kind].0.to_string();
-                let reached = self.hub.send(
-                    self.selected.as_deref(),
-                    &Command::React {
-                        emoji: emoji.clone(),
-                    },
-                );
+                let reached = self
+                    .hub
+                    .react(self.selected.as_deref(), &self.target(), &emoji);
                 self.sent(&format!("{emoji} sent"), reached);
             }
             Ask::Chat => {
