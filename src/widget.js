@@ -61,12 +61,13 @@
       [hidden] { display: none !important; }
       button { font: inherit; cursor: pointer; border-radius: 999px; border: 0; padding: 8px 14px; }
       .open { background: #1f2430; color: #fff; box-shadow: 0 4px 14px rgb(0 0 0 / 25%); }
-      .card { width: min(320px, calc(100vw - 32px)); padding: 14px; border-radius: 14px; box-sizing: border-box;
+      .card { width: min(320px, calc(var(--room, 100vw) - 32px)); padding: 14px; border-radius: 14px; box-sizing: border-box;
         background: Canvas; color: CanvasText; box-shadow: 0 8px 30px rgb(0 0 0 / 30%);
         display: grid; gap: 10px; }
       .chat header { display: flex; justify-content: space-between; align-items: center; }
       .chat .hide { padding: 2px 8px; background: transparent; color: inherit; }
-      .thread { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 40vh; overflow-y: auto; }
+      .thread { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px;
+        max-height: calc(var(--tall, 100vh) * 0.35); overflow-y: auto; }
       .thread li { justify-self: start; max-width: 85%; padding: 6px 10px; border-radius: 12px;
         overflow-wrap: anywhere; background: color-mix(in srgb, #ff79c6 25%, Canvas); animation: pop 0.25s ease-out; }
       .thread li.mine { justify-self: end; background: color-mix(in srgb, CanvasText 10%, Canvas); }
@@ -80,12 +81,19 @@
       @keyframes pop { from { transform: scale(0.8); opacity: 0; } }
       @keyframes blink { 50% { opacity: 0.3; } }
       @media (prefers-reduced-motion: reduce) { .thread li, .watch::before { animation: none; } }
+      /* 16px keeps iOS from zooming into the page when a field gets focus. */
+      @media (pointer: coarse) {
+        textarea, input { font-size: 16px; }
+        .hint { display: none; }
+        .chat .hide { padding: 6px 12px; }
+      }
       textarea { font: inherit; width: 100%; box-sizing: border-box; border-radius: 8px;
         padding: 8px; border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); resize: vertical; }
       label { display: flex; gap: 6px; align-items: center; font-size: 13px; }
       figure { margin: 0; position: relative; }
       figure img { display: block; width: 100%; max-height: 150px; object-fit: cover; object-position: top;
-        border-radius: 8px; border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); cursor: zoom-in; }
+        border-radius: 8px; border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); }
+      figure a { display: block; cursor: zoom-in; }
       figure .tools { position: absolute; right: 6px; top: 6px; display: flex; gap: 4px; }
       figure .tools button { padding: 2px 8px; font-size: 12px; background: rgb(31 36 48 / 80%); color: #fff; }
       .status { margin: 0; min-height: 1.2em; font-size: 13px; opacity: 0.8; }
@@ -112,7 +120,7 @@
       <textarea rows="4" placeholder="One remark at a time. Paste an image to attach it."></textarea>
       <label><input type="checkbox" checked> Attach a screenshot of this page</label>
       <figure hidden>
-        <img alt="Image sent with the note, click to enlarge">
+        <a target="_blank" rel="noopener" title="Open it in a new tab"><img alt="Image sent with the note"></a>
         <span class="tools">
           <button class="retake" type="button" title="Take the screenshot again">↻</button>
           <button class="drop" type="button" title="Send without image">✕</button>
@@ -125,16 +133,37 @@
         <button class="send" type="submit">Send</button>
       </div>
     </form>`;
+  // A page without a mobile viewport is drawn zoomed out on a phone, and a
+  // pinch zoom moves what the visitor sees: the widget follows the visible
+  // area, at its normal size, and stays above the on-screen keyboard.
+  const fit = () => {
+    const view = window.visualViewport;
+    if (!view) return;
+    const [right, bottom] = [view.offsetLeft + view.width, view.offsetTop + view.height];
+    host.style.inset = "0 auto auto 0";
+    host.style.transformOrigin = "0 0";
+    host.style.transform =
+      `translate(${right}px, ${bottom}px) scale(${1 / view.scale}) translate(calc(-100% - 16px), calc(-100% - 16px))`;
+    host.style.setProperty("--room", `${view.width * view.scale}px`);
+    host.style.setProperty("--tall", `${view.height * view.scale}px`);
+  };
+  fit();
+  window.visualViewport?.addEventListener("resize", fit);
+  window.visualViewport?.addEventListener("scroll", fit);
+
   const $ = (selector) => root.querySelector(selector);
   const [open, form, textarea] = [$(".open"), $(".note"), $("textarea")];
   const checkbox = $(".note input[type=checkbox]");
   const [figure, preview, status, send] = [$("figure"), $("figure img"), $(".status"), $(".note .send")];
+  const enlarge = $("figure a");
   let image = null;
 
   const show = (blob) => {
     if (preview.src) URL.revokeObjectURL(preview.src);
     image = blob;
     preview.src = blob ? URL.createObjectURL(blob) : "";
+    if (blob) enlarge.href = preview.src;
+    else enlarge.removeAttribute("href");
     figure.hidden = !blob;
   };
 
@@ -188,7 +217,6 @@
   $(".retake").addEventListener("click", () => { checkbox.checked = true; retake(); });
   $(".drop").addEventListener("click", () => { checkbox.checked = false; show(null); });
   checkbox.addEventListener("change", () => (checkbox.checked ? retake() : show(null)));
-  preview.addEventListener("click", () => image && window.open(preview.src, "_blank"));
 
   form.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {

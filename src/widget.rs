@@ -78,13 +78,14 @@ pub async fn handle(
     tx: &Tx,
     hub: &Arc<Hub>,
 ) -> Response<Body> {
-    let device = device(
+    let value = |name: &str| {
         request
             .headers()
-            .get(header::USER_AGENT)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or(""),
-    );
+            .get(name)
+            .and_then(|v: &HeaderValue| v.to_str().ok())
+            .unwrap_or("")
+    };
+    let device = device(value("user-agent"), value("sec-ch-ua"));
     let route = request.uri().path().trim_start_matches(PREFIX).to_string();
     let method = request.method().clone();
     match (method, route.as_str()) {
@@ -219,8 +220,8 @@ fn save_note(folder: &Path, note: &Note, device: &str) -> std::io::Result<()> {
     fs::write(folder.join(format!("{}.md", stamp())), text)
 }
 
-/// "iPhone · Safari", from the User-Agent header.
-pub fn device(agent: &str) -> String {
+/// "iPhone · Safari", from the User-Agent and the `Sec-CH-UA` client hint.
+pub fn device(agent: &str, hints: &str) -> String {
     let system = [
         ("iPhone", "iPhone"),
         ("iPad", "iPad"),
@@ -232,9 +233,14 @@ pub fn device(agent: &str) -> String {
     .into_iter()
     .find(|(needle, _)| agent.contains(needle))
     .map_or("Unknown", |(_, name)| name);
+    // Brave reads as Safari on iOS and as Chrome elsewhere, but names itself
+    // at the end of the iOS agent and in the client hint.
+    let brave = agent.contains("Brave") || hints.contains("\"Brave\"");
     let browser = [
         ("Edg/", "Edge"),
+        ("EdgiOS/", "Edge"),
         ("OPR/", "Opera"),
+        ("OPT/", "Opera"),
         ("Firefox/", "Firefox"),
         ("FxiOS/", "Firefox"),
         ("CriOS/", "Chrome"),
@@ -244,6 +250,7 @@ pub fn device(agent: &str) -> String {
     .into_iter()
     .find(|(needle, _)| agent.contains(needle))
     .map_or("browser", |(_, name)| name);
+    let browser = if brave { "Brave" } else { browser };
     format!("{system} · {browser}")
 }
 
