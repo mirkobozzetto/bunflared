@@ -174,7 +174,7 @@ fn share(ports: Vec<u16>, theme: Option<tui::Theme>, feedback: Option<std::path:
     let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
     let (tx, rx) = mpsc::channel();
     let (stop, stop_rx) = watch::channel(false);
-    let hub = std::sync::Arc::new(live::Hub::default());
+    let hub = std::sync::Arc::new(live::Hub::new(tx.clone(), feedback.clone()));
     let shared = ports.clone();
     let backend_hub = hub.clone();
     let backend = runtime.spawn(async move {

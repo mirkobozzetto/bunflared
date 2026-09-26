@@ -89,7 +89,7 @@ pub async fn handle(
     let method = request.method().clone();
     match (method, route.as_str()) {
         (Method::GET, "widget.js") => script(),
-        (Method::GET, "live") => live::accept(request, hub.clone()),
+        (Method::GET, "live") => live::accept(request, hub.clone(), device),
         (Method::POST, "ping") => match read(request, MAX_PING).await {
             Some(body) => {
                 if let Ok(ping) = serde_json::from_slice::<Ping>(&body) {
@@ -148,7 +148,7 @@ async fn read(request: Request<Incoming>, max: usize) -> Option<Bytes> {
 
 /// The feedback folder, created with a `.gitignore` of its own so no project
 /// ever commits a client's notes by accident.
-fn folder_ready(folder: &Path) -> std::io::Result<()> {
+pub fn folder_ready(folder: &Path) -> std::io::Result<()> {
     fs::create_dir_all(folder)?;
     let ignore = folder.join(".gitignore");
     if !ignore.exists() {
@@ -157,7 +157,7 @@ fn folder_ready(folder: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn stamp() -> String {
+pub fn stamp() -> String {
     chrono::Local::now()
         .format("%Y-%m-%d_%H-%M-%S%.3f")
         .to_string()

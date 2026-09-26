@@ -38,6 +38,7 @@ const STAMPEDE_WINDOW: Duration = Duration::from_millis(1500);
 const PYRO: u32 = 10;
 const PAGES_KEEP: usize = 20;
 const SUGGESTIONS: usize = 5;
+const CHAT_KEEP: usize = 60;
 // No command key in it, or typing it would copy, open or quit.
 const CARROT_WORD: &str = "yum";
 const FAST_FRAME: Duration = Duration::from_millis(33);
@@ -154,6 +155,17 @@ pub enum Focus {
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum Ask {
     Go,
+    Chat,
+}
+
+/// A line of the chat panel, sent or received.
+pub struct Message {
+    pub mine: bool,
+    /// The visitor's device, or who a message of ours went to.
+    pub who: String,
+    pub page: String,
+    pub text: String,
+    pub clock: String,
 }
 
 /// A text box open over the dashboard: while it is, keys are text.
@@ -216,6 +228,7 @@ pub struct App {
     pub prompt: Option<Prompt>,
     /// Pages the visitors were on, the most recent first.
     pub pages: Vec<String>,
+    pub chat: VecDeque<Message>,
 
     pub disco: bool,
     pub qr: bool,
@@ -321,6 +334,7 @@ impl App {
             picked: None,
             prompt: None,
             pages: Vec::new(),
+            chat: VecDeque::new(),
             disco: false,
             qr: false,
             help: false,
@@ -468,6 +482,21 @@ impl App {
                     false,
                 );
                 self.unlock("critic");
+            }
+            Event::Chat(said) => {
+                let excerpt: String = said.text.chars().take(40).collect();
+                self.toast(
+                    format!("✉ {} on {}", said.device, said.page),
+                    excerpt,
+                    false,
+                );
+                self.remember_message(Message {
+                    mine: false,
+                    who: said.device,
+                    page: said.page,
+                    text: said.text,
+                    clock: clock(),
+                });
             }
             Event::PortHealth { port, ok } => {
                 if let Some(state) = self.ports.iter_mut().find(|p| p.port == port) {
@@ -700,6 +729,13 @@ impl App {
                     pick: None,
                 });
             }
+            KeyCode::Char('m') if dashboard => {
+                self.prompt = Some(Prompt {
+                    ask: Ask::Chat,
+                    text: String::new(),
+                    pick: None,
+                });
+            }
             KeyCode::Char('R') if dashboard => {
                 let reached = self.hub.send(self.selected.as_deref(), &Command::Reload);
                 self.sent("↻ Reload", reached);
@@ -823,6 +859,47 @@ impl App {
                 let reached = self.hub.send(self.selected.as_deref(), &command);
                 self.sent(&format!("→ {path}"), reached);
             }
+            Ask::Chat => {
+                let text = prompt.text.trim().to_string();
+                let to = self.target();
+                let reached = if text.is_empty() {
+                    0
+                } else {
+                    self.hub.say(self.selected.as_deref(), &to, &text)
+                };
+                // The box stays open for the next line; a message nobody got stays typed.
+                let kept = if reached == 0 {
+                    prompt.text
+                } else {
+                    String::new()
+                };
+                self.prompt = Some(Prompt {
+                    ask: Ask::Chat,
+                    text: kept,
+                    pick: None,
+                });
+                if text.is_empty() {
+                    return;
+                }
+                if reached == 0 {
+                    self.sent("✉ Not sent", 0);
+                    return;
+                }
+                self.remember_message(Message {
+                    mine: true,
+                    who: to,
+                    page: String::new(),
+                    text,
+                    clock: clock(),
+                });
+            }
+        }
+    }
+
+    fn remember_message(&mut self, message: Message) {
+        self.chat.push_back(message);
+        if self.chat.len() > CHAT_KEEP {
+            self.chat.pop_front();
         }
     }
 

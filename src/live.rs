@@ -2,26 +2,31 @@
 //! bunflared, so the dashboard can talk to visitors and drive the demo.
 
 use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
-use hyper::body::Incoming;
 use hyper::header::{self, HeaderMap, HeaderValue};
 use hyper::upgrade::Upgraded;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
 use tokio_tungstenite::tungstenite::protocol::{Message, Role, WebSocketConfig};
 
 use crate::proxy::{Body, full};
+use crate::share::{Event, Tx};
+use crate::widget;
 
 const MAX_MESSAGE: usize = 16 * 1024;
+const MAX_TEXT: usize = 2000;
 const MAX_SID: usize = 32;
 // Proxies drop quiet WebSockets; a ping now and then keeps this one open.
 const KEEPALIVE: Duration = Duration::from_secs(30);
@@ -32,6 +37,22 @@ const KEEPALIVE: Duration = Duration::from_secs(30);
 pub enum Command {
     Go { path: String },
     Reload,
+    Chat { text: String },
+}
+
+/// What pages send to the dashboard.
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+enum Incoming {
+    Chat { text: String, page: String },
+}
+
+/// A chat message from a visitor.
+#[derive(Debug, Clone)]
+pub struct Said {
+    pub device: String,
+    pub page: String,
+    pub text: String,
 }
 
 struct Socket {
@@ -39,13 +60,36 @@ struct Socket {
     out: UnboundedSender<String>,
 }
 
-#[derive(Default)]
 pub struct Hub {
     sockets: Mutex<HashMap<u64, Socket>>,
     next: AtomicU64,
+    tx: Tx,
+    /// The feedback folder, where the chat transcript goes too.
+    folder: Option<PathBuf>,
+    transcript: Mutex<Option<PathBuf>>,
 }
 
 impl Hub {
+    pub fn new(tx: Tx, folder: Option<PathBuf>) -> Self {
+        Self {
+            sockets: Mutex::default(),
+            next: AtomicU64::new(0),
+            tx,
+            folder,
+            transcript: Mutex::default(),
+        }
+    }
+
+    /// Sends a chat message, and keeps it in the transcript once a page has it.
+    pub fn say(&self, sid: Option<&str>, to: &str, text: &str) -> usize {
+        let text = text.to_string();
+        let reached = self.send(sid, &Command::Chat { text: text.clone() });
+        if reached > 0 {
+            self.keep(&format!("**you → {to}**: {text}"));
+        }
+        reached
+    }
+
     /// Sends to the pages of one visitor, or of everyone. Returns how many
     /// pages it reached.
     pub fn send(&self, sid: Option<&str>, command: &Command) -> usize {
@@ -60,7 +104,52 @@ impl Hub {
             .count()
     }
 
-    async fn serve(self: Arc<Self>, sid: String, socket: WebSocketStream<TokioIo<Upgraded>>) {
+    fn receive(&self, device: &str, message: &str) {
+        let Ok(Incoming::Chat { text, page }) = serde_json::from_str(message) else {
+            return;
+        };
+        let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let text: String = text.chars().take(MAX_TEXT).collect();
+        let page: String = page.chars().take(MAX_TEXT).collect();
+        if text.is_empty() {
+            return;
+        }
+        self.keep(&format!("**{device}** on `{page}`: {text}"));
+        let _ = self.tx.send(Event::Chat(Said {
+            device: device.to_string(),
+            page,
+            text,
+        }));
+    }
+
+    /// Appends a line to this share's chat transcript, next to the notes.
+    fn keep(&self, line: &str) {
+        let Some(folder) = &self.folder else {
+            return;
+        };
+        let mut transcript = self.transcript.lock().unwrap();
+        let path =
+            transcript.get_or_insert_with(|| folder.join(format!("chat_{}.md", widget::stamp())));
+        let fresh = !path.exists();
+        if widget::folder_ready(folder).is_err() {
+            return;
+        }
+        let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) else {
+            return;
+        };
+        let now = chrono::Local::now();
+        if fresh {
+            let _ = writeln!(file, "# Chat, {}\n", now.format("%Y-%m-%d %H:%M"));
+        }
+        let _ = writeln!(file, "- {} {line}", now.format("%H:%M:%S"));
+    }
+
+    async fn serve(
+        self: Arc<Self>,
+        sid: String,
+        device: String,
+        socket: WebSocketStream<TokioIo<Upgraded>>,
+    ) {
         let (mut sink, mut stream) = socket.split();
         let (out, mut outbox) = unbounded_channel();
         let id = self.next.fetch_add(1, Ordering::Relaxed);
@@ -73,6 +162,10 @@ impl Hub {
                 // A Close is answered by the next read, which then ends the stream.
                 incoming = stream.next() => match incoming {
                     Some(Err(_)) | None => break,
+                    Some(Ok(Message::Text(text))) => {
+                        self.receive(&device, &text);
+                        Ok(())
+                    }
                     Some(Ok(_)) => Ok(()),
                 },
             };
@@ -86,7 +179,11 @@ impl Hub {
 
 /// Answers the WebSocket handshake of `/_bunflared/live?sid=...` and hands
 /// the connection to the hub.
-pub fn accept(mut request: Request<Incoming>, hub: Arc<Hub>) -> Response<Body> {
+pub fn accept(
+    mut request: Request<hyper::body::Incoming>,
+    hub: Arc<Hub>,
+    device: String,
+) -> Response<Body> {
     let headers = request.headers();
     let upgrade = headers
         .get(header::UPGRADE)
@@ -109,7 +206,7 @@ pub fn accept(mut request: Request<Incoming>, hub: Arc<Hub>) -> Response<Body> {
         let socket =
             WebSocketStream::from_raw_socket(TokioIo::new(upgraded), Role::Server, Some(config))
                 .await;
-        hub.serve(sid, socket).await;
+        hub.serve(sid, device, socket).await;
     });
 
     let mut response = status(StatusCode::SWITCHING_PROTOCOLS);

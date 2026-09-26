@@ -408,7 +408,7 @@ pub fn failed(app: &mut App, frame: &mut Frame) {
     hint(buf, area, theme, "any key to exit");
 }
 
-fn wrap(text: &str, width: usize) -> Vec<String> {
+pub fn wrap(text: &str, width: usize) -> Vec<String> {
     let mut lines = vec![String::new()];
     for word in text.split_whitespace() {
         let line = lines.last_mut().expect("one line");

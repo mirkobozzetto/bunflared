@@ -9,6 +9,7 @@ use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 
 use super::art::{self, Frame3};
 use super::fx::{self, put};
+use super::scenes::wrap;
 use super::{App, Ask, Focus, LANE_TRIP, Qr, Session, Theme, plural};
 
 const MIN_WIDTH: u16 = 64;
@@ -148,7 +149,11 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     if let Some(area) = visitors {
         draw_visitors(app, frame, area);
     }
+    let (log, side) = split_side(app, log);
     draw_log(app, frame, log);
+    if let Some(side) = side {
+        draw_chat(app, frame, side);
+    }
     draw_footer(app, frame, footer);
 }
 
@@ -605,6 +610,51 @@ fn draw_log(app: &App, frame: &mut Frame, area: Rect) {
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
+/// Once someone has talked, the chat takes the right of the request log.
+fn split_side(app: &App, log: Rect) -> (Rect, Option<Rect>) {
+    if app.chat.is_empty() {
+        return (log, None);
+    }
+    let [log, side] =
+        Layout::horizontal([Constraint::Min(0), Constraint::Percentage(42)]).areas(log);
+    (log, Some(side))
+}
+
+fn draw_chat(app: &App, frame: &mut Frame, area: Rect) {
+    let block = panel(app, "chat");
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let theme = &app.theme;
+    let width = inner.width.saturating_sub(2).max(8) as usize;
+    let mut lines = Vec::new();
+    for message in &app.chat {
+        let (who, color) = if message.mine {
+            (format!("you → {}", message.who), fx::PINK)
+        } else {
+            (message.who.clone(), fx::CYAN)
+        };
+        let mut head = vec![
+            Span::styled(format!("{} ", message.clock), theme.fg(fx::DIM)),
+            Span::styled(who, theme.fg(color).add_modifier(Modifier::BOLD)),
+        ];
+        if !message.page.is_empty() {
+            head.push(Span::styled(
+                format!(" {}", message.page),
+                theme.fg(fx::DIM),
+            ));
+        }
+        lines.push(Line::from(head));
+        for text in wrap(&message.text, width) {
+            lines.push(Line::from(Span::styled(
+                format!("  {text}"),
+                theme.fg(fx::FG),
+            )));
+        }
+    }
+    let newest = lines.split_off(lines.len().saturating_sub(inner.height as usize));
+    frame.render_widget(Paragraph::new(newest), inner);
+}
+
 fn draw_footer(app: &App, frame: &mut Frame, area: Rect) {
     let mut spans = vec![Span::raw(" ")];
     for (key, label) in KEYS {
@@ -694,6 +744,10 @@ fn draw_prompt(app: &App, frame: &mut Frame, area: Rect) {
         Ask::Go => (
             format!("send {} to", app.target()),
             " enter send · tab pick · esc cancel ",
+        ),
+        Ask::Chat => (
+            format!("message to {}", app.target()),
+            " enter send · esc close ",
         ),
     };
     let width = 60.min(area.width.saturating_sub(2));

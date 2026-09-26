@@ -35,10 +35,10 @@ Closes: AC1, AC2, AC3, AC4
 
 Closes: AC5, AC6, AC7
 
-- [ ] `m` opens a message box where keys are text, not shortcuts
-- [ ] the message shows on the page as a bubble within a second
-- [ ] the visitor answers from the widget; the answer lands in a chat panel
-- [ ] the conversation is saved as a transcript in `bunflared-feedback/`
+- [x] `m` opens a message box where keys are text, not shortcuts
+- [x] the message shows on the page as a bubble within a second
+- [x] the visitor answers from the widget; the answer lands in a chat panel
+- [x] the conversation is saved as a transcript in `bunflared-feedback/`
 
 ## T03 - Pointer radar
 

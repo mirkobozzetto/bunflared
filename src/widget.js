@@ -10,6 +10,7 @@
   const PING_EVERY_MS = 5000;
   const RETRY_MIN_MS = 1000;
   const RETRY_MAX_MS = 30000;
+  const THREAD_KEEP = 30;
 
   const sid = sessionStorage.getItem("bunflared-sid") || Math.random().toString(36).slice(2, 10);
   sessionStorage.setItem("bunflared-sid", sid);
@@ -54,13 +55,25 @@
   root.innerHTML = `
     <style>
       :host { all: initial; position: fixed; right: 16px; bottom: 16px; z-index: 2147483647;
-        font: 14px/1.4 system-ui, -apple-system, sans-serif; color-scheme: light dark; }
+        font: 14px/1.4 system-ui, -apple-system, sans-serif; color-scheme: light dark;
+        display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
       [hidden] { display: none !important; }
       button { font: inherit; cursor: pointer; border-radius: 999px; border: 0; padding: 8px 14px; }
       .open { background: #1f2430; color: #fff; box-shadow: 0 4px 14px rgb(0 0 0 / 25%); }
-      form { width: min(320px, calc(100vw - 32px)); padding: 14px; border-radius: 14px;
+      .card { width: min(320px, calc(100vw - 32px)); padding: 14px; border-radius: 14px; box-sizing: border-box;
         background: Canvas; color: CanvasText; box-shadow: 0 8px 30px rgb(0 0 0 / 30%);
         display: grid; gap: 10px; }
+      .chat header { display: flex; justify-content: space-between; align-items: center; }
+      .chat .hide { padding: 2px 8px; background: transparent; color: inherit; }
+      .thread { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 40vh; overflow-y: auto; }
+      .thread li { justify-self: start; max-width: 85%; padding: 6px 10px; border-radius: 12px;
+        overflow-wrap: anywhere; background: color-mix(in srgb, #ff79c6 25%, Canvas); animation: pop 0.25s ease-out; }
+      .thread li.mine { justify-self: end; background: color-mix(in srgb, CanvasText 10%, Canvas); }
+      .reply { display: flex; gap: 6px; }
+      .reply input { flex: 1; min-width: 0; font: inherit; padding: 6px 12px; border-radius: 999px;
+        border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); }
+      @keyframes pop { from { transform: scale(0.8); opacity: 0; } }
+      @media (prefers-reduced-motion: reduce) { .thread li { animation: none; } }
       textarea { font: inherit; width: 100%; box-sizing: border-box; border-radius: 8px;
         padding: 8px; border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); resize: vertical; }
       label { display: flex; gap: 6px; align-items: center; font-size: 13px; }
@@ -72,11 +85,22 @@
       .status { margin: 0; min-height: 1.2em; font-size: 13px; opacity: 0.8; }
       .row { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
       .hint { margin-right: auto; font-size: 12px; opacity: 0.6; }
-      .send { background: #ff79c6; color: #1f2430; font-weight: 600; }
+      .send, .answer { background: #ff79c6; color: #1f2430; font-weight: 600; }
       .close { background: transparent; color: inherit; }
     </style>
+    <section class="card chat" hidden>
+      <header>
+        <strong>From the developer</strong>
+        <button class="hide" type="button" title="Hide the conversation">✕</button>
+      </header>
+      <ol class="thread" aria-live="polite"></ol>
+      <form class="reply">
+        <input placeholder="Answer..." maxlength="2000" aria-label="Your answer">
+        <button class="answer" type="submit">Send</button>
+      </form>
+    </section>
     <button class="open" type="button">✎ Feedback</button>
-    <form hidden>
+    <form class="card note" hidden>
       <strong>What should change?</strong>
       <textarea rows="4" placeholder="One remark at a time. Paste an image to attach it."></textarea>
       <label><input type="checkbox" checked> Attach a screenshot of this page</label>
@@ -95,8 +119,9 @@
       </div>
     </form>`;
   const $ = (selector) => root.querySelector(selector);
-  const [open, form, textarea, checkbox] = [$(".open"), $("form"), $("textarea"), $("input")];
-  const [figure, preview, status, send] = [$("figure"), $("figure img"), $(".status"), $(".send")];
+  const [open, form, textarea] = [$(".open"), $(".note"), $("textarea")];
+  const checkbox = $(".note input[type=checkbox]");
+  const [figure, preview, status, send] = [$("figure"), $("figure img"), $(".status"), $(".note .send")];
   let image = null;
 
   const show = (blob) => {
@@ -207,9 +232,38 @@
     }
   });
 
+  const [chat, thread, reply, answer] = [$(".chat"), $(".thread"), $(".reply"), $(".reply input")];
+  let live = null;
+  const bubble = (text, mine) => {
+    const item = document.createElement("li");
+    item.textContent = text;
+    if (mine) item.className = "mine";
+    thread.append(item);
+    while (thread.children.length > THREAD_KEEP) thread.firstElementChild.remove();
+    thread.scrollTop = thread.scrollHeight;
+  };
+  $(".hide").addEventListener("click", () => { chat.hidden = true; });
+  reply.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const text = answer.value.trim();
+    if (!text) return;
+    if (live?.readyState !== WebSocket.OPEN) {
+      answer.placeholder = "Not connected, try again in a moment.";
+      return;
+    }
+    live.send(JSON.stringify({ type: "chat", text, page: page() }));
+    bubble(text, true);
+    answer.value = "";
+  });
+
   // Presence above does not depend on this channel: a page whose policy
   // blocks it keeps reporting, it just cannot be driven.
   const handlers = {
+    chat: ({ text }) => {
+      bubble(text, false);
+      host.style.colorScheme = scheme();
+      chat.hidden = false;
+    },
     go: ({ path }) => {
       const target = new URL(path, location.origin);
       if (target.origin === location.origin) location.assign(target);
@@ -225,13 +279,17 @@
     } catch {
       return;
     }
-    socket.addEventListener("open", () => { retry = RETRY_MIN_MS; });
+    socket.addEventListener("open", () => {
+      live = socket;
+      retry = RETRY_MIN_MS;
+    });
     socket.addEventListener("message", (event) => {
       let message;
       try { message = JSON.parse(event.data); } catch { return; }
       if (Object.hasOwn(handlers, message.type)) handlers[message.type](message);
     });
     socket.addEventListener("close", () => {
+      live = null;
       setTimeout(connect, retry);
       retry = Math.min(retry * 2, RETRY_MAX_MS);
     });
