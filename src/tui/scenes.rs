@@ -7,7 +7,7 @@ use ratatui::style::{Color, Modifier, Style};
 
 use super::art::{self, Frame3};
 use super::fx::{self, center, put};
-use super::{App, GOODBYE, SNIFF, Theme};
+use super::{App, GOODBYE, SNIFF, Theme, spectacle};
 
 const TAGLINE: &str = "share localhost · dig a tunnel · feed the bunny";
 const DEPTH_METERS: f32 = 42.0;
@@ -28,24 +28,27 @@ fn centered(buf: &mut Buffer, area: Rect, y: i32, text: &str, style: Style) {
     );
 }
 
-/// A fire along the whole bottom of the screen, `share` of its height tall.
-fn inferno(app: &mut App, buf: &mut Buffer, area: Rect, share: f32) {
-    if app.theme.calm {
-        return;
-    }
+/// A fire along the whole bottom of the screen, `share` of its height tall,
+/// whose flames climb `reach` of the way up. Returns where it starts.
+fn inferno(
+    app: &mut App,
+    buf: &mut Buffer,
+    area: Rect,
+    share: f32,
+    (fuel, reach): (f32, f32),
+) -> i32 {
     let height = (area.height as f32 * share) as usize;
-    // Flames that reach about three quarters of the way up.
-    let cooling = (2.0 * fx::FIRE_HOT as f32 / (height as f32 * 0.75))
+    let top = area.bottom() as i32 - height as i32;
+    if app.theme.calm {
+        return top;
+    }
+    let cooling = (2.0 * fx::FIRE_HOT as f32 / (height as f32 * reach))
         .round()
         .max(1.0) as usize;
     app.inferno
-        .step(&mut app.rng, area.width as usize, height, 0.9, cooling);
-    app.inferno.draw(
-        buf,
-        &app.theme,
-        area.x as i32,
-        area.bottom() as i32 - height as i32,
-    );
+        .step(&mut app.rng, area.width as usize, height, fuel, cooling);
+    app.inferno.draw(buf, &app.theme, area.x as i32, top);
+    top
 }
 
 fn hint(buf: &mut Buffer, area: Rect, theme: &Theme, text: &str) {
@@ -82,7 +85,8 @@ pub fn boot(app: &mut App, frame: &mut Frame) {
     let area = frame.area();
     let t = app.t();
     let buf = frame.buffer_mut();
-    inferno(app, buf, area, 0.5);
+    let flames = app.spectacle.flames(app.elapsed());
+    let fire_top = inferno(app, buf, area, 0.5, flames);
     let logo_width = art::big("BUNFLARED")[0].chars().count() as i32;
     let top = area.y as i32 + area.height as i32 / 2 - 7;
     let x0 = center(area, logo_width);
@@ -146,6 +150,7 @@ pub fn boot(app: &mut App, frame: &mut Frame) {
         &art::RUN_B
     };
     bunny(buf, x, top + 9 - hop, pose, app.theme.fg(fx::FG));
+    spectacle::loading(app, buf, area, fire_top);
     if !app.theme.calm {
         for _ in 0..2 {
             app.particles
@@ -160,7 +165,9 @@ pub fn preflight(app: &mut App, frame: &mut Frame) {
     let t = app.t();
     let calm = app.theme.calm;
     let buf = frame.buffer_mut();
-    inferno(app, buf, area, 0.3);
+    let flames = app.spectacle.flames(app.elapsed());
+    let fire_top = inferno(app, buf, area, 0.3, flames);
+    spectacle::loading(app, buf, area, fire_top);
     let rows = app.ports.len() as i32;
     let top = area.y as i32 + (area.height as i32 - (3 + rows * 2)) / 2;
     let x0 = center(area, 52);
@@ -206,7 +213,8 @@ pub fn digging(app: &mut App, frame: &mut Frame) {
     let area = frame.area();
     let (t, e, calm) = (app.t(), app.elapsed(), app.theme.calm);
     let buf = frame.buffer_mut();
-    inferno(app, buf, area, 0.3);
+    let flames = app.spectacle.flames(app.elapsed());
+    let fire_top = inferno(app, buf, area, 0.3, flames);
     let width = (area.width as i32 - 8).clamp(24, 72);
     let x0 = center(area, width);
     let top = area.y as i32 + (area.height as i32 - 15).max(0) / 2;
@@ -314,12 +322,16 @@ pub fn digging(app: &mut App, frame: &mut Frame) {
         app.particles
             .flare(&mut app.rng, (head - 1) as f32, surface as f32);
     }
+    spectacle::loading(app, buf, area, fire_top);
 }
 
 pub fn launch(app: &mut App, frame: &mut Frame) {
     let area = frame.area();
     let (t, e) = (app.t(), app.elapsed());
     let (cx, cy) = (area.width as f32 / 2.0, area.height as f32 / 2.0);
+    // The fire dies down: the phoenix is made of it.
+    let fuel = (0.9 - t).max(0.0);
+    inferno(app, frame.buffer_mut(), area, 0.3, (fuel, 0.75));
     if app.launch_bursts == 0 {
         app.particles.confetti(&mut app.rng, cx, cy, 160);
         app.launch_bursts = 1;
@@ -367,7 +379,7 @@ pub fn launch(app: &mut App, frame: &mut Frame) {
     if let Some(url) = &app.url {
         let inner = url.chars().count() as i32 + 4;
         let x = center(area, inner + 2);
-        let y = cy as i32 + 2;
+        let y = spectacle::carried(t, cy as i32 + 2, area.bottom() as i32 - 3);
         let border = theme.fg(fx::rainbow(e * 200.0));
         app.keep_clear = Some(Rect::new(
             x.max(0) as u16,
@@ -403,7 +415,9 @@ pub fn launch(app: &mut App, frame: &mut Frame) {
         } else {
             ("press c to copy", fx::DIM)
         };
-        centered(buf, area, y + 4, note, theme.fg(color));
+        if y == cy as i32 + 2 {
+            centered(buf, area, y + 4, note, theme.fg(color));
+        }
         if !app.resolved {
             centered(
                 buf,
@@ -415,6 +429,8 @@ pub fn launch(app: &mut App, frame: &mut Frame) {
         }
     }
     hint(buf, area, theme, "any key for the dashboard");
+    let url_y = spectacle::carried(t, cy as i32 + 2, area.bottom() as i32 - 3);
+    spectacle::phoenix(app, buf, area, url_y);
 }
 
 pub fn goodbye(app: &mut App, frame: &mut Frame) {

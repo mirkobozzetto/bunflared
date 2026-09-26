@@ -3,6 +3,7 @@ mod dashboard;
 mod fx;
 mod scenes;
 mod shaders;
+mod spectacle;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -206,6 +207,7 @@ pub struct App {
     pub particles: fx::Particles,
     pub fire: fx::Fire,
     pub inferno: fx::Fire,
+    pub spectacle: spectacle::Spectacle,
     shaders: shaders::Shaders,
     pub spots: shaders::Spots,
     pub sprites: Vec<Sprite>,
@@ -328,6 +330,7 @@ impl App {
             particles: fx::Particles::default(),
             fire: fx::Fire::default(),
             inferno: fx::Fire::default(),
+            spectacle: spectacle::Spectacle::default(),
             shaders: shaders::Shaders::new(calm),
             spots: shaders::Spots::default(),
             sprites: Vec::new(),
@@ -1182,6 +1185,14 @@ impl App {
             scenes::fun(self, frame);
             self.particles
                 .draw(frame.buffer_mut(), &self.theme, self.keep_clear);
+            if self.spectacle.shaking(self.now) {
+                let dx = if (self.elapsed() * 30.0) as i32 % 2 == 0 {
+                    1
+                } else {
+                    -1
+                };
+                fx::shake(frame.buffer_mut(), dx);
+            }
         }
         dashboard::overlays(self, frame);
     }
