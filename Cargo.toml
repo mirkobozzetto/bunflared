@@ -8,7 +8,7 @@ repository = "https://github.com/mirkobozzetto/bunflared"
 readme = "README.md"
 keywords = ["tunnel", "localhost", "cloudflare", "share", "tui"]
 categories = ["command-line-utilities", "development-tools", "network-programming"]
-include = ["src/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE"]
+include = ["/src/**", "/Cargo.toml", "/Cargo.lock", "/README.md", "/LICENSE"]
 
 [dependencies]
 bytes = "1.12.1"
