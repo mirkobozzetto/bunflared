@@ -31,6 +31,14 @@ Give the user the `url`. Keep the `id` to stop it later.
 Without `--detach` the command never returns until stopped: in a terminal it
 opens an interactive dashboard, elsewhere it prints the JSON line and waits.
 
+## Feedback
+
+Each shared page carries a feedback button. Notes from visitors are saved in
+`bunflared-feedback/` in the folder bunflared runs from: one Markdown file per
+note (page, device, message) with its screenshot next to it. Read them when
+the user asks what their client thought. The folder is git-ignored by itself.
+`--no-widget` shares the pages untouched.
+
 ## List and stop
 
     bunflared ls --json      # JSON array of live shares, same objects

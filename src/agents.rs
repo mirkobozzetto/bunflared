@@ -15,7 +15,9 @@ for a client, a phone, a teammate), use bunflared:
 It prints one JSON line with the public `url` once the link works: give that
 to the user. The first port is served at `/`, the others under
 `/_port/<port>`. `bunflared ls --json` lists shares, `bunflared down <id>`
-stops one. Everything else: `bunflared --help`.
+stops one. Notes visitors leave with the page's feedback button land in
+`bunflared-feedback/` in that folder, Markdown with screenshots. Everything
+else: `bunflared --help`.
 ";
 
 // omp loads a rule into every session only when it says so.

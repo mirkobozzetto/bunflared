@@ -70,7 +70,7 @@ pub struct Achievement {
     pub blurb: &'static str,
 }
 
-pub const ACHIEVEMENTS: [Achievement; 13] = [
+pub const ACHIEVEMENTS: [Achievement; 14] = [
     Achievement {
         key: "first",
         name: "First visitor!",
@@ -135,6 +135,11 @@ pub const ACHIEVEMENTS: [Achievement; 13] = [
         key: "pyro",
         name: "Pyromaniac",
         blurb: "Ten fireworks. Easy there.",
+    },
+    Achievement {
+        key: "critic",
+        name: "Word from the client",
+        blurb: "Someone left feedback.",
     },
 ];
 

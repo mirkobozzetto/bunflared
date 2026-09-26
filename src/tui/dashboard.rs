@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -7,7 +9,7 @@ use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 
 use super::art::{self, Frame3};
 use super::fx::{self, put};
-use super::{App, LANE_TRIP, Qr, Theme, plural};
+use super::{App, LANE_TRIP, Qr, Session, Theme, plural};
 
 const MIN_WIDTH: u16 = 64;
 const MIN_HEIGHT: u16 = 20;
@@ -17,6 +19,8 @@ const ECG: [char; 16] = [
 ];
 const BARS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 const PANIC_FOR: f32 = 3.0;
+const LEFT_AFTER: Duration = Duration::from_secs(20);
+const IDLE_AFTER: u64 = 30;
 const HOP_FOR: f32 = 1.2;
 const KEYS: [(&str, &str); 6] = [
     ("c", "copy"),
@@ -73,11 +77,13 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     let qr_size = app.qr_code.as_ref().map_or(0, |qr| qr.size as u16);
     let (qr_width, qr_height) = (qr_size + 2, qr_size.div_ceil(2) + 2);
     let fits = qr_size > 0 && body.width >= qr_width + QR_MIN_MAIN && body.height >= qr_height;
+    let mut visitors = None;
     let main = if fits {
         let [main, side] =
             Layout::horizontal([Constraint::Min(0), Constraint::Length(qr_width)]).areas(body);
-        let [side, _] =
+        let [side, below] =
             Layout::vertical([Constraint::Length(qr_height), Constraint::Min(0)]).areas(side);
+        visitors = (below.height >= 4).then_some(below);
         let block = panel(app, "scan me");
         let inner = block.inner(side);
         frame.render_widget(block, side);
@@ -102,11 +108,23 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         Constraint::Min(3),
     ])
     .areas(main);
-    let [ports, stats] =
-        Layout::horizontal([Constraint::Percentage(48), Constraint::Percentage(52)]).areas(middle);
+    let (ports, stats) = if visitors.is_none() {
+        // No room under the QR code: the visitors take a third of the middle row.
+        let [ports, stats, right] = Layout::horizontal([Constraint::Ratio(1, 3); 3]).areas(middle);
+        visitors = Some(right);
+        (ports, stats)
+    } else {
+        let [ports, stats] =
+            Layout::horizontal([Constraint::Percentage(48), Constraint::Percentage(52)])
+                .areas(middle);
+        (ports, stats)
+    };
     draw_lane(app, frame, lane);
     draw_ports(app, frame, ports);
     draw_stats(app, frame, stats);
+    if let Some(area) = visitors {
+        draw_visitors(app, frame, area);
+    }
     draw_log(app, frame, log);
     draw_footer(app, frame, footer);
 }
@@ -404,6 +422,8 @@ fn draw_stats(app: &App, frame: &mut Frame, area: Rect) {
             strong(format!("{average} ms"), fx::FG),
             label("  carrots eaten "),
             strong(app.classes[0].to_string(), fx::CARROT),
+            label("  feedback "),
+            strong(app.feedback.to_string(), fx::PINK),
         ]),
     ];
     let width = inner.width as usize;
@@ -431,6 +451,62 @@ fn draw_stats(app: &App, frame: &mut Frame, area: Rect) {
         })
         .collect();
     lines.push(Line::from(spark));
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
+/// "active", "tab hidden", "idle 45s" or "left", with its color.
+fn presence(app: &App, session: &Session) -> (&'static str, String, Color) {
+    let away = app.now.saturating_duration_since(session.seen);
+    let p = &session.presence;
+    let idle = u64::from(p.idle) + away.as_secs();
+    if p.gone || away > LEFT_AFTER {
+        ("○", "left".into(), fx::DIM)
+    } else if !p.visible {
+        ("◐", "tab hidden".into(), fx::YELLOW)
+    } else if idle >= IDLE_AFTER {
+        ("◐", format!("idle {idle}s"), fx::YELLOW)
+    } else {
+        ("●", "active".into(), fx::GREEN)
+    }
+}
+
+pub fn here(app: &App) -> usize {
+    app.sessions
+        .values()
+        .filter(|s| presence(app, s).1 != "left")
+        .count()
+}
+
+fn draw_visitors(app: &App, frame: &mut Frame, area: Rect) {
+    let block = panel(app, &format!("visitors · {} here", here(app)));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let theme = &app.theme;
+    if app.sessions.is_empty() {
+        let line = Line::from(Span::styled("Nobody on the page yet.", theme.fg(fx::DIM)));
+        frame.render_widget(Paragraph::new(line), inner);
+        return;
+    }
+    let mut sessions: Vec<&Session> = app.sessions.values().collect();
+    sessions.sort_by_key(|s| (presence(app, s).1 == "left", std::cmp::Reverse(s.seen)));
+    let lines: Vec<Line> = sessions
+        .into_iter()
+        .take(inner.height as usize)
+        .map(|session| {
+            let (dot, state, color) = presence(app, session);
+            let p = &session.presence;
+            Line::from(vec![
+                Span::styled(format!("{dot} "), theme.fg(color)),
+                Span::styled(format!("{}  ", p.device), theme.fg(fx::FG)),
+                Span::styled(format!("{}  ", p.page), theme.fg(fx::CYAN)),
+                Span::styled(state, theme.fg(color)),
+                Span::styled(
+                    format!("  {}", plural(p.clicks as usize, "click")),
+                    theme.fg(fx::DIM),
+                ),
+            ])
+        })
+        .collect();
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
@@ -517,6 +593,10 @@ fn compact(app: &App, frame: &mut Frame, area: Rect) {
         Line::from(Span::styled(
             app.url.clone().unwrap_or_default(),
             theme.fg(fx::CYAN).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            format!("{} here now · {} feedback", here(app), app.feedback),
+            theme.fg(fx::FG),
         )),
         Line::from(Span::styled(
             format!(

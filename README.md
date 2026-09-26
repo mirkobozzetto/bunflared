@@ -71,6 +71,22 @@ light or dark palette. `--theme light` or `--theme dark` forces one. `NO_COLOR`
 is respected. When a shared port stops answering, visitors get a
 small bunny page that retries by itself.
 
+## Feedback from the people you share with
+
+Every shared page gets a small **✎ Feedback** button. Your client writes a
+remark, a screenshot of the page is attached (or they paste their own), and it
+lands in `bunflared-feedback/`, in the folder you ran bunflared from: one
+Markdown file per note, the image next to it. That folder ignores itself in
+git, so client notes never end up in a commit. Hand it to your coding agent:
+"read the feedback and fix what they found".
+
+Meanwhile the dashboard shows who is on which page, whether their tab is in
+front, how long they have been idle and how many times they clicked.
+
+Tell the people you share with that their visit is followed. `--no-widget`
+leaves the pages untouched. The screenshot library is loaded from jsDelivr
+only when someone sends a screenshot.
+
 ## For AI agents
 
 Outside a terminal, or with `--json`, there is no dashboard: one JSON line on

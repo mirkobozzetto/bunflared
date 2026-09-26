@@ -6,7 +6,7 @@ use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio::time::{sleep, timeout};
 
-use crate::{clipboard, cloudflared, os, proxy, state, tunnel};
+use crate::{clipboard, cloudflared, os, proxy, state, tunnel, widget};
 
 pub const EXIT_TUNNEL_CLOSED: i32 = 1;
 pub const EXIT_NO_CLOUDFLARED: i32 = 3;
@@ -63,6 +63,8 @@ pub enum Event {
         copied: bool,
     },
     Request(Hit),
+    Presence(widget::Presence),
+    Feedback(widget::Feedback),
     PortHealth {
         port: u16,
         ok: bool,
@@ -72,9 +74,14 @@ pub enum Event {
 
 /// Shares `ports` until `stop` flips, a signal arrives, or the tunnel dies.
 /// Dropping the share on the way out kills cloudflared and removes its record.
-pub async fn run(ports: &[u16], tx: &Tx, mut stop: watch::Receiver<bool>) -> Result<(), Failure> {
+pub async fn run(
+    ports: &[u16],
+    tx: &Tx,
+    mut stop: watch::Receiver<bool>,
+    feedback: Option<PathBuf>,
+) -> Result<(), Failure> {
     let hung_up = tokio::select! {
-        result = serve(ports, tx) => return result,
+        result = serve(ports, tx, feedback) => return result,
         _ = stop.changed() => false,
         hung_up = os::quit() => hung_up,
     };
@@ -86,7 +93,7 @@ pub async fn run(ports: &[u16], tx: &Tx, mut stop: watch::Receiver<bool>) -> Res
     Ok(())
 }
 
-async fn serve(ports: &[u16], tx: &Tx) -> Result<(), Failure> {
+async fn serve(ports: &[u16], tx: &Tx, feedback: Option<PathBuf>) -> Result<(), Failure> {
     if let Some(config) = quick_tunnel_blocker() {
         return Err(Failure::new(
             EXIT_CONFIG_YAML,
@@ -123,9 +130,11 @@ async fn serve(ports: &[u16], tx: &Tx) -> Result<(), Failure> {
         }
     };
 
-    let proxy_port = proxy::start(ports, tx.clone()).await.map_err(|err| {
-        Failure::new(EXIT_TUNNEL_FAILED, format!("cannot start the proxy: {err}"))
-    })?;
+    let proxy_port = proxy::start(ports, tx.clone(), feedback)
+        .await
+        .map_err(|err| {
+            Failure::new(EXIT_TUNNEL_FAILED, format!("cannot start the proxy: {err}"))
+        })?;
     let _ = tx.send(Event::TunnelStarting);
     let mut tunnel = tunnel::open(&cloudflared, proxy_port, tx).await?;
     let host = tunnel.url.trim_start_matches("https://").to_string();

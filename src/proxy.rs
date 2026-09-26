@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 
@@ -18,8 +19,9 @@ use regex::{Captures, Regex};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::share::{Event, Hit, Tx};
+use crate::widget;
 
-type Body = BoxBody<Bytes, hyper::Error>;
+pub type Body = BoxBody<Bytes, hyper::Error>;
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
 static LOCAL_URL: LazyLock<Regex> =
@@ -43,6 +45,8 @@ struct Ctx {
     main: u16,
     others: Vec<u16>,
     tx: Tx,
+    /// Where feedback lands; `None` keeps the widget out of the pages.
+    feedback: Option<PathBuf>,
 }
 
 pub fn mount(port: u16) -> String {
@@ -55,13 +59,14 @@ pub fn routes(ports: &[u16]) -> BTreeMap<String, u16> {
     routes
 }
 
-pub async fn start(ports: &[u16], tx: Tx) -> std::io::Result<u16> {
+pub async fn start(ports: &[u16], tx: Tx, feedback: Option<PathBuf>) -> std::io::Result<u16> {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     let port = listener.local_addr()?.port();
     let ctx = Arc::new(Ctx {
         main: ports[0],
         others: ports[1..].to_vec(),
         tx,
+        feedback,
     });
     tokio::spawn(async move {
         loop {
@@ -120,6 +125,7 @@ impl Ctx {
             .headers
             .get(header::CONTENT_TYPE)
             .and_then(|v| v.to_str().ok());
+        let page = self.feedback.is_some() && content_type.is_some_and(|t| t.contains("text/html"));
         let textual = content_type.is_some_and(|t| TEXT_TYPES.is_match(t))
             && !parts.headers.contains_key(header::CONTENT_ENCODING)
             && method != Method::HEAD;
@@ -131,6 +137,7 @@ impl Ctx {
         };
         let bytes = collected.to_bytes();
         let bytes = match std::str::from_utf8(&bytes).map(|text| self.rewrite(text)) {
+            Ok(text) if page => Bytes::from(widget::inject(&text)),
             Ok(Cow::Owned(text)) => Bytes::from(text),
             _ => bytes,
         };
@@ -144,6 +151,11 @@ async fn handle(
     ctx: Arc<Ctx>,
     peer: SocketAddr,
 ) -> Result<Response<Body>, Infallible> {
+    if let Some(folder) = &ctx.feedback
+        && request.uri().path().starts_with(widget::PREFIX)
+    {
+        return Ok(widget::handle(request, folder, &ctx.tx).await);
+    }
     let started = Instant::now();
     let (port, path) = ctx.target(request.uri());
     let method = request.method().clone();
@@ -238,7 +250,7 @@ fn accepts_html(headers: &HeaderMap) -> bool {
         .is_some_and(|v| v.contains("text/html"))
 }
 
-fn full(bytes: impl Into<Bytes>) -> Body {
+pub fn full(bytes: impl Into<Bytes>) -> Body {
     Full::new(bytes.into())
         .map_err(|never| match never {})
         .boxed()

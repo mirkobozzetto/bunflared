@@ -7,6 +7,7 @@ mod share;
 mod state;
 mod tui;
 mod tunnel;
+mod widget;
 
 use std::io::{IsTerminal, Write};
 use std::sync::mpsc;
@@ -72,6 +73,10 @@ struct Cli {
     #[arg(long)]
     calm: bool,
 
+    /// Leave the pages as they are: no feedback button, no live presence.
+    #[arg(long)]
+    no_widget: bool,
+
     /// Colors for a light or dark terminal. Auto asks the terminal.
     #[arg(long, value_enum, default_value_t = ThemeChoice::Auto)]
     theme: ThemeChoice,
@@ -135,7 +140,7 @@ fn main() {
         Some(Command::Ls { json }) => state::list(json),
         Some(Command::Down { id, all }) => state::down(id, all),
         Some(Command::Agents { print, remove }) => agents::run(print, remove),
-        None if cli.detach => state::detach(&cli.ports),
+        None if cli.detach => state::detach(&cli.ports, cli.no_widget),
         None => {
             let no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
             let interactive = !cli.json && std::io::stdout().is_terminal();
@@ -148,7 +153,11 @@ fn main() {
                     ThemeChoice::Auto => tui::light_terminal(),
                 },
             });
-            share(cli.ports, theme)
+            let feedback = (!cli.no_widget)
+                .then(|| std::env::current_dir().ok())
+                .flatten()
+                .map(|dir| dir.join(widget::FOLDER));
+            share(cli.ports, theme, feedback)
         }
     };
     std::process::exit(code);
@@ -160,13 +169,13 @@ fn machine_output() -> bool {
 }
 
 /// Runs the share with the dashboard when a theme is given, JSON otherwise.
-fn share(ports: Vec<u16>, theme: Option<tui::Theme>) -> i32 {
+fn share(ports: Vec<u16>, theme: Option<tui::Theme>, feedback: Option<std::path::PathBuf>) -> i32 {
     let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
     let (tx, rx) = mpsc::channel();
     let (stop, stop_rx) = watch::channel(false);
     let shared = ports.clone();
     let backend = runtime.spawn(async move {
-        let result = share::run(&shared, &tx, stop_rx).await;
+        let result = share::run(&shared, &tx, stop_rx, feedback).await;
         let _ = tx.send(Event::Done(result));
     });
 

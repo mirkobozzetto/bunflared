@@ -3,7 +3,7 @@ mod dashboard;
 mod fx;
 mod scenes;
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
@@ -19,6 +19,7 @@ use crate::clipboard;
 use crate::proxy::mount;
 use crate::share::{Event, Failure, Hit};
 use crate::state::{Record, uptime};
+use crate::widget::{self, Presence};
 
 const BOOT: f32 = 1.5;
 const LAUNCH: f32 = 3.2;
@@ -131,6 +132,12 @@ pub struct Runner {
     pub speed: f32,
 }
 
+/// A browser tab reporting through the widget.
+pub struct Session {
+    pub presence: Presence,
+    pub seen: Instant,
+}
+
 pub struct Qr {
     pub size: usize,
     pub dark: Vec<bool>,
@@ -174,6 +181,8 @@ pub struct App {
     pub last_error: Option<Instant>,
     pub failure: Option<Failure>,
     pub unlocked: Vec<&'static art::Achievement>,
+    pub sessions: HashMap<String, Session>,
+    pub feedback: u32,
 
     pub disco: bool,
     pub qr: bool,
@@ -265,6 +274,8 @@ impl App {
             last_error: None,
             failure: None,
             unlocked: Vec::new(),
+            sessions: HashMap::new(),
+            feedback: 0,
             disco: false,
             qr: false,
             help: false,
@@ -393,6 +404,21 @@ impl App {
                 }
             }
             Event::Request(hit) => self.on_hit(hit),
+            Event::Presence(presence) => {
+                let seen = now;
+                self.sessions
+                    .insert(presence.sid.clone(), Session { presence, seen });
+            }
+            Event::Feedback(note) => {
+                self.feedback += 1;
+                let excerpt: String = note.message.chars().take(40).collect();
+                self.toast(
+                    format!("✎ {} on {}", note.device, note.page),
+                    excerpt,
+                    false,
+                );
+                self.unlock("critic");
+            }
             Event::PortHealth { port, ok } => {
                 if let Some(state) = self.ports.iter_mut().find(|p| p.port == port) {
                     state.up = ok;
@@ -723,6 +749,14 @@ impl App {
         );
         if !badges.is_empty() {
             println!("               {}", paint("33", &badges.join("  ")));
+        }
+        if self.feedback > 0 {
+            let note = format!(
+                "✎ {} saved in {}/",
+                plural(self.feedback as usize, "feedback note"),
+                widget::FOLDER
+            );
+            println!("               {}", paint("36", &note));
         }
         println!();
     }
