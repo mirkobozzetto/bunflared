@@ -24,25 +24,35 @@ const PANIC_FOR: f32 = 3.0;
 const LEFT_AFTER: Duration = Duration::from_secs(20);
 const IDLE_AFTER: u64 = 30;
 const HOP_FOR: f32 = 1.2;
-const KEYS: [(&str, &str); 6] = [
+const KEYS: [(&str, &str); 7] = [
     ("c", "copy"),
     ("o", "open"),
     ("r", "qr"),
-    ("f", "fireworks"),
+    ("m", "message"),
+    ("g", "go"),
     ("?", "help"),
     ("q", "quit"),
 ];
-const HELP: [&str; 9] = [
-    "c   copy the link",
-    "o   open it in your browser",
-    "r   big QR code for phones",
-    "f   fireworks",
-    "?   this help",
-    "q   stop sharing",
+const HELP: [&str; 17] = [
+    "c    copy the link",
+    "o    open it in your browser",
+    "r    big QR code for phones",
+    "f    fireworks",
     "",
+    "↑ ↓  pick a visitor",
+    "tab  switch to the requests",
+    "esc  pick nobody: everyone again",
+    "m    message them",
+    "g    send them to a page",
+    "R    reload their page",
+    "e    send them a reaction",
+    "",
+    "?    this help",
+    "q    stop sharing",
     "psst: there are secrets.",
     "the bunny knows a few codes.",
 ];
+const HELP_WIDTH: u16 = 40;
 
 fn hms(secs: u64) -> String {
     format!("{:02}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60)
@@ -795,7 +805,7 @@ fn compact(app: &App, frame: &mut Frame, area: Rect) {
             theme.fg(fx::FG),
         )),
         Line::from(Span::styled(
-            "c copy · o open · r qr · q quit",
+            "c copy · o open · r qr · m message · q quit",
             theme.fg(fx::DIM),
         )),
     ];
@@ -908,7 +918,7 @@ pub fn overlays(app: &mut App, frame: &mut Frame) {
         app.keep_clear = Some(rect);
     }
     if app.help {
-        let rect = centered_rect(area, 38, HELP.len() as u16 + 4);
+        let rect = centered_rect(area, HELP_WIDTH, HELP.len() as u16 + 4);
         frame.render_widget(Clear, rect);
         let block = panel(app, "keys");
         let inner = block.inner(rect);
