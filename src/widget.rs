@@ -24,6 +24,7 @@ const TAG: &str = r#"<script src="/_bunflared/widget.js" defer></script>"#;
 const MAX_PING: usize = 4 * 1024;
 const MAX_NOTE: usize = 64 * 1024;
 const MAX_SHOT: usize = 12 * 1024 * 1024;
+const MAX_PINNED: usize = 300;
 
 #[derive(Debug, Clone)]
 pub struct Presence {
@@ -60,6 +61,46 @@ struct Note {
     message: String,
     screen: Option<String>,
     shot: Option<String>,
+    element: Option<Element>,
+}
+
+/// The element a visitor pointed at, so whoever reads the note finds it.
+#[derive(Deserialize)]
+struct Element {
+    selector: String,
+    text: String,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+}
+
+impl Element {
+    fn markdown(&self) -> String {
+        // Browser text goes inside backticks and quotes: keep it on one line
+        // and unable to close them.
+        let clean = |text: &str| -> String {
+            text.split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .replace(['`', '"'], "'")
+                .chars()
+                .take(MAX_PINNED)
+                .collect()
+        };
+        let mut lines = format!("- Element: `{}`\n", clean(&self.selector));
+        if !self.text.trim().is_empty() {
+            lines.push_str(&format!("- Text: \"{}\"\n", clean(&self.text)));
+        }
+        lines.push_str(&format!(
+            "- Position: {}, {} ({}×{}) from the top left of the page\n",
+            self.x.round(),
+            self.y.round(),
+            self.w.round(),
+            self.h.round()
+        ));
+        lines
+    }
 }
 
 /// Adds the script tag before `</body>`, or at the end when there is none.
@@ -206,16 +247,23 @@ fn save_note(folder: &Path, note: &Note, device: &str) -> std::io::Result<()> {
         .lines()
         .map(|line| format!("> {line}"))
         .collect();
+    let pinned = note.element.as_ref().map(Element::markdown);
     let mut text = format!(
-        "# Feedback, {}\n\n- Page: `{}`\n- Device: {device}\n- Screen: {}\n- Visitor: {}\n\n{}\n",
+        "# Feedback, {}\n\n- Page: `{}`\n- Device: {device}\n- Screen: {}\n- Visitor: {}\n{}\n{}\n",
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
         note.page,
         note.screen.as_deref().unwrap_or("unknown"),
         note.sid,
+        pinned.unwrap_or_default(),
         quoted.join("\n"),
     );
     if let Some(shot) = shot {
-        text.push_str(&format!("\n![Screenshot]({shot})\n"));
+        let outlined = if note.element.is_some() {
+            ", the element outlined"
+        } else {
+            ""
+        };
+        text.push_str(&format!("\n![Screenshot{outlined}]({shot})\n"));
     }
     fs::write(folder.join(format!("{}.md", stamp())), text)
 }

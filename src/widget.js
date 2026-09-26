@@ -112,6 +112,14 @@
       .hint { margin-right: auto; font-size: 12px; opacity: 0.6; }
       .send, .answer { background: #ff79c6; color: #1f2430; font-weight: 600; }
       .close { background: transparent; color: inherit; }
+      .point { justify-self: start; padding: 4px 12px; background: transparent; color: inherit;
+        border: 1px solid color-mix(in srgb, CanvasText 30%, transparent); }
+      .pin { margin: 0; display: flex; gap: 6px; align-items: center; font-size: 13px; }
+      .pin span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .pin button { padding: 0 6px; background: transparent; color: inherit; }
+      .picking { margin: 0; padding: 8px 8px 8px 14px; border-radius: 999px; display: flex; gap: 8px;
+        align-items: center; background: #1f2430; color: #fff; box-shadow: 0 4px 14px rgb(0 0 0 / 25%); }
+      .picking button { padding: 4px 12px; background: #ff79c6; color: #1f2430; font-weight: 600; }
       /* On a phone the note stays small: no title, a thumbnail, no keyboard
          until the visitor taps the field. */
       @media (pointer: coarse) {
@@ -141,9 +149,12 @@
       </span>
       <button class="open" type="button">✎ Feedback</button>
     </div>
+    <p class="picking" hidden>${phone ? "Tap" : "Click"} what you mean <button class="stop" type="button">Cancel</button></p>
     <form class="card note" hidden>
       <strong>What should change?</strong>
       <textarea rows="${phone ? 2 : 4}" placeholder="${phone ? "What should change?" : "One remark at a time. Paste an image to attach it."}"></textarea>
+      <button class="point" type="button" title="Then click the part of the page you mean">⌖ Point at it</button>
+      <p class="pin" hidden><span></span><button class="unpin" type="button" title="Forget this element">✕</button></p>
       <label><input type="checkbox" checked> Attach a screenshot of this page</label>
       <figure hidden>
         <a target="_blank" rel="noopener" title="Open it in a new tab"><img alt="Image sent with the note"></a>
@@ -196,17 +207,29 @@
 
   // Leaves the widget itself out of the picture, and never lets the page
   // background come out transparent.
+  const outline = (node, style) => {
+    const saved = [node.style.outline, node.style.outlineOffset];
+    node.style.outline = style;
+    node.style.outlineOffset = "2px";
+    return () => { [node.style.outline, node.style.outlineOffset] = saved; };
+  };
+  let pinned = null;
   const capture = async () => {
     const { domToBlob } = await import(SCREENSHOT_LIB);
     const page = document.documentElement;
     const background = getComputedStyle(document.body).backgroundColor;
-    return domToBlob(page, {
-      scale: 1,
-      width: innerWidth,
-      height: Math.max(page.scrollHeight, innerHeight),
-      backgroundColor: background === "rgba(0, 0, 0, 0)" ? "#ffffff" : background,
-      filter: (node) => node !== host,
-    });
+    const restore = pinned?.node.isConnected ? outline(pinned.node, "3px solid #ff79c6") : () => {};
+    try {
+      return await domToBlob(page, {
+        scale: 1,
+        width: innerWidth,
+        height: Math.max(page.scrollHeight, innerHeight),
+        backgroundColor: background === "rgba(0, 0, 0, 0)" ? "#ffffff" : background,
+        filter: (node) => node !== host,
+      });
+    } finally {
+      restore();
+    }
   };
   const retake = async () => {
     status.textContent = "Taking a screenshot...";
@@ -245,6 +268,90 @@
   $(".drop").addEventListener("click", () => { checkbox.checked = false; show(null); });
   checkbox.addEventListener("change", () => (checkbox.checked ? retake() : show(null)));
 
+  // "Point at it": the next click on the page picks an element instead of
+  // acting on it, so the note says exactly what it is about.
+  const [picking, pinRow, pinLabel] = [$(".picking"), $(".pin"), $(".pin span")];
+  const selector = (node) => {
+    const parts = [];
+    for (; node?.nodeType === 1 && node.localName !== "html"; node = node.parentElement) {
+      if (node.id) {
+        parts.unshift(`#${CSS.escape(node.id)}`);
+        break;
+      }
+      let part = node.localName;
+      const named = [...node.classList].find((name) => /^[a-z][\w-]{1,30}$/i.test(name));
+      if (named) part += `.${named}`;
+      const same = [...(node.parentElement?.children ?? [])].filter((child) => child.localName === node.localName);
+      if (same.length > 1) part += `:nth-of-type(${same.indexOf(node) + 1})`;
+      parts.unshift(part);
+    }
+    return parts.join(" > ");
+  };
+  const describe = (node) => {
+    const rect = node.getBoundingClientRect();
+    const text = node.innerText || node.getAttribute("aria-label") || node.getAttribute("alt") || node.value || "";
+    return {
+      selector: selector(node),
+      text: String(text).trim().replace(/\s+/g, " ").slice(0, 120),
+      x: Math.round(rect.left + scrollX),
+      y: Math.round(rect.top + scrollY),
+      w: Math.round(rect.width),
+      h: Math.round(rect.height),
+    };
+  };
+  const pin = (node) => {
+    pinned = node && { node, info: describe(node) };
+    const info = pinned?.info;
+    pinLabel.textContent = info ? `📍 ${info.selector}${info.text ? ` · "${info.text.slice(0, 40)}"` : ""}` : "";
+    pinLabel.title = info?.selector ?? "";
+    pinRow.hidden = !pinned;
+    if (checkbox.checked) retake();
+  };
+  const ours = (event) => event.composedPath().includes(host);
+  let unhover = () => {};
+  let hovered = null;
+  const hover = (event) => {
+    if (ours(event) || event.target === hovered) return;
+    unhover();
+    hovered = event.target;
+    unhover = outline(hovered, "2px dashed #ff79c6");
+  };
+  const swallow = (event) => {
+    if (ours(event)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+  const BLOCKED = ["pointerdown", "mousedown", "pointerup", "mouseup", "dblclick", "submit"];
+  const choose = (event) => {
+    if (ours(event)) return;
+    swallow(event);
+    stopPicking();
+    pin(event.target);
+  };
+  const escape = (event) => event.key === "Escape" && stopPicking();
+  const startPicking = () => {
+    form.hidden = true;
+    picking.hidden = false;
+    addEventListener("pointermove", hover, true);
+    addEventListener("click", choose, true);
+    addEventListener("keydown", escape, true);
+    for (const type of BLOCKED) addEventListener(type, swallow, true);
+  };
+  function stopPicking() {
+    unhover();
+    unhover = () => {};
+    hovered = null;
+    removeEventListener("pointermove", hover, true);
+    removeEventListener("click", choose, true);
+    removeEventListener("keydown", escape, true);
+    for (const type of BLOCKED) removeEventListener(type, swallow, true);
+    picking.hidden = true;
+    form.hidden = false;
+  }
+  $(".point").addEventListener("click", startPicking);
+  $(".stop").addEventListener("click", stopPicking);
+  $(".unpin").addEventListener("click", () => pin(null));
+
   form.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
@@ -275,7 +382,9 @@
     }
     const response = await fetch(`${BASE}/feedback`, {
       method: "POST",
-      body: JSON.stringify({ sid, page: page(), message, screen: `${innerWidth}x${innerHeight}`, shot }),
+      body: JSON.stringify({
+        sid, page: page(), message, screen: `${innerWidth}x${innerHeight}`, shot, element: pinned?.info ?? null,
+      }),
     }).catch(() => null);
     send.disabled = false;
     if (!response?.ok) {
@@ -283,6 +392,8 @@
       return;
     }
     textarea.value = "";
+    pinned = null;
+    pinRow.hidden = true;
     if (!phone) textarea.focus();
     status.textContent = shot ? "Sent with its image. Anything else?" : "Sent. Anything else?";
     // The next note deserves a fresh picture of the page.

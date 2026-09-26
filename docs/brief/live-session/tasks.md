@@ -60,9 +60,9 @@ Closes: AC10
 
 Closes: AC11
 
-- [ ] "Point at it" lets the visitor pick an element
-- [ ] the note records selector, text excerpt and position
-- [ ] the screenshot outlines the picked element
+- [x] "Point at it" lets the visitor pick an element
+- [x] the note records selector, text excerpt and position
+- [x] the screenshot outlines the picked element
 
 ## T06 - Inspector and replay
 
