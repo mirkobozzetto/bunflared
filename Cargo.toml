@@ -1,6 +1,6 @@
 [package]
 name = "bunflared"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 description = "Share localhost on a public link, with an absurdly fun terminal show and an agent mode"
 license = "MIT"
