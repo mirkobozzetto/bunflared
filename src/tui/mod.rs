@@ -17,7 +17,7 @@ use ratatui::style::{Color, Style};
 use tokio::sync::watch;
 
 use crate::clipboard;
-use crate::live::{Command, Hub, Pointer};
+use crate::live::{Command, Hub, Pointer, REACTIONS};
 use crate::proxy::mount;
 use crate::share::{Event, Failure, Hit};
 use crate::state::{Record, uptime};
@@ -39,6 +39,9 @@ const PYRO: u32 = 10;
 const PAGES_KEEP: usize = 20;
 const SUGGESTIONS: usize = 5;
 const CHAT_KEEP: usize = 60;
+const WORRY_FOR: Duration = Duration::from_secs(3);
+// Past this, a reaction still counts and toasts, without more confetti.
+const MAX_PARTICLES: usize = 800;
 // No command key in it, or typing it would copy, open or quit.
 const CARROT_WORD: &str = "yum";
 const FAST_FRAME: Duration = Duration::from_millis(33);
@@ -157,6 +160,7 @@ pub enum Focus {
 pub enum Ask {
     Go,
     Chat,
+    React,
 }
 
 /// A line of the chat panel, sent or received.
@@ -230,6 +234,8 @@ pub struct App {
     /// Pages the visitors were on, the most recent first.
     pub pages: Vec<String>,
     pub chat: VecDeque<Message>,
+    pub reactions: [u32; REACTIONS.len()],
+    pub worried_until: Option<Instant>,
 
     pub disco: bool,
     pub qr: bool,
@@ -336,6 +342,8 @@ impl App {
             prompt: None,
             pages: Vec::new(),
             chat: VecDeque::new(),
+            reactions: [0; REACTIONS.len()],
+            worried_until: None,
             disco: false,
             qr: false,
             help: false,
@@ -508,6 +516,14 @@ impl App {
                     session.pointer = Some((pointer, now));
                 }
             }
+            Event::Reacted(reaction) => {
+                self.reactions[reaction.kind] += 1;
+                let (emoji, label) = REACTIONS[reaction.kind];
+                self.toast(format!("{emoji} from {}", reaction.device), label, false);
+                if !self.theme.calm && self.particles.0.len() < MAX_PARTICLES {
+                    self.celebrate(reaction.kind);
+                }
+            }
             Event::PortHealth { port, ok } => {
                 if let Some(state) = self.ports.iter_mut().find(|p| p.port == port) {
                     state.up = ok;
@@ -659,6 +675,9 @@ impl App {
         if self.carrots_until.is_some_and(|until| now >= until) {
             self.carrots_until = None;
         }
+        if self.worried_until.is_some_and(|until| now >= until) {
+            self.worried_until = None;
+        }
     }
 
     fn on_key(&mut self, key: KeyEvent, stop: &watch::Sender<bool>) {
@@ -744,6 +763,13 @@ impl App {
                     ask: Ask::Chat,
                     text: String::new(),
                     pick: None,
+                });
+            }
+            KeyCode::Char('e') if dashboard => {
+                self.prompt = Some(Prompt {
+                    ask: Ask::React,
+                    text: String::new(),
+                    pick: Some(0),
                 });
             }
             KeyCode::Char('R') if dashboard => {
@@ -832,6 +858,23 @@ impl App {
         let Some(prompt) = self.prompt.as_mut() else {
             return;
         };
+        let digit = match key.code {
+            KeyCode::Char(ch) => ch.to_digit(10).map(|d| d as usize),
+            _ => None,
+        };
+        if prompt.ask == Ask::React {
+            if let Some(n) = digit.filter(|n| (1..=REACTIONS.len()).contains(n)) {
+                prompt.pick = Some(n - 1);
+                if let Some(prompt) = self.prompt.take() {
+                    self.submit(prompt);
+                }
+            } else if let KeyCode::Char(_) = key.code {
+                return;
+            }
+        }
+        let Some(prompt) = self.prompt.as_mut() else {
+            return;
+        };
         match key.code {
             KeyCode::Esc => self.prompt = None,
             KeyCode::Enter => {
@@ -876,6 +919,17 @@ impl App {
                 let reached = self.hub.send(self.selected.as_deref(), &command);
                 self.sent(&format!("→ {path}"), reached);
             }
+            Ask::React => {
+                let kind = prompt.pick.unwrap_or(0);
+                let emoji = REACTIONS[kind].0.to_string();
+                let reached = self.hub.send(
+                    self.selected.as_deref(),
+                    &Command::React {
+                        emoji: emoji.clone(),
+                    },
+                );
+                self.sent(&format!("{emoji} sent"), reached);
+            }
             Ask::Chat => {
                 let text = prompt.text.trim().to_string();
                 let to = self.target();
@@ -913,6 +967,24 @@ impl App {
         }
     }
 
+    /// Each reaction gets its own show.
+    fn celebrate(&mut self, kind: usize) {
+        let area = self.area();
+        let x = self
+            .rng
+            .range(10.0, area.width.saturating_sub(10).max(11) as f32);
+        let y = area.height as f32 * 0.4;
+        match kind {
+            0 => self.particles.confetti(&mut self.rng, x, y, 60),
+            1 => self.particles.fireworks(&mut self.rng, x, y),
+            2 => {
+                let bottom = area.height.saturating_sub(4) as f32;
+                self.particles.hearts(&mut self.rng, x, bottom);
+            }
+            _ => self.worried_until = Some(self.now + WORRY_FOR),
+        }
+    }
+
     fn remember_message(&mut self, message: Message) {
         self.chat.push_back(message);
         if self.chat.len() > CHAT_KEEP {
@@ -920,10 +992,19 @@ impl App {
         }
     }
 
-    /// The pages offered under the go box, filtered by what is typed.
+    /// The pages offered under the go box, filtered by what is typed, or
+    /// the reactions to pick from.
     pub fn suggestions(&self, prompt: &Prompt) -> Vec<String> {
-        if prompt.ask != Ask::Go {
-            return Vec::new();
+        match prompt.ask {
+            Ask::Chat => return Vec::new(),
+            Ask::React => {
+                return REACTIONS
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (emoji, label))| format!("{}  {emoji}  {label}", i + 1))
+                    .collect();
+            }
+            Ask::Go => {}
         }
         let text = prompt.text.trim();
         self.pages

@@ -11,6 +11,7 @@ use super::art::{self, Frame3};
 use super::fx::{self, put};
 use super::scenes::wrap;
 use super::{App, Ask, Focus, LANE_TRIP, Qr, Session, Theme, plural};
+use crate::live::REACTIONS;
 
 const MIN_WIDTH: u16 = 64;
 const MIN_HEIGHT: u16 = 20;
@@ -239,6 +240,18 @@ fn mood(app: &App) -> Mood {
             jitter: 0,
             color: fx::rainbow(e * 200.0),
         }
+    } else if app.worried_until.is_some() {
+        let pose = if alt(3.0) {
+            &art::WORRIED_B
+        } else {
+            &art::WORRIED_A
+        };
+        Mood {
+            label: "worried",
+            pose,
+            jitter: 0,
+            color: fx::YELLOW,
+        }
     } else if recent(app.last_error, PANIC_FOR) {
         let pose = if alt(7.0) {
             &art::PANIC_B
@@ -284,7 +297,18 @@ fn draw_lane(app: &mut App, frame: &mut Frame, area: Rect) {
         app.theme.fg(mood.color),
     ))
     .right_aligned();
-    let block = panel(app, "traffic").title_bottom(caption);
+    let mut block = panel(app, "traffic").title_bottom(caption);
+    if app.reactions.iter().any(|&n| n > 0) {
+        let counts: Vec<String> = REACTIONS
+            .iter()
+            .zip(app.reactions)
+            .map(|((emoji, _), n)| format!("{emoji} {n}"))
+            .collect();
+        block = block.title_bottom(Span::styled(
+            format!(" {} ", counts.join("  ")),
+            app.theme.fg(fx::FG),
+        ));
+    }
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let e = app.elapsed();
@@ -820,9 +844,14 @@ fn draw_prompt(app: &App, frame: &mut Frame, area: Rect) {
             format!("message to {}", app.target()),
             " enter send · esc close ",
         ),
+        Ask::React => (
+            format!("react to {}", app.target()),
+            " 1-4 or tab, enter send · esc cancel ",
+        ),
     };
+    let typed = prompt.ask != Ask::React;
     let width = 60.min(area.width.saturating_sub(2));
-    let height = 3 + suggestions.len() as u16;
+    let height = 2 + u16::from(typed) + suggestions.len() as u16;
     let x = area.x + (area.width - width) / 2;
     let y = area.bottom().saturating_sub(height + 2).max(area.y);
     let rect = Rect::new(x, y, width, height.min(area.height));
@@ -833,11 +862,14 @@ fn draw_prompt(app: &App, frame: &mut Frame, area: Rect) {
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
     let theme = &app.theme;
-    let mut lines = vec![Line::from(vec![
-        Span::styled("› ", theme.fg(fx::PINK).add_modifier(Modifier::BOLD)),
-        Span::styled(prompt.text.clone(), theme.fg(fx::FG)),
-        Span::styled("▏", theme.fg(fx::PINK)),
-    ])];
+    let mut lines = Vec::new();
+    if typed {
+        lines.push(Line::from(vec![
+            Span::styled("› ", theme.fg(fx::PINK).add_modifier(Modifier::BOLD)),
+            Span::styled(prompt.text.clone(), theme.fg(fx::FG)),
+            Span::styled("▏", theme.fg(fx::PINK)),
+        ]));
+    }
     lines.extend(suggestions.into_iter().enumerate().map(|(i, page)| {
         let line = Line::from(Span::styled(format!("  {page}"), theme.fg(fx::CYAN)));
         highlight(line, prompt.pick == Some(i))
@@ -899,8 +931,11 @@ pub fn overlays(app: &mut App, frame: &mut Frame) {
     }
     draw_prompt(app, frame, area);
     for (i, toast) in app.toasts.iter().enumerate() {
-        let width = (toast.title.chars().count().max(toast.body.chars().count()) as u16 + 4)
-            .min(area.width);
+        let width = (Span::raw(toast.title.as_str())
+            .width()
+            .max(Span::raw(toast.body.as_str()).width()) as u16
+            + 4)
+        .min(area.width);
         let age = (app.now - toast.born).as_secs_f32();
         let slide = if app.theme.calm {
             0

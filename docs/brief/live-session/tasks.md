@@ -52,9 +52,9 @@ Closes: AC8, AC9
 
 Closes: AC10
 
-- [ ] the widget offers reactions
-- [ ] each reaction has its own dashboard animation and a counter
-- [ ] the developer can send a reaction back
+- [x] the widget offers reactions
+- [x] each reaction has its own dashboard animation and a counter
+- [x] the developer can send a reaction back
 
 ## T05 - Pinned feedback
 

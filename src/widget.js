@@ -12,6 +12,7 @@
   const RETRY_MAX_MS = 30000;
   const THREAD_KEEP = 30;
   const POINTER_EVERY_MS = 125;
+  const REACTIONS = ["👍", "🔥", "😍", "😕"];
 
   const sid = sessionStorage.getItem("bunflared-sid") || Math.random().toString(36).slice(2, 10);
   sessionStorage.setItem("bunflared-sid", sid);
@@ -78,9 +79,23 @@
         background: #1f2430; color: #fff; box-shadow: 0 4px 14px rgb(0 0 0 / 25%); }
       .watch::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px;
         border-radius: 50%; background: #ff5555; animation: blink 1.2s ease-in-out infinite; }
+      .bar { display: flex; gap: 8px; align-items: center; }
+      .reactions { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: #1f2430;
+        box-shadow: 0 4px 14px rgb(0 0 0 / 25%); }
+      .reactions button { padding: 4px 6px; background: transparent; font-size: 16px; line-height: 1;
+        transition: transform 0.15s; }
+      .reactions button:hover, .reactions button:focus-visible { transform: scale(1.25); }
+      .float { position: absolute; right: 24px; bottom: 40px; font-size: 28px; pointer-events: none;
+        animation: rise 1.6s ease-out forwards; }
+      .float.big { font-size: 56px; }
+      @keyframes rise { to { transform: translateY(-180px) scale(1.3); opacity: 0; } }
       @keyframes pop { from { transform: scale(0.8); opacity: 0; } }
       @keyframes blink { 50% { opacity: 0.3; } }
-      @media (prefers-reduced-motion: reduce) { .thread li, .watch::before { animation: none; } }
+      @media (prefers-reduced-motion: reduce) {
+        .thread li, .watch::before { animation: none; }
+        .float { animation: fade 1.2s forwards; }
+      }
+      @keyframes fade { to { opacity: 0; } }
       /* 16px keeps iOS from zooming into the page when a field gets focus. */
       @media (pointer: coarse) {
         textarea, input { font-size: 16px; }
@@ -114,7 +129,12 @@
         <button class="answer" type="submit">Send</button>
       </form>
     </section>
-    <button class="open" type="button">✎ Feedback</button>
+    <div class="bar">
+      <span class="reactions" hidden>
+        ${REACTIONS.map((emoji) => `<button type="button" title="Send ${emoji} to the developer">${emoji}</button>`).join("")}
+      </span>
+      <button class="open" type="button">✎ Feedback</button>
+    </div>
     <form class="card note" hidden>
       <strong>What should change?</strong>
       <textarea rows="4" placeholder="One remark at a time. Paste an image to attach it."></textarea>
@@ -156,6 +176,7 @@
   const checkbox = $(".note input[type=checkbox]");
   const [figure, preview, status, send] = [$("figure"), $("figure img"), $(".status"), $(".note .send")];
   const enlarge = $("figure a");
+  const [bar, reactions] = [$(".bar"), $(".reactions")];
   let image = null;
 
   const show = (blob) => {
@@ -207,7 +228,7 @@
   const toggle = (visible) => {
     host.style.colorScheme = scheme();
     form.hidden = !visible;
-    open.hidden = visible;
+    bar.hidden = visible;
     if (!visible) return;
     textarea.focus();
     if (checkbox.checked && !image) retake();
@@ -288,6 +309,18 @@
     latest = { x: Math.round(event.clientX), y: Math.round(event.clientY), w: innerWidth, h: innerHeight };
     pending ??= setTimeout(sendPointer, Math.max(0, POINTER_EVERY_MS - (Date.now() - sentAt)));
   }, { passive: true, capture: true });
+  const float = (emoji, big) => {
+    const item = document.createElement("span");
+    item.className = big ? "float big" : "float";
+    item.textContent = emoji;
+    item.addEventListener("animationend", () => item.remove());
+    root.append(item);
+  };
+  reactions.addEventListener("click", (event) => {
+    const emoji = event.target.closest("button")?.textContent;
+    if (!emoji || !say({ type: "react", emoji })) return;
+    float(emoji, false);
+  });
   const follow = (on) => {
     following = on;
     watch.hidden = !on;
@@ -328,6 +361,7 @@
     },
     reload: () => location.reload(),
     follow: ({ on }) => follow(on),
+    react: ({ emoji }) => float(emoji, true),
   };
   let retry = RETRY_MIN_MS;
   const connect = () => {
@@ -340,6 +374,7 @@
     }
     socket.addEventListener("open", () => {
       live = socket;
+      reactions.hidden = false;
       retry = RETRY_MIN_MS;
     });
     socket.addEventListener("message", (event) => {
@@ -349,6 +384,7 @@
     });
     socket.addEventListener("close", () => {
       live = null;
+      reactions.hidden = true;
       follow(false);
       setTimeout(connect, retry);
       retry = Math.min(retry * 2, RETRY_MAX_MS);

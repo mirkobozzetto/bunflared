@@ -7,7 +7,7 @@ use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio::time::{sleep, timeout};
 
-use crate::live::{Hub, Pointer, Said};
+use crate::live::{Hub, Pointer, Reacted, Said};
 use crate::{clipboard, cloudflared, os, proxy, state, tunnel, widget};
 
 pub const EXIT_TUNNEL_CLOSED: i32 = 1;
@@ -69,6 +69,7 @@ pub enum Event {
     Feedback(widget::Feedback),
     Chat(Said),
     Pointer(Pointer),
+    Reacted(Reacted),
     PortHealth {
         port: u16,
         ok: bool,

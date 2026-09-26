@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
@@ -28,6 +28,14 @@ use crate::widget;
 const MAX_MESSAGE: usize = 16 * 1024;
 const MAX_TEXT: usize = 2000;
 const MAX_SID: usize = 32;
+// A visitor holding a reaction button down must not flood the dashboard.
+const REACT_EVERY: Duration = Duration::from_millis(250);
+pub const REACTIONS: [(&str, &str); 4] = [
+    ("👍", "thumbs up"),
+    ("🔥", "on fire"),
+    ("😍", "love it"),
+    ("😕", "not sure"),
+];
 // Proxies drop quiet WebSockets; a ping now and then keeps this one open.
 const KEEPALIVE: Duration = Duration::from_secs(30);
 
@@ -46,6 +54,9 @@ pub enum Command {
     Follow {
         on: bool,
     },
+    React {
+        emoji: String,
+    },
 }
 
 /// What pages send to the dashboard.
@@ -54,6 +65,14 @@ pub enum Command {
 enum Incoming {
     Chat { text: String, page: String },
     Pointer { x: f32, y: f32, w: f32, h: f32 },
+    React { emoji: String },
+}
+
+/// A reaction from a visitor, as an index in `REACTIONS`.
+#[derive(Debug, Clone)]
+pub struct Reacted {
+    pub device: String,
+    pub kind: usize,
 }
 
 /// Where a followed visitor's pointer is, in their viewport.
@@ -140,8 +159,17 @@ impl Hub {
             .count()
     }
 
-    fn receive(&self, sid: &str, device: &str, message: &str) {
+    fn receive(&self, sid: &str, device: &str, message: &str, reacted: &mut Option<Instant>) {
         match serde_json::from_str(message) {
+            Ok(Incoming::React { emoji }) => {
+                let kind = REACTIONS.iter().position(|(known, _)| *known == emoji);
+                let calm = reacted.is_none_or(|at| at.elapsed() >= REACT_EVERY);
+                if let (Some(kind), true) = (kind, calm) {
+                    *reacted = Some(Instant::now());
+                    let device = device.to_string();
+                    let _ = self.tx.send(Event::Reacted(Reacted { device, kind }));
+                }
+            }
             Ok(Incoming::Chat { text, page }) => self.chat(device, text, page),
             Ok(Incoming::Pointer { x, y, w, h }) => {
                 let sid = sid.to_string();
@@ -209,6 +237,7 @@ impl Hub {
         };
         self.sockets.lock().unwrap().insert(id, socket);
         let mut keepalive = tokio::time::interval(KEEPALIVE);
+        let mut reacted = None;
         loop {
             let sent = tokio::select! {
                 Some(text) = outbox.recv() => sink.send(Message::text(text)).await,
@@ -217,7 +246,7 @@ impl Hub {
                 incoming = stream.next() => match incoming {
                     Some(Err(_)) | None => break,
                     Some(Ok(Message::Text(text))) => {
-                        self.receive(&sid, &device, &text);
+                        self.receive(&sid, &device, &text, &mut reacted);
                         Ok(())
                     }
                     Some(Ok(_)) => Ok(()),

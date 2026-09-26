@@ -221,6 +221,22 @@ impl Particles {
         }
     }
 
+    pub fn hearts(&mut self, rng: &mut Rng, x: f32, y: f32) {
+        for _ in 0..16 {
+            self.0.push(Particle {
+                x: x + rng.range(-8.0, 8.0),
+                y: y + rng.range(0.0, 3.0),
+                vx: rng.range(-2.5, 2.5),
+                vy: rng.range(-9.0, -4.0),
+                gravity: 0.0,
+                life: rng.range(1.2, 2.4),
+                ch: if rng.below(3) == 0 { '♡' } else { '♥' },
+                color: hsv(rng.range(330.0, 360.0), 0.6, 1.0),
+                leaf: false,
+            });
+        }
+    }
+
     pub fn dirt(&mut self, rng: &mut Rng, x: f32, y: f32) {
         for _ in 0..3 {
             self.0.push(Particle {
