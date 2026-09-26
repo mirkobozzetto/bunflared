@@ -88,7 +88,13 @@ pub fn for_light(color: Color) -> Color {
     } else {
         60.0 * ((r - g) / delta + 4.0)
     };
-    hsv(hue, (saturation * 1.3 + 0.1).min(1.0), max * 0.6)
+    // Yellow stays pale at any brightness on white: pull it toward amber.
+    let (hue, value) = if (35.0..80.0).contains(&hue) {
+        (hue.min(48.0) - 6.0, 0.48)
+    } else {
+        (hue, max * 0.6)
+    };
+    hsv(hue, (saturation * 1.3 + 0.1).min(1.0), value)
 }
 
 pub fn rainbow(hue: f32) -> Color {
