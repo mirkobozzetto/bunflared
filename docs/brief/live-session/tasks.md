@@ -85,6 +85,6 @@ Closes: AC14, AC15
 
 Closes: AC16
 
-- [ ] README, `--help`, help overlay, `SKILL.md` and agents note updated
+- [x] README, `--help`, help overlay, `SKILL.md` and agents note updated
 - [x] JSON and `--detach` output unchanged
 - [x] the README GIF re-recorded with a chat exchange and a reaction

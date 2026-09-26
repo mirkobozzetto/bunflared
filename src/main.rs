@@ -32,7 +32,9 @@ const AFTER_HELP: &str = r#"Examples:
 
 In a terminal you get the animated dashboard: ? lists its keys. m messages the
 visitors, g sends them to a page, R reloads it, Enter on a request shows it and
-p replays it. Notes, chat and reactions are saved in bunflared-feedback/.
+p replays it. Picking a visitor with the arrows follows their pointer, and their
+page shows a "Live" pill meanwhile. Notes, chat and reactions are saved in
+bunflared-feedback/.
 
 Otherwise, or with --json, the ready line is one JSON object on stdout:
   {"id":"4242","pid":4242,"tunnel_pid":4243,"url":"https://....trycloudflare.com",

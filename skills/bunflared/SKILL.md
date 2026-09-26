@@ -41,7 +41,8 @@ note (page, device, message) with its screenshot next to it. A note made with
 screenshot outlines it. `session_<date>.md` there keeps the chat, the
 reactions and a link to each note, in order. Read them when the user asks what
 their client thought, or to find what to fix. The folder is git-ignored by
-itself. `--no-widget` shares the pages untouched.
+itself. When the user follows a visitor's pointer from the dashboard, that
+visitor's page shows a "Live" pill. `--no-widget` shares the pages untouched.
 
 The user can leave notes on their own app while you keep it shared with
 `--detach`: read the folder when they say they left feedback.
