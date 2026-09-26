@@ -18,7 +18,7 @@ use tokio::sync::watch;
 
 use crate::clipboard;
 use crate::live::{Command, Hub, Pointer, REACTIONS};
-use crate::proxy::mount;
+use crate::proxy::{CAPTURE, Replayer, mount};
 use crate::share::{Event, Failure, Hit};
 use crate::state::{Record, uptime};
 use crate::widget::{self, Presence};
@@ -120,6 +120,13 @@ pub struct Row {
     pub clock: String,
     /// Its rank since the start, a key that survives new rows.
     pub n: u32,
+    pub replayed: Option<Replay>,
+}
+
+pub enum Replay {
+    Pending,
+    Done { status: u16, ms: u32 },
+    Failed,
 }
 
 pub struct Sprite {
@@ -236,6 +243,10 @@ pub struct App {
     pub chat: VecDeque<Message>,
     pub reactions: [u32; REACTIONS.len()],
     pub worried_until: Option<Instant>,
+    replayer: Replayer,
+    /// The request whose details are open, by rank.
+    pub details: Option<u32>,
+    pub details_scroll: u16,
 
     pub disco: bool,
     pub qr: bool,
@@ -255,9 +266,10 @@ pub fn run(
     ports: &[u16],
     theme: Theme,
     hub: Arc<Hub>,
+    replayer: Replayer,
 ) -> i32 {
     let mut terminal = ratatui::init();
-    let mut app = App::new(ports, theme, hub);
+    let mut app = App::new(ports, theme, hub, replayer);
     let code = loop {
         let now = Instant::now();
         while let Ok(event) = rx.try_recv() {
@@ -284,7 +296,7 @@ pub fn run(
 }
 
 impl App {
-    fn new(ports: &[u16], theme: Theme, hub: Arc<Hub>) -> Self {
+    fn new(ports: &[u16], theme: Theme, hub: Arc<Hub>, replayer: Replayer) -> Self {
         let now = Instant::now();
         let ports = ports
             .iter()
@@ -344,6 +356,9 @@ impl App {
             chat: VecDeque::new(),
             reactions: [0; REACTIONS.len()],
             worried_until: None,
+            replayer,
+            details: None,
+            details_scroll: 0,
             disco: false,
             qr: false,
             help: false,
@@ -524,6 +539,23 @@ impl App {
                     self.celebrate(reaction.kind);
                 }
             }
+            Event::Replayed { n, status, ms } => {
+                let Some(row) = self.rows.iter_mut().find(|row| row.n == n) else {
+                    return;
+                };
+                let title = format!("↻ {} {}", row.hit.method, row.hit.path);
+                let body = match status {
+                    Ok(status) => {
+                        row.replayed = Some(Replay::Done { status, ms });
+                        format!("{} before, {status} now, in {ms} ms.", row.hit.status)
+                    }
+                    Err(err) => {
+                        row.replayed = Some(Replay::Failed);
+                        format!("Failed: {err}")
+                    }
+                };
+                self.toast(title, body, false);
+            }
             Event::PortHealth { port, ok } => {
                 if let Some(state) = self.ports.iter_mut().find(|p| p.port == port) {
                     state.up = ok;
@@ -616,6 +648,7 @@ impl App {
             hit,
             clock: clock(),
             n: self.total,
+            replayed: None,
         });
         self.rows.truncate(LOG_KEEP);
     }
@@ -734,6 +767,18 @@ impl App {
         }
 
         let dashboard = self.phase == Phase::Dashboard;
+        if let (Some(n), true) = (self.details, dashboard) {
+            match key.code {
+                KeyCode::Esc | KeyCode::Enter => self.details = None,
+                KeyCode::Up => self.details_scroll = self.details_scroll.saturating_sub(1),
+                KeyCode::Down => self.details_scroll = self.details_scroll.saturating_add(1),
+                KeyCode::PageUp => self.details_scroll = self.details_scroll.saturating_sub(10),
+                KeyCode::PageDown => self.details_scroll = self.details_scroll.saturating_add(10),
+                KeyCode::Char('p') => self.replay(n),
+                _ => {}
+            }
+            return;
+        }
         match key.code {
             KeyCode::Esc if self.help || self.qr => {
                 self.help = false;
@@ -765,6 +810,16 @@ impl App {
                     pick: None,
                 });
             }
+            KeyCode::Enter if dashboard && self.focus == Some(Focus::Log) => {
+                if self.picked.is_some() {
+                    self.details = self.picked;
+                    self.details_scroll = 0;
+                }
+            }
+            KeyCode::Char('p') if dashboard => match self.picked {
+                Some(n) => self.replay(n),
+                None => self.toast("Pick a request first", "Tab, then ↑ ↓.", false),
+            },
             KeyCode::Char('e') if dashboard => {
                 self.prompt = Some(Prompt {
                     ask: Ask::React,
@@ -964,6 +1019,30 @@ impl App {
                     clock: clock(),
                 });
             }
+        }
+    }
+
+    /// Sends a request of the log again, unless it cannot be sent as it was.
+    fn replay(&mut self, n: u32) {
+        let Some(row) = self.rows.iter().find(|row| row.n == n) else {
+            return;
+        };
+        let refusal = if row.hit.upgrade {
+            Some("A WebSocket cannot be sent again.".to_string())
+        } else if !row.hit.exchange.request_body.lock().unwrap().complete() {
+            Some(format!(
+                "Its body is over {} KiB: only the start was kept.",
+                CAPTURE / 1024
+            ))
+        } else {
+            None
+        };
+        if let Some(reason) = refusal {
+            return self.toast("✖ Not replayable", reason, false);
+        }
+        self.replayer.replay(n, &row.hit);
+        if let Some(row) = self.rows.iter_mut().find(|row| row.n == n) {
+            row.replayed = Some(Replay::Pending);
         }
     }
 

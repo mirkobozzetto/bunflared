@@ -177,13 +177,17 @@ fn share(ports: Vec<u16>, theme: Option<tui::Theme>, feedback: Option<std::path:
     let hub = std::sync::Arc::new(live::Hub::new(tx.clone(), feedback.clone()));
     let shared = ports.clone();
     let backend_hub = hub.clone();
+    let replayer = proxy::Replayer {
+        runtime: runtime.handle().clone(),
+        tx: tx.clone(),
+    };
     let backend = runtime.spawn(async move {
         let result = share::run(&shared, &tx, stop_rx, feedback, backend_hub).await;
         let _ = tx.send(Event::Done(result));
     });
 
     let code = match theme {
-        Some(theme) => tui::run(rx, &stop, &ports, theme, hub),
+        Some(theme) => tui::run(rx, &stop, &ports, theme, hub, replayer),
         None => print_json(rx),
     };
 

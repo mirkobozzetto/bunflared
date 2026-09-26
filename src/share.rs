@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+
 use std::sync::mpsc::Sender;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -46,6 +47,7 @@ pub struct Hit {
     pub port: u16,
     pub visitor: String,
     pub upgrade: bool,
+    pub exchange: Arc<proxy::Exchange>,
 }
 
 #[derive(Debug)]
@@ -70,6 +72,11 @@ pub enum Event {
     Chat(Said),
     Pointer(Pointer),
     Reacted(Reacted),
+    Replayed {
+        n: u32,
+        status: Result<u16, String>,
+        ms: u32,
+    },
     PortHealth {
         port: u16,
         ok: bool,

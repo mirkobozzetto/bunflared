@@ -10,8 +10,9 @@ use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 use super::art::{self, Frame3};
 use super::fx::{self, put};
 use super::scenes::wrap;
-use super::{App, Ask, Focus, LANE_TRIP, Qr, Session, Theme, plural};
+use super::{App, Ask, Focus, LANE_TRIP, Qr, Replay, Row, Session, Theme, plural};
 use crate::live::REACTIONS;
+use crate::proxy::{CAPTURE, Capture};
 
 const MIN_WIDTH: u16 = 64;
 const MIN_HEIGHT: u16 = 20;
@@ -33,7 +34,7 @@ const KEYS: [(&str, &str); 7] = [
     ("?", "help"),
     ("q", "quit"),
 ];
-const HELP: [&str; 17] = [
+const HELP: [&str; 18] = [
     "c    copy the link",
     "o    open it in your browser",
     "r    big QR code for phones",
@@ -41,6 +42,7 @@ const HELP: [&str; 17] = [
     "",
     "↑ ↓  pick a visitor",
     "tab  switch to the requests",
+    "     enter: its details, p: replay it",
     "esc  pick nobody: everyone again",
     "m    message them",
     "g    send them to a page",
@@ -625,6 +627,15 @@ fn draw_log(app: &App, frame: &mut Frame, area: Rect) {
         .take(inner.height as usize)
         .map(|row| {
             let hit = &row.hit;
+            let replayed = match row.replayed {
+                None => Span::raw(""),
+                Some(Replay::Pending) => Span::styled("↻ …  ", theme.fg(fx::DIM)),
+                Some(Replay::Done { status, .. }) => Span::styled(
+                    format!("↻ {status} "),
+                    theme.fg(status_color(status)).add_modifier(Modifier::BOLD),
+                ),
+                Some(Replay::Failed) => Span::styled("↻ ✖   ", theme.fg(fx::RED)),
+            };
             let line = Line::from(vec![
                 Span::styled(format!("{} ", row.clock), theme.fg(fx::DIM)),
                 Span::styled(format!("{:<7}", hit.method), theme.fg(fx::PURPLE)),
@@ -634,6 +645,7 @@ fn draw_log(app: &App, frame: &mut Frame, area: Rect) {
                         .fg(status_color(hit.status))
                         .add_modifier(Modifier::BOLD),
                 ),
+                replayed,
                 Span::styled(format!("{:>5}ms ", hit.ms), theme.fg(fx::FG)),
                 Span::styled(format!(":{:<5} ", hit.port), theme.fg(fx::DIM)),
                 Span::styled(hit.path.clone(), theme.fg(fx::FG)),
@@ -839,6 +851,156 @@ fn draw_qr(buf: &mut Buffer, theme: &Theme, qr: &Qr, x: i32, y: i32) {
     }
 }
 
+const TEXT_TYPES: [&str; 8] = [
+    "text/",
+    "json",
+    "javascript",
+    "xml",
+    "html",
+    "css",
+    "form-urlencoded",
+    "graphql",
+];
+const BODY_LINES: usize = 400;
+
+fn kib(bytes: usize) -> String {
+    format!("{:.1} KiB", bytes as f32 / 1024.0)
+}
+
+/// The start of a body as text, or what it is when it is not text.
+fn body_lines(theme: &Theme, headers: &hyper::HeaderMap, capture: &Capture) -> Vec<Line<'static>> {
+    let kind = headers
+        .get(hyper::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let encoded = headers.contains_key(hyper::header::CONTENT_ENCODING);
+    let text = !encoded
+        && if kind.is_empty() {
+            std::str::from_utf8(&capture.bytes).is_ok()
+        } else {
+            TEXT_TYPES.iter().any(|t| kind.contains(t))
+        };
+    let note = |text: String| Line::from(Span::styled(format!("  {text}"), theme.fg(fx::DIM)));
+    if capture.total == 0 {
+        return vec![note("empty".into())];
+    }
+    if !text {
+        let what = if kind.is_empty() { "binary" } else { kind };
+        return vec![note(format!("{what}, {}, not shown", kib(capture.total)))];
+    }
+    let mut lines: Vec<Line> = String::from_utf8_lossy(&capture.bytes)
+        .lines()
+        .take(BODY_LINES)
+        .map(|line| Line::from(Span::styled(format!("  {line}"), theme.fg(fx::FG))))
+        .collect();
+    if !capture.complete() {
+        lines.push(note(format!(
+            "… the first {} KiB of {} are kept",
+            CAPTURE / 1024,
+            kib(capture.total)
+        )));
+    }
+    lines
+}
+
+fn header_lines(theme: &Theme, headers: &hyper::HeaderMap) -> Vec<Line<'static>> {
+    headers
+        .iter()
+        .map(|(name, value)| {
+            Line::from(vec![
+                Span::styled(format!("  {name}: "), theme.fg(fx::CYAN)),
+                Span::styled(
+                    String::from_utf8_lossy(value.as_bytes()).into_owned(),
+                    theme.fg(fx::FG),
+                ),
+            ])
+        })
+        .collect()
+}
+
+fn details_lines(app: &App, row: &Row) -> Vec<Line<'static>> {
+    let theme = &app.theme;
+    let hit = &row.hit;
+    let exchange = &hit.exchange;
+    let section = |title: &str| {
+        Line::from(Span::styled(
+            title.to_string(),
+            theme.fg(fx::PINK).add_modifier(Modifier::BOLD),
+        ))
+    };
+    let mut lines = vec![Line::from(vec![
+        Span::styled(format!("{} ", hit.method), theme.fg(fx::PURPLE)),
+        Span::styled(format!("{}  ", hit.path), theme.fg(fx::FG)),
+        Span::styled(
+            hit.status.to_string(),
+            theme
+                .fg(status_color(hit.status))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(
+                " · {} ms · :{} · {} · from {}",
+                hit.ms, hit.port, row.clock, hit.visitor
+            ),
+            theme.fg(fx::DIM),
+        ),
+    ])];
+    let replay = match row.replayed {
+        Some(Replay::Done { status, ms }) => format!("replayed: {status} in {ms} ms"),
+        Some(Replay::Pending) => "replaying…".into(),
+        Some(Replay::Failed) => "the replay failed".into(),
+        None if hit.upgrade => "a WebSocket, cannot be replayed".into(),
+        None if !exchange.request_body.lock().unwrap().complete() => format!(
+            "its body is over {} KiB, cannot be replayed",
+            CAPTURE / 1024
+        ),
+        None => "p replays it to your local server".into(),
+    };
+    lines.push(Line::from(Span::styled(
+        format!("↻ {replay}"),
+        theme.fg(fx::DIM),
+    )));
+    lines.push(Line::raw(""));
+    lines.push(section("Request headers"));
+    lines.extend(header_lines(theme, &exchange.request_headers));
+    lines.push(section("Request body"));
+    let request = exchange.request_body.lock().unwrap();
+    lines.extend(body_lines(theme, &exchange.request_headers, &request));
+    lines.push(Line::raw(""));
+    lines.push(section("Response headers"));
+    lines.extend(header_lines(theme, &exchange.response_headers));
+    lines.push(section("Response body"));
+    let response = exchange.response_body.lock().unwrap();
+    lines.extend(body_lines(theme, &exchange.response_headers, &response));
+    lines
+}
+
+/// Enter on a request: everything that went through, scrollable.
+fn draw_details(app: &mut App, frame: &mut Frame, area: Rect) {
+    let Some(row) = app
+        .details
+        .and_then(|n| app.rows.iter().find(|row| row.n == n))
+    else {
+        return;
+    };
+    let lines = details_lines(app, row);
+    let rect = centered_rect(
+        area,
+        area.width.saturating_sub(8).min(110),
+        area.height.saturating_sub(4),
+    );
+    frame.render_widget(Clear, rect);
+    let block = panel(app, "request")
+        .border_style(app.theme.fg(fx::PINK))
+        .title_bottom(Line::from(" ↑ ↓ scroll · p replay · esc close ").right_aligned());
+    let inner = block.inner(rect).inner(Margin::new(1, 0));
+    frame.render_widget(block, rect);
+    let most = lines.len().saturating_sub(inner.height as usize) as u16;
+    app.details_scroll = app.details_scroll.min(most);
+    frame.render_widget(Paragraph::new(lines).scroll((app.details_scroll, 0)), inner);
+    app.keep_clear = Some(rect);
+}
+
 /// The text box of `g`, low on the screen so the panels stay readable.
 fn draw_prompt(app: &App, frame: &mut Frame, area: Rect) {
     let Some(prompt) = &app.prompt else {
@@ -939,6 +1101,7 @@ pub fn overlays(app: &mut App, frame: &mut Frame) {
             inner.inner(ratatui::layout::Margin::new(0, 1)),
         );
     }
+    draw_details(app, frame, area);
     draw_prompt(app, frame, area);
     for (i, toast) in app.toasts.iter().enumerate() {
         let width = (Span::raw(toast.title.as_str())

@@ -3,13 +3,15 @@ use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock};
+use std::pin::Pin;
+use std::sync::{Arc, LazyLock, Mutex};
+use std::task::{Context, Poll};
 use std::time::Instant;
 
 use bytes::Bytes;
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Empty, Full};
-use hyper::body::Incoming;
+use hyper::body::{Frame, Incoming, SizeHint};
 use hyper::header::{self, HeaderMap, HeaderValue};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -39,6 +41,8 @@ const HOP_BY_HOP: [&str; 6] = [
     "upgrade",
 ];
 const BUNNY_PAGE: &str = include_str!("bunny-down.html");
+/// How much of each body the inspector keeps; a request over it cannot be replayed.
+pub const CAPTURE: usize = 32 * 1024;
 // Not 502: Cloudflare swaps an origin's 502 page for its own.
 const DOWN: StatusCode = StatusCode::SERVICE_UNAVAILABLE;
 
@@ -49,6 +53,102 @@ struct Ctx {
     /// Where feedback lands; `None` keeps the widget out of the pages.
     feedback: Option<PathBuf>,
     hub: Arc<Hub>,
+}
+
+/// The start of a body as it went through, and its full size.
+#[derive(Debug, Default)]
+pub struct Capture {
+    pub bytes: Vec<u8>,
+    pub total: usize,
+}
+
+impl Capture {
+    pub fn complete(&self) -> bool {
+        self.bytes.len() == self.total
+    }
+}
+
+/// What the inspector shows of a request and its answer.
+#[derive(Debug)]
+pub struct Exchange {
+    pub request_headers: HeaderMap,
+    pub response_headers: HeaderMap,
+    pub request_body: Arc<Mutex<Capture>>,
+    pub response_body: Arc<Mutex<Capture>>,
+}
+
+/// Passes a body through untouched, keeping a copy of its start.
+struct Tee<B> {
+    inner: B,
+    capture: Arc<Mutex<Capture>>,
+}
+
+impl<B> hyper::body::Body for Tee<B>
+where
+    B: hyper::body::Body<Data = Bytes> + Unpin,
+{
+    type Data = Bytes;
+    type Error = B::Error;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, B::Error>>> {
+        let polled = Pin::new(&mut self.inner).poll_frame(cx);
+        if let Poll::Ready(Some(Ok(frame))) = &polled
+            && let Some(data) = frame.data_ref()
+        {
+            let mut capture = self.capture.lock().unwrap();
+            capture.total += data.len();
+            let room = CAPTURE.saturating_sub(capture.bytes.len()).min(data.len());
+            capture.bytes.extend_from_slice(&data[..room]);
+        }
+        polled
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.inner.size_hint()
+    }
+}
+
+/// Sends a request of the log again to the local server, for the dashboard,
+/// which lives outside the runtime.
+pub struct Replayer {
+    pub runtime: tokio::runtime::Handle,
+    pub tx: Tx,
+}
+
+impl Replayer {
+    pub fn replay(&self, n: u32, hit: &Hit) {
+        let (method, path, port) = (hit.method.clone(), hit.path.clone(), hit.port);
+        let exchange = hit.exchange.clone();
+        let tx = self.tx.clone();
+        self.runtime.spawn(async move {
+            let started = Instant::now();
+            let status = replay(&method, &path, port, &exchange)
+                .await
+                .map_err(|err| err.to_string());
+            let ms = started.elapsed().as_millis().min(u32::MAX as u128) as u32;
+            let _ = tx.send(Event::Replayed { n, status, ms });
+        });
+    }
+}
+
+async fn replay(method: &str, path: &str, port: u16, exchange: &Exchange) -> Result<u16, Error> {
+    let body = Bytes::from(exchange.request_body.lock().unwrap().bytes.clone());
+    let mut request = Request::builder()
+        .method(method)
+        .uri(path)
+        .body(Full::new(body))?;
+    *request.headers_mut() = exchange.request_headers.clone();
+    let response = forward(request, port, path, false).await?;
+    let status = response.status().as_u16();
+    let _ = response.into_body().collect().await;
+    Ok(status)
 }
 
 pub fn mount(port: u16) -> String {
@@ -171,6 +271,14 @@ async fn handle(
     let wants_html = accepts_html(request.headers());
     let upgrade = request.headers().contains_key(header::UPGRADE);
     let client_side = upgrade.then(|| hyper::upgrade::on(&mut request));
+    let mut exchange = Exchange {
+        request_headers: request.headers().clone(),
+        response_headers: HeaderMap::new(),
+        request_body: Arc::default(),
+        response_body: Arc::default(),
+    };
+    let capture = exchange.request_body.clone();
+    let request = request.map(|inner| Tee { inner, capture });
 
     let response = match forward(request, port, &path, upgrade).await {
         Ok(mut response) if upgrade && response.status() == StatusCode::SWITCHING_PROTOCOLS => {
@@ -193,6 +301,10 @@ async fn handle(
         Err(_) if wants_html => html(DOWN, BUNNY_PAGE.replace("{port}", &port.to_string())),
         Err(_) => plain(DOWN, "The shared app is not answering on this computer."),
     };
+    let (parts, inner) = response.into_parts();
+    exchange.response_headers = parts.headers.clone();
+    let capture = exchange.response_body.clone();
+    let response = Response::from_parts(parts, Tee { inner, capture }.boxed());
 
     let _ = ctx.tx.send(Event::Request(Hit {
         method: method.to_string(),
@@ -202,16 +314,22 @@ async fn handle(
         port,
         visitor,
         upgrade,
+        exchange: Arc::new(exchange),
     }));
     Ok(response)
 }
 
-async fn forward(
-    request: Request<Incoming>,
+async fn forward<B>(
+    request: Request<B>,
     port: u16,
     path: &str,
     upgrade: bool,
-) -> Result<Response<Incoming>, Error> {
+) -> Result<Response<Incoming>, Error>
+where
+    B: hyper::body::Body + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<Error>,
+{
     let stream = TcpStream::connect(("localhost", port)).await?;
     let (mut sender, connection) =
         hyper::client::conn::http1::handshake(TokioIo::new(stream)).await?;

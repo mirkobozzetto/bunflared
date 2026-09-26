@@ -68,9 +68,9 @@ Closes: AC11
 
 Closes: AC12, AC13
 
-- [ ] Enter on a request shows its details, bodies capped and binary named
-- [ ] `p` replays a request and shows the new status
-- [ ] requests over the capture limit say so and are not replayable
+- [x] Enter on a request shows its details, bodies capped and binary named
+- [x] `p` replays a request and shows the new status
+- [x] requests over the capture limit say so and are not replayable
 
 ## T07 - Effects and QR polish
 
