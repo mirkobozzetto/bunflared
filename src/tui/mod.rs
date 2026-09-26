@@ -781,7 +781,7 @@ impl App {
             self.keys.pop_front();
         }
         if self.keys.iter().eq(KONAMI.iter()) {
-            self.disco = !self.disco;
+            self.disco = !self.disco && !self.theme.calm;
             self.shaders.disco(self.disco);
             self.keys.clear();
             self.unlock("disco");
