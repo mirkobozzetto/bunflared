@@ -66,7 +66,9 @@ In the dashboard:
 | `?` | help |
 | `q` | stop sharing |
 
-`NO_COLOR` is respected. When a shared port stops answering, visitors get a
+Colors follow your terminal: bunflared asks it for its background and picks a
+light or dark palette. `--theme light` or `--theme dark` forces one. `NO_COLOR`
+is respected. When a shared port stops answering, visitors get a
 small bunny page that retries by itself.
 
 ## For AI agents

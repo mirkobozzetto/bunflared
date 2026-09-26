@@ -67,6 +67,30 @@ pub fn hsv(hue: f32, saturation: f32, value: f32) -> Color {
     Color::Rgb(byte(r), byte(g), byte(b))
 }
 
+/// The palette is drawn for dark backgrounds; this deepens a color so it
+/// reads on a light one. Near-white text turns near-black.
+pub fn for_light(color: Color) -> Color {
+    let Color::Rgb(r, g, b) = color else {
+        return color;
+    };
+    let (r, g, b) = (r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0);
+    let max = r.max(g).max(b);
+    let delta = max - r.min(g).min(b);
+    let saturation = if max == 0.0 { 0.0 } else { delta / max };
+    if saturation < 0.15 {
+        let gray = ((1.0 - max) * 255.0) as u8;
+        return Color::Rgb(gray, gray, gray);
+    }
+    let hue = if max == r {
+        60.0 * ((g - b) / delta).rem_euclid(6.0)
+    } else if max == g {
+        60.0 * ((b - r) / delta + 2.0)
+    } else {
+        60.0 * ((r - g) / delta + 4.0)
+    };
+    hsv(hue, (saturation * 1.3 + 0.1).min(1.0), max * 0.6)
+}
+
 pub fn rainbow(hue: f32) -> Color {
     hsv(hue, 0.65, 1.0)
 }

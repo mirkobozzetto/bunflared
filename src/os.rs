@@ -50,6 +50,54 @@ mod imp {
 
     pub fn no_window(_: &mut tokio::process::Command) {}
 
+    /// Sends `query` to the terminal and returns what it answers. A device
+    /// attributes request follows it: every terminal answers that one, so its
+    /// reply ends the wait at once, and a query left unanswered cannot leak
+    /// into the dashboard's input later.
+    pub fn ask_terminal(query: &[u8]) -> Vec<u8> {
+        use ratatui::crossterm::terminal;
+        use std::io::{IsTerminal, Write};
+        use std::time::{Duration, Instant};
+
+        let mut reply = Vec::new();
+        if !std::io::stdin().is_terminal() || terminal::enable_raw_mode().is_err() {
+            return reply;
+        }
+        let mut out = std::io::stdout();
+        let _ = out
+            .write_all(query)
+            .and_then(|_| out.write_all(b"\x1b[c"))
+            .and_then(|_| out.flush());
+        let deadline = Instant::now() + Duration::from_millis(300);
+        let answered = |reply: &[u8]| {
+            reply
+                .windows(3)
+                .position(|w| w == b"\x1b[?")
+                .is_some_and(|at| reply[at..].contains(&b'c'))
+        };
+        while !answered(&reply) {
+            let left = deadline
+                .saturating_duration_since(Instant::now())
+                .as_millis() as i32;
+            let mut ready = libc::pollfd {
+                fd: 0,
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            if left == 0 || unsafe { libc::poll(&mut ready, 1, left) } <= 0 {
+                break;
+            }
+            let mut chunk = [0u8; 256];
+            let read = unsafe { libc::read(0, chunk.as_mut_ptr().cast(), chunk.len()) };
+            if read <= 0 {
+                break;
+            }
+            reply.extend_from_slice(&chunk[..read as usize]);
+        }
+        let _ = terminal::disable_raw_mode();
+        reply
+    }
+
     /// Waits for Ctrl-C, SIGTERM or SIGHUP; true when the terminal hung up.
     pub async fn quit() -> bool {
         use tokio::signal::unix::{SignalKind, signal};
@@ -102,6 +150,11 @@ mod imp {
 
     pub fn detach(command: &mut Command) {
         command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    }
+
+    // ponytail: no background query on Windows yet; --theme picks the palette.
+    pub fn ask_terminal(_: &[u8]) -> Vec<u8> {
+        Vec::new()
     }
 
     /// A detached share has no console; cloudflared must not pop one open.

@@ -53,16 +53,38 @@ const KONAMI: [KeyCode; 10] = [
 pub struct Theme {
     pub calm: bool,
     pub color: bool,
+    pub light: bool,
 }
 
 impl Theme {
     pub fn fg(&self, color: Color) -> Style {
-        if self.color {
-            Style::new().fg(color)
-        } else {
-            Style::new()
+        match (self.color, self.light) {
+            (false, _) => Style::new(),
+            (true, false) => Style::new().fg(color),
+            (true, true) => Style::new().fg(fx::for_light(color)),
         }
     }
+}
+
+/// True when the terminal reports a light background. Terminals that do not
+/// answer get the dark palette, which was the only one before.
+pub fn light_terminal() -> bool {
+    let reply = crate::os::ask_terminal(b"\x1b]11;?\x07");
+    background(&String::from_utf8_lossy(&reply))
+        .is_some_and(|(r, g, b)| 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5)
+}
+
+/// Parses `]11;rgb:RRRR/GGGG/BBBB` into channels between 0 and 1.
+fn background(reply: &str) -> Option<(f32, f32, f32)> {
+    let rgb = &reply[reply.find("]11;rgb:")? + 8..];
+    let end = rgb.find(['\x07', '\x1b']).unwrap_or(rgb.len());
+    let mut channels = rgb[..end].split('/').map(|hex| {
+        let max = 16f32.powi(hex.len() as i32) - 1.0;
+        u32::from_str_radix(hex, 16)
+            .ok()
+            .map(|value| value as f32 / max)
+    });
+    Some((channels.next()??, channels.next()??, channels.next()??))
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -682,18 +704,18 @@ impl App {
         println!();
         println!(
             "  {}      {}",
-            paint("38;5;218", r" (\(\ "),
+            paint("35", r" (\(\ "),
             paint("1", "bunflared · session recap")
         );
         println!(
             "  {}     {}  {}",
-            paint("38;5;218", r" ( ^.^)/"),
+            paint("35", r" ( ^.^)/"),
             paint("36", url),
             paint("2", "(closed)")
         );
         println!(
             "  {}    {} live · {} · {} · {}",
-            paint("38;5;218", r#" o_(")(")"#),
+            paint("35", r#" o_(")(")"#),
             uptime(self.live_for()),
             plural(self.total as usize, "request"),
             plural(self.visitors.len(), "visitor"),

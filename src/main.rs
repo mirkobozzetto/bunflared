@@ -71,6 +71,17 @@ struct Cli {
     /// No animations. NO_COLOR also turns them off, with the colors.
     #[arg(long)]
     calm: bool,
+
+    /// Colors for a light or dark terminal. Auto asks the terminal.
+    #[arg(long, value_enum, default_value_t = ThemeChoice::Auto)]
+    theme: ThemeChoice,
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum ThemeChoice {
+    Auto,
+    Light,
+    Dark,
 }
 
 #[derive(Subcommand)]
@@ -128,9 +139,14 @@ fn main() {
         None => {
             let no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
             let interactive = !cli.json && std::io::stdout().is_terminal();
-            let theme = interactive.then_some(tui::Theme {
+            let theme = interactive.then(|| tui::Theme {
                 calm: cli.calm || no_color,
                 color: !no_color,
+                light: match cli.theme {
+                    ThemeChoice::Light => true,
+                    ThemeChoice::Dark => false,
+                    ThemeChoice::Auto => tui::light_terminal(),
+                },
             });
             share(cli.ports, theme)
         }
