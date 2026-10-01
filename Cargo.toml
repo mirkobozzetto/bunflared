@@ -1,8 +1,8 @@
 [package]
 name = "bunflared"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
-description = "One command, one throwaway link for your localhost, several ports behind it. Chat with your client from the terminal, send them to a page, follow their cursor, catch their reactions 🔥"
+description = "One command, one throwaway link for your localhost, several ports behind it. Chat with your client from the terminal, send them to a page, follow their cursor, catch their reactions 🔥 Or let your coding agent run the session over MCP."
 license = "MIT"
 repository = "https://github.com/mirkobozzetto/bunflared"
 readme = "README.md"
