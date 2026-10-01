@@ -56,7 +56,13 @@ bunflared agents
 bunf 5173                       # share one app
 bunf 5173 3000                  # app at /, its API at /_port/3000
 bunf 5173 --calm                # same dashboard, no animations
+bunf 5173 --local               # on this computer only, no tunnel, no link
 ```
+
+`--local` serves the app with the widget on `http://127.0.0.1:<port>`, in
+well under a second: the same dashboard, notes and live session, for you and
+your own browser, with nothing reaching Cloudflare. Only this computer can
+open that address.
 
 `bunf` and `bunflared` are the same command.
 
@@ -153,6 +159,41 @@ The feedback button stays on the pages of a detached share: you can leave
 notes on your app while your agent works, and it reads them in
 `bunflared-feedback/`.
 
+### Your agent in the live session
+
+`bunflared mcp` is an MCP server on stdio. Your agent opens its own shares
+and does what the dashboard does: talk to the visitors, send them to a page,
+reload it after a fix, read their messages and notes as they come, inspect
+and replay the requests. Add it to Claude Code once:
+
+```sh
+claude mcp add bunflared -- bunflared mcp            # this project
+claude mcp add -s user bunflared -- bunflared mcp    # every project
+```
+
+Shares opened by the agent are local by default: you point at an element of
+your own page, leave a note, and watch the agent fix it and reload your tab.
+It asks for a public link only when someone else needs one. They show up in
+`bunflared ls`, `bunflared down <id>` stops one, and they all close when the
+agent's session ends. Notes land in `bunflared-feedback/` of the project the
+agent works in.
+
+| Tool | Does |
+| --- | --- |
+| `open`, `list`, `close` | start a share (local, or `public`), list them, stop one |
+| `visitors` | who is on a share: device, page, active or idle |
+| `say`, `go`, `reload` | a chat bubble, a page to go to, a reload: for one visitor or everyone |
+| `events` | messages, notes, reactions, arrivals and departures since a cursor; it can wait for the next one |
+| `requests`, `request`, `replay` | the latest requests, one in full, sent again |
+
+Claude Code's channels (a research preview) bring each message and note into
+the session by itself, without the agent asking. bunflared is not on
+Anthropic's list of approved channels, so start Claude Code with:
+
+```sh
+claude --dangerously-load-development-channels server:bunflared
+```
+
 ### Teach your agents
 
 `bunflared agents` writes a short note into the global instructions of
@@ -186,6 +227,7 @@ npx skills add mirkobozzetto/bunflared -g
 - Quick tunnels allow 200 requests in flight and do not carry Server-Sent
   Events ([Cloudflare docs](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)).
 - Quick tunnels refuse to start while `~/.cloudflared/config.yaml` exists.
+  `--local` does not care.
 - Cloudflare hands out a limited number of new quick links in a short time.
   Past it, bunflared says so: wait a few minutes.
 - The inspector keeps the first 32 KiB of each body, in memory, for the last

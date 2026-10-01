@@ -31,6 +31,12 @@ const AFTER_HELP: &str = r#"Examples:
   bunflared ls [--json]           list live shares
   bunflared down <id> | --all     stop shares
   bunflared agents                teach your coding agents to use bunflared
+  bunflared mcp                   MCP server on stdio, for coding agents
+
+Add the MCP server to Claude Code with `claude mcp add bunflared -- bunflared mcp`.
+Its shares are local unless the agent asks for a public link, and close with the
+session. With `claude --dangerously-load-development-channels server:bunflared`,
+visitors' messages and notes reach the session by themselves.
 
 In a terminal you get the animated dashboard: ? lists its keys. m messages the
 visitors, g sends them to a page, R reloads it, Enter on a request shows it and
@@ -42,6 +48,7 @@ Otherwise, or with --json, the ready line is one JSON object on stdout:
   {"id":"4242","pid":4242,"tunnel_pid":4243,"url":"https://....trycloudflare.com",
    "routes":{"/":5173,"/_port/3000":3000},"started_at":1790000000}
 and a failure is one JSON object on stderr: {"error":"...","code":N}.
+With --local, the url is http://127.0.0.1:<port> and tunnel_pid is 0.
 
 cloudflared is fetched from Cloudflare's releases on the first run when it is
 not installed.
