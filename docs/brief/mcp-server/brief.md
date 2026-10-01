@@ -2,7 +2,7 @@
 type: brief
 slug: mcp-server
 title: L'agent dans la session live, bunflared en serveur MCP avec un mode local
-status: ready
+status: shipped
 created: 2026-10-02
 next_action: Ajouter `bunflared mcp`, un serveur MCP sur stdio qui ouvre ses propres partages, parle aux pages, lit les notes et rejoue les requêtes, et un mode `--local` sans Cloudflare
 resume_cmd: /ship docs/brief/mcp-server
