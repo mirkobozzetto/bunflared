@@ -3,8 +3,9 @@
 //! the folder bunflared runs from.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use bytes::Bytes;
 use http_body_util::{BodyExt, Limited};
@@ -25,6 +26,8 @@ const MAX_PING: usize = 4 * 1024;
 const MAX_NOTE: usize = 64 * 1024;
 const MAX_SHOT: usize = 12 * 1024 * 1024;
 const MAX_PINNED: usize = 300;
+const LEFT_AFTER: Duration = Duration::from_secs(20);
+const IDLE_AFTER: u64 = 30;
 
 #[derive(Debug, Clone)]
 pub struct Presence {
@@ -37,11 +40,32 @@ pub struct Presence {
     pub gone: bool,
 }
 
+impl Presence {
+    /// "active", "tab hidden", "idle 45s" or "left", `away` after its last ping.
+    pub fn status(&self, away: Duration) -> String {
+        let idle = u64::from(self.idle) + away.as_secs();
+        if self.gone || away > LEFT_AFTER {
+            "left".into()
+        } else if !self.visible {
+            "tab hidden".into()
+        } else if idle >= IDLE_AFTER {
+            format!("idle {idle}s")
+        } else {
+            "active".into()
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Feedback {
+    pub sid: String,
     pub device: String,
     pub page: String,
     pub message: String,
+    /// The note's Markdown file, and its screenshot.
+    pub file: PathBuf,
+    pub shot: Option<PathBuf>,
+    pub element: Option<Element>,
 }
 
 #[derive(Deserialize)]
@@ -65,10 +89,10 @@ struct Note {
 }
 
 /// The element a visitor pointed at, so whoever reads the note finds it.
-#[derive(Deserialize)]
-struct Element {
-    selector: String,
-    text: String,
+#[derive(Debug, Clone, Deserialize)]
+pub struct Element {
+    pub selector: String,
+    pub text: String,
     x: f64,
     y: f64,
     w: f64,
@@ -165,12 +189,16 @@ pub async fn handle(
                 return status(StatusCode::BAD_REQUEST);
             };
             match save_note(folder, &note, &device) {
-                Ok(name) => {
+                Ok((name, shot)) => {
                     hub.noted(&device, &note.page, &name);
                     let _ = tx.send(Event::Feedback(Feedback {
+                        sid: note.sid,
                         device,
                         page: note.page,
                         message: note.message.trim().to_string(),
+                        file: folder.join(name),
+                        shot: shot.map(|shot| folder.join(shot)),
+                        element: note.element,
                     }));
                     json(serde_json::json!({ "ok": true }))
                 }
@@ -233,7 +261,12 @@ fn save_shot(folder: &Path, image: &[u8]) -> std::io::Result<String> {
     Ok(name)
 }
 
-fn save_note(folder: &Path, note: &Note, device: &str) -> std::io::Result<String> {
+/// Returns the note's file name, and its screenshot's.
+fn save_note(
+    folder: &Path,
+    note: &Note,
+    device: &str,
+) -> std::io::Result<(String, Option<String>)> {
     folder_ready(folder)?;
     // Only a name this module gave out, never a path from the browser.
     let shot = note.shot.as_deref().filter(|name| {
@@ -268,7 +301,7 @@ fn save_note(folder: &Path, note: &Note, device: &str) -> std::io::Result<String
     }
     let name = format!("{}.md", stamp());
     fs::write(folder.join(&name), text)?;
-    Ok(name)
+    Ok((name, shot.map(str::to_string)))
 }
 
 /// "iPhone · Safari", from the User-Agent and the `Sec-CH-UA` client hint.

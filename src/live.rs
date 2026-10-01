@@ -100,6 +100,7 @@ pub struct Pointer {
 /// A chat message from a visitor.
 #[derive(Debug, Clone)]
 pub struct Said {
+    pub sid: String,
     pub device: String,
     pub page: String,
     pub text: String,
@@ -184,7 +185,7 @@ impl Hub {
                     let _ = self.tx.send(Event::Reacted(Reacted { device, kind }));
                 }
             }
-            Ok(Incoming::Chat { text, page }) => self.chat(device, text, page),
+            Ok(Incoming::Chat { text, page }) => self.chat(sid, device, text, page),
             Ok(Incoming::Pointer { x, y, w, h }) => {
                 let sid = sid.to_string();
                 let _ = self.tx.send(Event::Pointer(Pointer { sid, x, y, w, h }));
@@ -193,7 +194,7 @@ impl Hub {
         }
     }
 
-    fn chat(&self, device: &str, text: String, page: String) {
+    fn chat(&self, sid: &str, device: &str, text: String, page: String) {
         let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
         let text: String = text.chars().take(MAX_TEXT).collect();
         let page: String = page.chars().take(MAX_TEXT).collect();
@@ -202,6 +203,7 @@ impl Hub {
         }
         self.keep(&format!("**{device}** on `{page}`: {text}"));
         let _ = self.tx.send(Event::Chat(Said {
+            sid: sid.to_string(),
             device: device.to_string(),
             page,
             text,
