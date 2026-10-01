@@ -3,8 +3,8 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -27,11 +27,15 @@ const GONE_GRACE: Duration = Duration::from_secs(3);
 const STOP_GRACE: Duration = Duration::from_secs(1);
 const TICK: Duration = Duration::from_millis(500);
 const REPLAY_TIMEOUT: Duration = Duration::from_secs(30);
+const ENDING_GRACE: Duration = Duration::from_secs(3);
 
 pub struct Host {
     folder: Option<PathBuf>,
     shares: Mutex<Vec<Arc<Share>>>,
     opened: AtomicU32,
+    /// Shares still digging their tunnel, out of `shares` until ready.
+    opening: AtomicUsize,
+    ending: AtomicBool,
     log: Mutex<Log>,
     logged: Condvar,
 }
@@ -80,6 +84,8 @@ impl Host {
             folder,
             shares: Mutex::default(),
             opened: AtomicU32::new(0),
+            opening: AtomicUsize::new(0),
+            ending: AtomicBool::new(false),
             log: Mutex::default(),
             logged: Condvar::new(),
         });
@@ -95,6 +101,13 @@ impl Host {
 
     /// Starts a share and returns once it answers, or with why it could not.
     pub fn open(self: &Arc<Self>, ports: Vec<u16>, public: bool) -> Result<Value, String> {
+        self.opening.fetch_add(1, Ordering::SeqCst);
+        let opened = self.start(ports, public);
+        self.opening.fetch_sub(1, Ordering::SeqCst);
+        opened
+    }
+
+    fn start(self: &Arc<Self>, ports: Vec<u16>, public: bool) -> Result<Value, String> {
         let n = self.opened.fetch_add(1, Ordering::Relaxed) + 1;
         let id = format!("{}-{n}", std::process::id());
         let (tx, rx) = mpsc::channel();
@@ -125,8 +138,9 @@ impl Host {
             runtime.shutdown_timeout(STOP_GRACE);
             let _ = tx.send(Event::Done(result));
         });
+        let ended = || "The session ended before the share was ready.".to_string();
         let record = loop {
-            match rx.recv() {
+            match rx.recv_timeout(TICK) {
                 Ok(Event::Ready { record, .. }) => break record,
                 Ok(Event::Done(result)) => {
                     let _ = thread.join();
@@ -137,7 +151,16 @@ impl Host {
                         }));
                 }
                 Ok(_) => {}
-                Err(_) => return Err("The share stopped before it was ready.".into()),
+                // The process is about to exit: cloudflared must not outlive it.
+                Err(RecvTimeoutError::Timeout) if self.ending.load(Ordering::SeqCst) => {
+                    let _ = stop.send(true);
+                    let _ = thread.join();
+                    return Err(ended());
+                }
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => {
+                    return Err("The share stopped before it was ready.".into());
+                }
             }
         };
         let share = Arc::new(Share {
@@ -150,7 +173,15 @@ impl Host {
             thread: Mutex::new(Some(thread)),
             seen: Mutex::default(),
         });
-        self.shares.lock().unwrap().push(share.clone());
+        {
+            let mut shares = self.shares.lock().unwrap();
+            if self.ending.load(Ordering::SeqCst) {
+                drop(shares);
+                share.halt();
+                return Err(ended());
+            }
+            shares.push(share.clone());
+        }
         let host = self.clone();
         let summary = share.summary();
         std::thread::spawn(move || host.drain(&share, rx));
@@ -175,14 +206,19 @@ impl Host {
         Ok(json!({ "closed": id }))
     }
 
-    /// Closes every share, for the end of the session.
+    /// Closes every share, those still opening too, for the end of the session.
     pub fn close_all(&self) {
+        self.ending.store(true, Ordering::SeqCst);
         let shares = std::mem::take(&mut *self.shares.lock().unwrap());
         for share in &shares {
             let _ = share.stop.send(true);
         }
         for share in &shares {
             share.halt();
+        }
+        let deadline = Instant::now() + ENDING_GRACE;
+        while self.opening.load(Ordering::SeqCst) > 0 && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(50));
         }
     }
 
