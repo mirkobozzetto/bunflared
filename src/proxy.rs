@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::task::{Context, Poll};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use http_body_util::combinators::BoxBody;
@@ -54,6 +54,7 @@ const READABLE: [&str; 8] = [
     "form-urlencoded",
     "graphql",
 ];
+const ACCEPT_RETRY: Duration = Duration::from_millis(100);
 // Not 502: Cloudflare swaps an origin's 502 page for its own.
 const DOWN: StatusCode = StatusCode::SERVICE_UNAVAILABLE;
 
@@ -208,8 +209,13 @@ pub async fn start(
     });
     tokio::spawn(async move {
         loop {
-            let Ok((stream, peer)) = listener.accept().await else {
-                continue;
+            let (stream, peer) = match listener.accept().await {
+                Ok(accepted) => accepted,
+                // Out of file descriptors: wait for some to free up, not spin.
+                Err(_) => {
+                    tokio::time::sleep(ACCEPT_RETRY).await;
+                    continue;
+                }
             };
             let ctx = ctx.clone();
             tokio::spawn(async move {
@@ -410,6 +416,13 @@ pub fn full(bytes: impl Into<Bytes>) -> Body {
     Full::new(bytes.into())
         .map_err(|never| match never {})
         .boxed()
+}
+
+/// An empty answer with this status.
+pub fn status(code: StatusCode) -> Response<Body> {
+    let mut response = Response::new(full(Bytes::new()));
+    *response.status_mut() = code;
+    response
 }
 
 fn plain(status: StatusCode, text: &'static str) -> Response<Body> {

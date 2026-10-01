@@ -408,7 +408,12 @@
   const [chat, thread, reply, answer] = [$(".chat"), $(".thread"), $(".reply"), $(".reply input")];
   const watch = $(".watch");
   let live = null;
-  const say = (message) => live?.readyState === WebSocket.OPEN && live.send(JSON.stringify(message));
+  // True once sent: WebSocket.send itself returns nothing.
+  const say = (message) => {
+    if (live?.readyState !== WebSocket.OPEN) return false;
+    live.send(JSON.stringify(message));
+    return true;
+  };
 
   // Only while followed, at most a few times a second, and never at rest: the
   // last position of a movement is sent once it settles.

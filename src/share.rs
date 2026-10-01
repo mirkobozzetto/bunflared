@@ -50,6 +50,22 @@ pub struct Hit {
     pub exchange: Arc<proxy::Exchange>,
 }
 
+impl Hit {
+    /// Why it cannot be sent again as it was, if it cannot.
+    pub fn unreplayable(&self) -> Option<String> {
+        if self.upgrade {
+            Some("A WebSocket cannot be sent again.".into())
+        } else if !self.exchange.request_body.lock().unwrap().complete() {
+            Some(format!(
+                "Its body is over {} KiB: only the start was kept.",
+                proxy::CAPTURE / 1024
+            ))
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum Event {
     PortChecked {

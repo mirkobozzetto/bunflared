@@ -13,14 +13,17 @@ use hyper::HeaderMap;
 use serde_json::{Value, json};
 use tokio::sync::watch;
 
-use crate::live::{Command, Hub, REACTIONS};
-use crate::proxy::{self, CAPTURE, Capture};
+use crate::live::{self, Command, Hub, REACTIONS};
+use crate::proxy::{self, Capture};
 use crate::share::{self, Event, Hit, Spec};
 use crate::state::{self, Record};
-use crate::widget::{Feedback, Presence};
+use crate::widget::{Feedback, Presence, clock};
 
 const KEEP_EVENTS: usize = 1000;
 const KEEP_REQUESTS: usize = 200;
+/// Pings are open to anyone with the link: past this many visitors, new ones
+/// are not tracked, so a flood cannot push the notes out of the event log.
+const MAX_VISITORS: usize = 200;
 /// A page that said goodbye and sent no new ping since has left; a visitor
 /// moving to another page says goodbye too, then pings right away.
 const GONE_GRACE: Duration = Duration::from_secs(3);
@@ -36,6 +39,9 @@ pub struct Host {
     /// Shares still digging their tunnel, out of `shares` until ready.
     opening: AtomicUsize,
     ending: AtomicBool,
+    /// Held for the whole of `close_all`: stdin closing and a signal can both
+    /// call it, and neither may exit while the other still stops shares.
+    closing: Mutex<()>,
     log: Mutex<Log>,
     logged: Condvar,
 }
@@ -69,7 +75,6 @@ struct Visitor {
     presence: Presence,
     seen: Instant,
     first: Instant,
-    departed: bool,
 }
 
 struct Row {
@@ -86,6 +91,7 @@ impl Host {
             opened: AtomicU32::new(0),
             opening: AtomicUsize::new(0),
             ending: AtomicBool::new(false),
+            closing: Mutex::default(),
             log: Mutex::default(),
             logged: Condvar::new(),
         });
@@ -208,6 +214,7 @@ impl Host {
 
     /// Closes every share, those still opening too, for the end of the session.
     pub fn close_all(&self) {
+        let _closing = self.closing.lock().unwrap();
         self.ending.store(true, Ordering::SeqCst);
         let shares = std::mem::take(&mut *self.shares.lock().unwrap());
         for share in &shares {
@@ -416,7 +423,7 @@ impl Share {
 
     fn summary(&self) -> Value {
         let seen = self.seen.lock().unwrap();
-        let here = seen.visitors.values().filter(|v| !v.departed).count();
+        let here = seen.visitors.len();
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
@@ -433,7 +440,7 @@ impl Share {
 
     pub fn visitors(&self) -> Value {
         let seen = self.seen.lock().unwrap();
-        let mut here: Vec<&Visitor> = seen.visitors.values().filter(|v| !v.departed).collect();
+        let mut here: Vec<&Visitor> = seen.visitors.values().collect();
         here.sort_by_key(|v| v.first);
         let here = here
             .into_iter()
@@ -461,11 +468,7 @@ impl Share {
         if path.is_empty() {
             return Err("Pass the path to send them to.".into());
         }
-        let path = if path.starts_with('/') {
-            path.to_string()
-        } else {
-            format!("/{path}")
-        };
+        let path = live::absolute(path);
         reached(self.hub.send(to, &Command::Go { path }))
     }
 
@@ -497,7 +500,7 @@ impl Share {
     pub fn request(&self, n: u32) -> Result<Value, String> {
         let (hit, at) = self.row(n)?;
         let exchange = &hit.exchange;
-        let replay = match refusal(&hit) {
+        let replay = match hit.unreplayable() {
             Some(reason) => json!(reason),
             None => json!(true),
         };
@@ -526,8 +529,8 @@ impl Share {
 
     pub fn replay(&self, n: u32) -> Result<Value, String> {
         let (hit, _) = self.row(n)?;
-        if let Some(reason) = refusal(&hit) {
-            return Err(format!("Not replayed: {reason}"));
+        if let Some(reason) = hit.unreplayable() {
+            return Err(format!("Not replayed. {reason}"));
         }
         let started = Instant::now();
         let status = self
@@ -577,35 +580,38 @@ impl Seen {
     /// Keeps the visitor's last ping; true when they just arrived.
     fn presence(&mut self, presence: Presence) -> bool {
         let now = Instant::now();
-        let known = self.visitors.get(&presence.sid).filter(|v| !v.departed);
-        let arrived = known.is_none() && !presence.gone;
-        if known.is_none() && presence.gone {
+        let known = self.visitors.get(&presence.sid);
+        let full = self.visitors.len() >= MAX_VISITORS;
+        if known.is_none() && (presence.gone || full) {
             return false;
         }
+        let arrived = known.is_none();
         let first = known.map_or(now, |v| v.first);
         let sid = presence.sid.clone();
-        self.visitors.insert(
-            sid,
-            Visitor {
-                presence,
-                seen: now,
-                first,
-                departed: false,
-            },
-        );
+        let visitor = Visitor {
+            presence,
+            seen: now,
+            first,
+        };
+        self.visitors.insert(sid, visitor);
         arrived
     }
 
+    /// Forgets the visitors who left, and returns them.
     fn departures(&mut self) -> Vec<Presence> {
-        let mut left = Vec::new();
-        for v in self.visitors.values_mut().filter(|v| !v.departed) {
-            let away = v.seen.elapsed();
-            if (v.presence.gone && away >= GONE_GRACE) || v.presence.status(away) == "left" {
-                v.departed = true;
-                left.push(v.presence.clone());
-            }
-        }
-        left
+        let gone: Vec<String> = self
+            .visitors
+            .iter()
+            .filter(|(_, v)| {
+                let away = v.seen.elapsed();
+                (v.presence.gone && away >= GONE_GRACE) || v.presence.status(away) == "left"
+            })
+            .map(|(sid, _)| sid.clone())
+            .collect();
+        gone.iter()
+            .filter_map(|sid| self.visitors.remove(sid))
+            .map(|v| v.presence)
+            .collect()
     }
 }
 
@@ -621,20 +627,6 @@ fn reached(pages: usize) -> Result<Value, String> {
     match pages {
         0 => Err("No page is connected live: nobody got it.".into()),
         n => Ok(json!({ "pages": n })),
-    }
-}
-
-/// Why a request cannot be sent again as it was, if it cannot.
-fn refusal(hit: &Hit) -> Option<String> {
-    if hit.upgrade {
-        Some("a WebSocket cannot be sent again.".into())
-    } else if !hit.exchange.request_body.lock().unwrap().complete() {
-        Some(format!(
-            "its body is over {} KiB and only the start was kept.",
-            CAPTURE / 1024
-        ))
-    } else {
-        None
     }
 }
 
@@ -658,8 +650,4 @@ fn body(headers: &HeaderMap, capture: &Capture) -> Value {
         "text": String::from_utf8_lossy(&capture.bytes),
         "truncated": !capture.complete(),
     })
-}
-
-fn clock() -> String {
-    chrono::Local::now().format("%H:%M:%S").to_string()
 }

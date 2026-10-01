@@ -19,8 +19,8 @@ use ratatui::style::{Color, Style};
 use tokio::sync::watch;
 
 use crate::clipboard;
-use crate::live::{Command, Hub, Pointer, REACTIONS};
-use crate::proxy::{CAPTURE, Replayer, mount};
+use crate::live::{self, Command, Hub, Pointer, REACTIONS};
+use crate::proxy::{Replayer, mount};
 use crate::share::{Event, Failure, Hit};
 use crate::state::{Record, uptime};
 use crate::widget::{self, Presence};
@@ -545,7 +545,7 @@ impl App {
                     who: said.device,
                     page: said.page,
                     text: said.text,
-                    clock: clock(),
+                    clock: widget::clock(),
                 });
             }
             Event::Pointer(pointer) => {
@@ -669,7 +669,7 @@ impl App {
         }
         self.rows.push_front(Row {
             hit,
-            clock: clock(),
+            clock: widget::clock(),
             n: self.total,
             replayed: None,
         });
@@ -1006,11 +1006,7 @@ impl App {
                 if path.is_empty() {
                     return;
                 }
-                let path = if path.starts_with('/') {
-                    path
-                } else {
-                    format!("/{path}")
-                };
+                let path = live::absolute(&path);
                 let command = Command::Go { path: path.clone() };
                 let reached = self.hub.send(self.selected.as_deref(), &command);
                 self.sent(&format!("→ {path}"), reached);
@@ -1054,7 +1050,7 @@ impl App {
                     who: to,
                     page: String::new(),
                     text,
-                    clock: clock(),
+                    clock: widget::clock(),
                 });
             }
         }
@@ -1065,17 +1061,7 @@ impl App {
         let Some(row) = self.rows.iter().find(|row| row.n == n) else {
             return;
         };
-        let refusal = if row.hit.upgrade {
-            Some("A WebSocket cannot be sent again.".to_string())
-        } else if !row.hit.exchange.request_body.lock().unwrap().complete() {
-            Some(format!(
-                "Its body is over {} KiB: only the start was kept.",
-                CAPTURE / 1024
-            ))
-        } else {
-            None
-        };
-        if let Some(reason) = refusal {
+        if let Some(reason) = row.hit.unreplayable() {
             return self.toast("✖ Not replayable", reason, false);
         }
         self.replayer.replay(n, &row.hit);
@@ -1287,8 +1273,4 @@ fn qr(url: &str) -> Option<Qr> {
 
 fn local_hour() -> u32 {
     chrono::Timelike::hour(&chrono::Local::now())
-}
-
-fn clock() -> String {
-    chrono::Local::now().format("%H:%M:%S").to_string()
 }

@@ -15,7 +15,7 @@ use hyper::{Method, Request, Response, StatusCode};
 use serde::Deserialize;
 
 use crate::live::{self, Hub};
-use crate::proxy::{Body, full};
+use crate::proxy::{Body, full, status};
 use crate::share::{Event, Tx};
 
 pub const PREFIX: &str = "/_bunflared/";
@@ -27,6 +27,9 @@ const MAX_NOTE: usize = 64 * 1024;
 const MAX_SHOT: usize = 12 * 1024 * 1024;
 const MAX_PINNED: usize = 300;
 const LEFT_AFTER: Duration = Duration::from_secs(20);
+// A hidden tab's timers wake up once a minute in Chrome, every 40 s in
+// Safari: its pings slow down without it leaving.
+const HIDDEN_LEFT_AFTER: Duration = Duration::from_secs(90);
 const IDLE_AFTER: u64 = 30;
 
 #[derive(Debug, Clone)]
@@ -44,7 +47,12 @@ impl Presence {
     /// "active", "tab hidden", "idle 45s" or "left", `away` after its last ping.
     pub fn status(&self, away: Duration) -> String {
         let idle = u64::from(self.idle) + away.as_secs();
-        if self.gone || away > LEFT_AFTER {
+        let patience = if self.visible {
+            LEFT_AFTER
+        } else {
+            HIDDEN_LEFT_AFTER
+        };
+        if self.gone || away > patience {
             "left".into()
         } else if !self.visible {
             "tab hidden".into()
@@ -158,7 +166,9 @@ pub async fn handle(
         (Method::GET, "live") => live::accept(request, hub.clone(), device),
         (Method::POST, "ping") => match read(request, MAX_PING).await {
             Some(body) => {
-                if let Ok(ping) = serde_json::from_slice::<Ping>(&body) {
+                if let Ok(ping) = serde_json::from_slice::<Ping>(&body)
+                    && live::valid_sid(&ping.sid)
+                {
                     let _ = tx.send(Event::Presence(Presence {
                         sid: ping.sid,
                         device,
@@ -232,6 +242,11 @@ pub fn stamp() -> String {
     chrono::Local::now()
         .format("%Y-%m-%d_%H-%M-%S%.3f")
         .to_string()
+}
+
+/// The time of day, as the logs show it.
+pub fn clock() -> String {
+    chrono::Local::now().format("%H:%M:%S").to_string()
 }
 
 fn save_shot(folder: &Path, image: &[u8]) -> std::io::Result<String> {
@@ -355,11 +370,5 @@ fn json(value: serde_json::Value) -> Response<Body> {
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/json"),
     );
-    response
-}
-
-fn status(code: StatusCode) -> Response<Body> {
-    let mut response = Response::new(full(Bytes::new()));
-    *response.status_mut() = code;
     response
 }
