@@ -84,17 +84,28 @@ pub enum Event {
     Done(Result<(), Failure>),
 }
 
-/// Shares `ports` until `stop` flips, a signal arrives, or the tunnel dies.
+/// What to share, and how.
+pub struct Spec {
+    pub ports: Vec<u16>,
+    /// Served on this computer only, without a tunnel.
+    pub local: bool,
+    /// The record's id, the process id for a share of its own.
+    pub id: String,
+    /// Put the address on the clipboard once it works.
+    pub copy: bool,
+}
+
+/// Shares until `stop` flips, a signal arrives, or the tunnel dies.
 /// Dropping the share on the way out kills cloudflared and removes its record.
 pub async fn run(
-    ports: &[u16],
+    spec: &Spec,
     tx: &Tx,
     mut stop: watch::Receiver<bool>,
     feedback: Option<PathBuf>,
     hub: Arc<Hub>,
 ) -> Result<(), Failure> {
     let hung_up = tokio::select! {
-        result = serve(ports, tx, feedback, hub) => return result,
+        result = serve(spec, tx, feedback, hub) => return result,
         _ = stop.changed() => false,
         hung_up = os::quit() => hung_up,
     };
@@ -106,13 +117,17 @@ pub async fn run(
     Ok(())
 }
 
-async fn serve(
-    ports: &[u16],
+/// Runs the share until its tunnel dies; a local share runs until dropped.
+pub async fn serve(
+    spec: &Spec,
     tx: &Tx,
     feedback: Option<PathBuf>,
     hub: Arc<Hub>,
 ) -> Result<(), Failure> {
-    if let Some(config) = quick_tunnel_blocker() {
+    let ports = &spec.ports[..];
+    if !spec.local
+        && let Some(config) = quick_tunnel_blocker()
+    {
         return Err(Failure::new(
             EXIT_CONFIG_YAML,
             format!(
@@ -132,11 +147,12 @@ async fn serve(
         }
     }
 
-    let cloudflared = match cloudflared::find() {
-        Some(path) => path,
-        None => {
+    let cloudflared = match (spec.local, cloudflared::find()) {
+        (true, _) => None,
+        (false, Some(path)) => Some(path),
+        (false, None) => {
             let _ = tx.send(Event::FetchingCloudflared);
-            cloudflared::fetch().await.map_err(|err| {
+            Some(cloudflared::fetch().await.map_err(|err| {
                 Failure::new(
                     EXIT_NO_CLOUDFLARED,
                     format!(
@@ -144,7 +160,7 @@ async fn serve(
                         cloudflared::install_hint()
                     ),
                 )
-            })?
+            })?)
         }
     };
 
@@ -153,28 +169,33 @@ async fn serve(
         .map_err(|err| {
             Failure::new(EXIT_TUNNEL_FAILED, format!("cannot start the proxy: {err}"))
         })?;
-    let _ = tx.send(Event::TunnelStarting);
-    let mut tunnel = tunnel::open(&cloudflared, proxy_port, tx).await?;
-    let host = tunnel.url.trim_start_matches("https://").to_string();
     let closed = || Failure::new(EXIT_TUNNEL_CLOSED, "The tunnel closed.");
-
-    let resolved = tokio::select! {
-        _ = tunnel.child.wait() => return Err(closed()),
-        resolved = tunnel::wait_dns(&host, tx) => resolved,
+    let (url, mut tunnel, resolved) = match cloudflared {
+        None => (format!("http://127.0.0.1:{proxy_port}"), None, true),
+        Some(cloudflared) => {
+            let _ = tx.send(Event::TunnelStarting);
+            let mut tunnel = tunnel::open(&cloudflared, proxy_port, tx).await?;
+            let host = tunnel.url.trim_start_matches("https://").to_string();
+            let resolved = tokio::select! {
+                _ = tunnel.child.wait() => return Err(closed()),
+                resolved = tunnel::wait_dns(&host, tx) => resolved,
+            };
+            (tunnel.url.clone(), Some(tunnel), resolved)
+        }
     };
 
     let record = state::Record {
-        id: std::process::id().to_string(),
+        id: spec.id.clone(),
         pid: std::process::id(),
-        tunnel_pid: tunnel.child.id().unwrap_or(0),
-        url: tunnel.url.clone(),
+        tunnel_pid: tunnel.as_ref().and_then(|t| t.child.id()).unwrap_or(0),
+        url,
         routes: proxy::routes(ports),
         started_at: SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_secs()),
     };
     let _saved = state::Saved::write(&record);
-    let copied = clipboard::copy(&record.url);
+    let copied = spec.copy && clipboard::copy(&record.url);
     let _ = tx.send(Event::Ready {
         record,
         resolved,
@@ -182,8 +203,13 @@ async fn serve(
     });
     tokio::spawn(watch_health(ports.to_vec(), tx.clone()));
 
-    let _ = tunnel.child.wait().await;
-    Err(closed())
+    match &mut tunnel {
+        Some(tunnel) => {
+            let _ = tunnel.child.wait().await;
+            Err(closed())
+        }
+        None => std::future::pending().await,
+    }
 }
 
 async fn answers(port: u16) -> bool {

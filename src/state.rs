@@ -21,6 +21,14 @@ pub struct Record {
     pub started_at: u64,
 }
 
+impl Record {
+    /// Held by a `bunflared mcp` process among others: its id is not its pid,
+    /// and it stops when its record goes away, never on a signal.
+    fn hosted(&self) -> bool {
+        self.id != self.pid.to_string()
+    }
+}
+
 fn dir() -> Option<PathBuf> {
     crate::os::data_dir()
 }
@@ -42,6 +50,11 @@ impl Saved {
         });
         Self(written)
     }
+}
+
+/// Whether the record of `id` is on disk; `down` removes it to stop a hosted share.
+pub fn recorded(id: &str) -> bool {
+    file(id).is_some_and(|path| path.exists())
 }
 
 impl Drop for Saved {
@@ -126,15 +139,31 @@ pub fn down(id: Option<String>, all: bool) -> i32 {
         return if all { 0 } else { 1 };
     }
     for record in &targets {
-        os::terminate(record.pid);
+        if record.hosted() {
+            if let Some(path) = file(&record.id) {
+                let _ = fs::remove_file(path);
+            }
+        } else {
+            os::terminate(record.pid);
+        }
     }
+    // A hosted share is gone once its tunnel is.
+    let running = |record: &Record| {
+        if record.hosted() {
+            record.tunnel_pid != 0 && os::alive(record.tunnel_pid)
+        } else {
+            os::alive(record.pid)
+        }
+    };
     let deadline = Instant::now() + DOWN_GRACE;
-    while Instant::now() < deadline && targets.iter().any(|record| os::alive(record.pid)) {
+    while Instant::now() < deadline && targets.iter().any(running) {
         std::thread::sleep(Duration::from_millis(50));
     }
     for record in &targets {
-        if os::alive(record.pid) {
-            os::kill(record.pid);
+        if running(record) {
+            if !record.hosted() {
+                os::kill(record.pid);
+            }
             os::kill(record.tunnel_pid);
         }
         if let Some(path) = file(&record.id) {
@@ -147,7 +176,7 @@ pub fn down(id: Option<String>, all: bool) -> i32 {
 
 /// Starts the share in its own session and returns once it prints its ready
 /// line, so the caller's shell is free while the share keeps running.
-pub fn detach(ports: &[u16], no_widget: bool) -> i32 {
+pub fn detach(ports: &[u16], no_widget: bool, local: bool) -> i32 {
     let Ok(exe) = std::env::current_exe() else {
         eprintln!(r#"{{"error":"cannot find the bunflared executable","code":1}}"#);
         return 1;
@@ -157,6 +186,7 @@ pub fn detach(ports: &[u16], no_widget: bool) -> i32 {
         .args(ports.iter().map(u16::to_string))
         .arg("--json")
         .args(no_widget.then_some("--no-widget"))
+        .args(local.then_some("--local"))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

@@ -18,6 +18,14 @@ to the user. The first port is served at `/`, the others under
 stops one. Notes visitors leave with the page's feedback button land in
 `bunflared-feedback/` in that folder, Markdown with screenshots and the element
 they pointed at; `session_<date>.md` there keeps the chat and the reactions.
+
+For the user's own browser only, `--local` serves the app on
+`http://127.0.0.1:<port>`, no tunnel. `bunflared mcp` is an MCP server that
+opens shares and talks to the pages: chat, go to a page, reload after a fix,
+read notes as they arrive, replay requests. Add it with
+`claude mcp add bunflared -- bunflared mcp`; started with
+`claude --dangerously-load-development-channels server:bunflared`, Claude Code
+gets the visitors' messages and notes by itself.
 Everything else: `bunflared --help`.
 ";
 

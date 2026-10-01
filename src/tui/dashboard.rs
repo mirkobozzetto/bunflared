@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Margin, Rect};
@@ -22,8 +20,6 @@ const ECG: [char; 16] = [
 ];
 const BARS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 const PANIC_FOR: f32 = 3.0;
-const LEFT_AFTER: Duration = Duration::from_secs(20);
-const IDLE_AFTER: u64 = 30;
 const HOP_FOR: f32 = 1.2;
 const KEYS: [(&str, &str); 7] = [
     ("c", "copy"),
@@ -524,17 +520,13 @@ fn draw_stats(app: &App, frame: &mut Frame, area: Rect) {
 /// "active", "tab hidden", "idle 45s" or "left", with its color.
 fn presence(app: &App, session: &Session) -> (&'static str, String, Color) {
     let away = app.now.saturating_duration_since(session.seen);
-    let p = &session.presence;
-    let idle = u64::from(p.idle) + away.as_secs();
-    if p.gone || away > LEFT_AFTER {
-        ("○", "left".into(), fx::DIM)
-    } else if !p.visible {
-        ("◐", "tab hidden".into(), fx::YELLOW)
-    } else if idle >= IDLE_AFTER {
-        ("◐", format!("idle {idle}s"), fx::YELLOW)
-    } else {
-        ("●", "active".into(), fx::GREEN)
-    }
+    let status = session.presence.status(away);
+    let (glyph, color) = match status.as_str() {
+        "left" => ("○", fx::DIM),
+        "active" => ("●", fx::GREEN),
+        _ => ("◐", fx::YELLOW),
+    };
+    (glyph, status, color)
 }
 
 /// The visitors in the order they are listed: by arrival, those who left last.
@@ -854,16 +846,6 @@ fn draw_qr(buf: &mut Buffer, theme: &Theme, qr: &Qr, x: i32, y: i32) {
     }
 }
 
-const TEXT_TYPES: [&str; 8] = [
-    "text/",
-    "json",
-    "javascript",
-    "xml",
-    "html",
-    "css",
-    "form-urlencoded",
-    "graphql",
-];
 const BODY_LINES: usize = 400;
 
 fn kib(bytes: usize) -> String {
@@ -876,13 +858,7 @@ fn body_lines(theme: &Theme, headers: &hyper::HeaderMap, capture: &Capture) -> V
         .get(hyper::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let encoded = headers.contains_key(hyper::header::CONTENT_ENCODING);
-    let text = !encoded
-        && if kind.is_empty() {
-            std::str::from_utf8(&capture.bytes).is_ok()
-        } else {
-            TEXT_TYPES.iter().any(|t| kind.contains(t))
-        };
+    let text = capture.readable(headers);
     let note = |text: String| Line::from(Span::styled(format!("  {text}"), theme.fg(fx::DIM)));
     if capture.total == 0 {
         return vec![note("empty".into())];

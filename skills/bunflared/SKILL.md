@@ -1,6 +1,6 @@
 ---
 name: bunflared
-description: Share a local dev server on a temporary public https link through a Cloudflare quick tunnel, no account needed. Use when the user wants to show a running local app to someone, open it on their phone, or get a public URL for localhost (frontend and API ports together).
+description: Share a local dev server on a temporary public https link through a Cloudflare quick tunnel, no account needed, or on 127.0.0.1 with a feedback widget. Use when the user wants to show a running local app to someone, open it on their phone, get a public URL for localhost (frontend and API ports together), or point at their own page and leave notes for you to fix.
 ---
 
 # bunflared
@@ -31,6 +31,28 @@ Give the user the `url`. Keep the `id` to stop it later.
 
 Without `--detach` the command never returns until stopped: in a terminal it
 opens an interactive dashboard, elsewhere it prints the JSON line and waits.
+
+## Local only
+
+When the user wants to leave notes on their own app, with nobody else
+involved, add `--local`: the app and its feedback button are served on
+`http://127.0.0.1:<port>` in under a second, no tunnel, no Cloudflare limit.
+The JSON line is the same, its `url` that local address.
+
+    bunflared 5173 --local --detach
+
+## MCP server
+
+`bunflared mcp` speaks MCP on stdio. When it is configured
+(`claude mcp add bunflared -- bunflared mcp`), prefer its tools to the
+command line: `open` (local unless `public: true`), `list`, `close`,
+`visitors`, `say`, `go`, `reload`, `events`, `requests`, `request`,
+`replay`. `events` returns a `cursor` to pass back next time, and `wait`
+holds the call until a visitor does something, instead of polling. Its shares
+close when the session ends. With channels on
+(`claude --dangerously-load-development-channels server:bunflared`), messages
+and notes arrive in the session as `<channel source="bunflared">` tags: answer
+with `say`, passing their `share` and `visitor`.
 
 ## Feedback
 

@@ -43,6 +43,17 @@ const HOP_BY_HOP: [&str; 6] = [
 const BUNNY_PAGE: &str = include_str!("bunny-down.html");
 /// How much of each body the inspector keeps; a request over it cannot be replayed.
 pub const CAPTURE: usize = 32 * 1024;
+/// Content types the inspector shows as text.
+const READABLE: [&str; 8] = [
+    "text/",
+    "json",
+    "javascript",
+    "xml",
+    "html",
+    "css",
+    "form-urlencoded",
+    "graphql",
+];
 // Not 502: Cloudflare swaps an origin's 502 page for its own.
 const DOWN: StatusCode = StatusCode::SERVICE_UNAVAILABLE;
 
@@ -65,6 +76,20 @@ pub struct Capture {
 impl Capture {
     pub fn complete(&self) -> bool {
         self.bytes.len() == self.total
+    }
+
+    /// Whether the kept start can be shown as text, going by its headers.
+    pub fn readable(&self, headers: &HeaderMap) -> bool {
+        let kind = headers
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        !headers.contains_key(header::CONTENT_ENCODING)
+            && if kind.is_empty() {
+                std::str::from_utf8(&self.bytes).is_ok()
+            } else {
+                READABLE.iter().any(|t| kind.contains(t))
+            }
     }
 }
 
@@ -138,7 +163,12 @@ impl Replayer {
     }
 }
 
-async fn replay(method: &str, path: &str, port: u16, exchange: &Exchange) -> Result<u16, Error> {
+pub async fn replay(
+    method: &str,
+    path: &str,
+    port: u16,
+    exchange: &Exchange,
+) -> Result<u16, Error> {
     let body = Bytes::from(exchange.request_body.lock().unwrap().bytes.clone());
     let mut request = Request::builder()
         .method(method)

@@ -2,6 +2,7 @@ mod agents;
 mod clipboard;
 mod cloudflared;
 mod live;
+mod mcp;
 mod os;
 mod proxy;
 mod share;
@@ -26,9 +27,16 @@ const AFTER_HELP: &str = r#"Examples:
   bunflared 5173                  share one app
   bunflared 5173 3000             app at /, its API at /_port/3000
   bunflared 5173 3000 --detach    print the ready line, keep sharing in the background
+  bunflared 5173 --local          the same, on this computer only: no tunnel, no link
   bunflared ls [--json]           list live shares
   bunflared down <id> | --all     stop shares
   bunflared agents                teach your coding agents to use bunflared
+  bunflared mcp                   MCP server on stdio, for coding agents
+
+Add the MCP server to Claude Code with `claude mcp add bunflared -- bunflared mcp`.
+Its shares are local unless the agent asks for a public link, and close with the
+session. With `claude --dangerously-load-development-channels server:bunflared`,
+visitors' messages and notes reach the session by themselves.
 
 In a terminal you get the animated dashboard: ? lists its keys. m messages the
 visitors, g sends them to a page, R reloads it, Enter on a request shows it and
@@ -40,6 +48,7 @@ Otherwise, or with --json, the ready line is one JSON object on stdout:
   {"id":"4242","pid":4242,"tunnel_pid":4243,"url":"https://....trycloudflare.com",
    "routes":{"/":5173,"/_port/3000":3000},"started_at":1790000000}
 and a failure is one JSON object on stderr: {"error":"...","code":N}.
+With --local, the url is http://127.0.0.1:<port> and tunnel_pid is 0.
 
 cloudflared is fetched from Cloudflare's releases on the first run when it is
 not installed.
@@ -83,6 +92,10 @@ struct Cli {
     #[arg(long)]
     no_widget: bool,
 
+    /// Only on this computer, at http://127.0.0.1:<port>: no tunnel, no link.
+    #[arg(long)]
+    local: bool,
+
     /// Colors for a light or dark terminal. Auto asks the terminal.
     #[arg(long, value_enum, default_value_t = ThemeChoice::Auto)]
     theme: ThemeChoice,
@@ -111,6 +124,8 @@ enum Command {
         #[arg(long, conflicts_with = "print")]
         remove: bool,
     },
+    /// Speak MCP on stdio, for a coding agent: it opens shares and talks to the pages.
+    Mcp,
     /// Stop a share by id, or all of them.
     Down {
         #[arg(required_unless_present = "all")]
@@ -146,7 +161,8 @@ fn main() {
         Some(Command::Ls { json }) => state::list(json),
         Some(Command::Down { id, all }) => state::down(id, all),
         Some(Command::Agents { print, remove }) => agents::run(print, remove),
-        None if cli.detach => state::detach(&cli.ports, cli.no_widget),
+        Some(Command::Mcp) => mcp::run(),
+        None if cli.detach => state::detach(&cli.ports, cli.no_widget, cli.local),
         None => {
             let no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
             let interactive = !cli.json && std::io::stdout().is_terminal();
@@ -163,7 +179,13 @@ fn main() {
                 .then(|| std::env::current_dir().ok())
                 .flatten()
                 .map(|dir| dir.join(widget::FOLDER));
-            share(cli.ports, theme, feedback)
+            let spec = share::Spec {
+                ports: cli.ports,
+                local: cli.local,
+                id: std::process::id().to_string(),
+                copy: true,
+            };
+            share(spec, theme, feedback)
         }
     };
     std::process::exit(code);
@@ -175,12 +197,16 @@ fn machine_output() -> bool {
 }
 
 /// Runs the share with the dashboard when a theme is given, JSON otherwise.
-fn share(ports: Vec<u16>, theme: Option<tui::Theme>, feedback: Option<std::path::PathBuf>) -> i32 {
+fn share(
+    spec: share::Spec,
+    theme: Option<tui::Theme>,
+    feedback: Option<std::path::PathBuf>,
+) -> i32 {
     let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
     let (tx, rx) = mpsc::channel();
     let (stop, stop_rx) = watch::channel(false);
     let hub = std::sync::Arc::new(live::Hub::new(tx.clone(), feedback.clone()));
-    let shared = ports.clone();
+    let ports = spec.ports.clone();
     let backend_hub = hub.clone();
     let replayer = proxy::Replayer {
         runtime: runtime.handle().clone(),
@@ -188,7 +214,7 @@ fn share(ports: Vec<u16>, theme: Option<tui::Theme>, feedback: Option<std::path:
     };
     let dashboard = theme.is_some();
     let backend = runtime.spawn(async move {
-        let result = share::run(&shared, &tx, stop_rx, feedback, backend_hub).await;
+        let result = share::run(&spec, &tx, stop_rx, feedback, backend_hub).await;
         let _ = tx.send(Event::Done(result));
         if dashboard {
             tokio::spawn(leave_on_signal());
