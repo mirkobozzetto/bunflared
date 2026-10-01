@@ -344,12 +344,13 @@ fn sid(query: &str) -> Option<String> {
     query
         .split('&')
         .find_map(|pair| pair.strip_prefix("sid="))
-        .filter(|sid| {
-            !sid.is_empty()
-                && sid.len() <= MAX_SID
-                && sid.chars().all(|c| c.is_ascii_alphanumeric())
-        })
+        .filter(|sid| valid_sid(sid))
         .map(str::to_string)
+}
+
+/// A visitor id as the widget makes them: short, letters and digits.
+pub fn valid_sid(sid: &str) -> bool {
+    !sid.is_empty() && sid.len() <= MAX_SID && sid.chars().all(|c| c.is_ascii_alphanumeric())
 }
 
 /// Another site's page must not listen in on the messages meant for visitors.

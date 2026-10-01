@@ -21,6 +21,9 @@ use crate::widget::{Feedback, Presence};
 
 const KEEP_EVENTS: usize = 1000;
 const KEEP_REQUESTS: usize = 200;
+/// Pings are open to anyone with the link: past this many visitors, new ones
+/// are not tracked, so a flood cannot push the notes out of the event log.
+const MAX_VISITORS: usize = 200;
 /// A page that said goodbye and sent no new ping since has left; a visitor
 /// moving to another page says goodbye too, then pings right away.
 const GONE_GRACE: Duration = Duration::from_secs(3);
@@ -72,7 +75,6 @@ struct Visitor {
     presence: Presence,
     seen: Instant,
     first: Instant,
-    departed: bool,
 }
 
 struct Row {
@@ -421,7 +423,7 @@ impl Share {
 
     fn summary(&self) -> Value {
         let seen = self.seen.lock().unwrap();
-        let here = seen.visitors.values().filter(|v| !v.departed).count();
+        let here = seen.visitors.len();
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
@@ -438,7 +440,7 @@ impl Share {
 
     pub fn visitors(&self) -> Value {
         let seen = self.seen.lock().unwrap();
-        let mut here: Vec<&Visitor> = seen.visitors.values().filter(|v| !v.departed).collect();
+        let mut here: Vec<&Visitor> = seen.visitors.values().collect();
         here.sort_by_key(|v| v.first);
         let here = here
             .into_iter()
@@ -582,35 +584,38 @@ impl Seen {
     /// Keeps the visitor's last ping; true when they just arrived.
     fn presence(&mut self, presence: Presence) -> bool {
         let now = Instant::now();
-        let known = self.visitors.get(&presence.sid).filter(|v| !v.departed);
-        let arrived = known.is_none() && !presence.gone;
-        if known.is_none() && presence.gone {
+        let known = self.visitors.get(&presence.sid);
+        let full = self.visitors.len() >= MAX_VISITORS;
+        if known.is_none() && (presence.gone || full) {
             return false;
         }
+        let arrived = known.is_none();
         let first = known.map_or(now, |v| v.first);
         let sid = presence.sid.clone();
-        self.visitors.insert(
-            sid,
-            Visitor {
-                presence,
-                seen: now,
-                first,
-                departed: false,
-            },
-        );
+        let visitor = Visitor {
+            presence,
+            seen: now,
+            first,
+        };
+        self.visitors.insert(sid, visitor);
         arrived
     }
 
+    /// Forgets the visitors who left, and returns them.
     fn departures(&mut self) -> Vec<Presence> {
-        let mut left = Vec::new();
-        for v in self.visitors.values_mut().filter(|v| !v.departed) {
-            let away = v.seen.elapsed();
-            if (v.presence.gone && away >= GONE_GRACE) || v.presence.status(away) == "left" {
-                v.departed = true;
-                left.push(v.presence.clone());
-            }
-        }
-        left
+        let gone: Vec<String> = self
+            .visitors
+            .iter()
+            .filter(|(_, v)| {
+                let away = v.seen.elapsed();
+                (v.presence.gone && away >= GONE_GRACE) || v.presence.status(away) == "left"
+            })
+            .map(|(sid, _)| sid.clone())
+            .collect();
+        gone.iter()
+            .filter_map(|sid| self.visitors.remove(sid))
+            .map(|v| v.presence)
+            .collect()
     }
 }
 

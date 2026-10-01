@@ -158,7 +158,9 @@ pub async fn handle(
         (Method::GET, "live") => live::accept(request, hub.clone(), device),
         (Method::POST, "ping") => match read(request, MAX_PING).await {
             Some(body) => {
-                if let Ok(ping) = serde_json::from_slice::<Ping>(&body) {
+                if let Ok(ping) = serde_json::from_slice::<Ping>(&body)
+                    && live::valid_sid(&ping.sid)
+                {
                     let _ = tx.send(Event::Presence(Presence {
                         sid: ping.sid,
                         device,
