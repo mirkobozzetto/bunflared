@@ -27,6 +27,9 @@ const MAX_NOTE: usize = 64 * 1024;
 const MAX_SHOT: usize = 12 * 1024 * 1024;
 const MAX_PINNED: usize = 300;
 const LEFT_AFTER: Duration = Duration::from_secs(20);
+// A hidden tab's timers wake up once a minute in Chrome, every 40 s in
+// Safari: its pings slow down without it leaving.
+const HIDDEN_LEFT_AFTER: Duration = Duration::from_secs(90);
 const IDLE_AFTER: u64 = 30;
 
 #[derive(Debug, Clone)]
@@ -44,7 +47,12 @@ impl Presence {
     /// "active", "tab hidden", "idle 45s" or "left", `away` after its last ping.
     pub fn status(&self, away: Duration) -> String {
         let idle = u64::from(self.idle) + away.as_secs();
-        if self.gone || away > LEFT_AFTER {
+        let patience = if self.visible {
+            LEFT_AFTER
+        } else {
+            HIDDEN_LEFT_AFTER
+        };
+        if self.gone || away > patience {
             "left".into()
         } else if !self.visible {
             "tab hidden".into()
