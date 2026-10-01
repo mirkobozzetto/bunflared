@@ -189,12 +189,12 @@ fn tools() -> Value {
     json!([
         {
             "name": "open",
-            "description": "Share local ports, with the feedback widget and the live chat in their pages. The first port is served at /, the others under /_port/<port>. Returns the share's id and url once it answers.",
+            "description": "Share local ports, with the feedback widget and the live chat in their pages. Local unless public is true: http://127.0.0.1:<port>, for the user's own browser, ready in under a second. The first port is served at /, the others under /_port/<port>. Returns the share's id and url once it answers.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "ports": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 65535 }, "minItems": 1 },
-                    "public": { "type": "boolean", "description": "A https link anyone can open, through a Cloudflare quick tunnel. Default false: http://127.0.0.1, this computer only." },
+                    "public": { "type": "boolean", "description": "Only when someone on another device must open it, a client or a phone: a https link through a Cloudflare quick tunnel, which hands out a limited number of links. Default false." },
                 },
                 "required": ["ports"],
             },
