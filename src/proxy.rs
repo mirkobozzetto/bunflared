@@ -418,6 +418,13 @@ pub fn full(bytes: impl Into<Bytes>) -> Body {
         .boxed()
 }
 
+/// An empty answer with this status.
+pub fn status(code: StatusCode) -> Response<Body> {
+    let mut response = Response::new(full(Bytes::new()));
+    *response.status_mut() = code;
+    response
+}
+
 fn plain(status: StatusCode, text: &'static str) -> Response<Body> {
     let mut response = Response::new(full(text));
     *response.status_mut() = status;

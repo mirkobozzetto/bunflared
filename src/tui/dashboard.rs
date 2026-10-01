@@ -928,12 +928,9 @@ fn details_lines(app: &App, row: &Row) -> Vec<Line<'static>> {
         Some(Replay::Done { status, ms }) => format!("replayed: {status} in {ms} ms"),
         Some(Replay::Pending) => "replaying…".into(),
         Some(Replay::Failed) => "the replay failed".into(),
-        None if hit.upgrade => "a WebSocket, cannot be replayed".into(),
-        None if !exchange.request_body.lock().unwrap().complete() => format!(
-            "its body is over {} KiB, cannot be replayed",
-            CAPTURE / 1024
-        ),
-        None => "p replays it to your local server".into(),
+        None => hit
+            .unreplayable()
+            .unwrap_or_else(|| "p replays it to your local server".into()),
     };
     lines.push(Line::from(Span::styled(
         format!("↻ {replay}"),

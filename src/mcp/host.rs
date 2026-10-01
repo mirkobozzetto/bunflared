@@ -13,11 +13,11 @@ use hyper::HeaderMap;
 use serde_json::{Value, json};
 use tokio::sync::watch;
 
-use crate::live::{Command, Hub, REACTIONS};
-use crate::proxy::{self, CAPTURE, Capture};
+use crate::live::{self, Command, Hub, REACTIONS};
+use crate::proxy::{self, Capture};
 use crate::share::{self, Event, Hit, Spec};
 use crate::state::{self, Record};
-use crate::widget::{Feedback, Presence};
+use crate::widget::{Feedback, Presence, clock};
 
 const KEEP_EVENTS: usize = 1000;
 const KEEP_REQUESTS: usize = 200;
@@ -468,11 +468,7 @@ impl Share {
         if path.is_empty() {
             return Err("Pass the path to send them to.".into());
         }
-        let path = if path.starts_with('/') {
-            path.to_string()
-        } else {
-            format!("/{path}")
-        };
+        let path = live::absolute(path);
         reached(self.hub.send(to, &Command::Go { path }))
     }
 
@@ -504,7 +500,7 @@ impl Share {
     pub fn request(&self, n: u32) -> Result<Value, String> {
         let (hit, at) = self.row(n)?;
         let exchange = &hit.exchange;
-        let replay = match refusal(&hit) {
+        let replay = match hit.unreplayable() {
             Some(reason) => json!(reason),
             None => json!(true),
         };
@@ -533,8 +529,8 @@ impl Share {
 
     pub fn replay(&self, n: u32) -> Result<Value, String> {
         let (hit, _) = self.row(n)?;
-        if let Some(reason) = refusal(&hit) {
-            return Err(format!("Not replayed: {reason}"));
+        if let Some(reason) = hit.unreplayable() {
+            return Err(format!("Not replayed. {reason}"));
         }
         let started = Instant::now();
         let status = self
@@ -634,20 +630,6 @@ fn reached(pages: usize) -> Result<Value, String> {
     }
 }
 
-/// Why a request cannot be sent again as it was, if it cannot.
-fn refusal(hit: &Hit) -> Option<String> {
-    if hit.upgrade {
-        Some("a WebSocket cannot be sent again.".into())
-    } else if !hit.exchange.request_body.lock().unwrap().complete() {
-        Some(format!(
-            "its body is over {} KiB and only the start was kept.",
-            CAPTURE / 1024
-        ))
-    } else {
-        None
-    }
-}
-
 fn headers(headers: &HeaderMap) -> Vec<String> {
     headers
         .iter()
@@ -668,8 +650,4 @@ fn body(headers: &HeaderMap, capture: &Capture) -> Value {
         "text": String::from_utf8_lossy(&capture.bytes),
         "truncated": !capture.complete(),
     })
-}
-
-fn clock() -> String {
-    chrono::Local::now().format("%H:%M:%S").to_string()
 }

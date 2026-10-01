@@ -15,7 +15,7 @@ use hyper::{Method, Request, Response, StatusCode};
 use serde::Deserialize;
 
 use crate::live::{self, Hub};
-use crate::proxy::{Body, full};
+use crate::proxy::{Body, full, status};
 use crate::share::{Event, Tx};
 
 pub const PREFIX: &str = "/_bunflared/";
@@ -244,6 +244,11 @@ pub fn stamp() -> String {
         .to_string()
 }
 
+/// The time of day, as the logs show it.
+pub fn clock() -> String {
+    chrono::Local::now().format("%H:%M:%S").to_string()
+}
+
 fn save_shot(folder: &Path, image: &[u8]) -> std::io::Result<String> {
     let extension = match image {
         [0x89, b'P', b'N', b'G', ..] => "png",
@@ -365,11 +370,5 @@ fn json(value: serde_json::Value) -> Response<Body> {
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/json"),
     );
-    response
-}
-
-fn status(code: StatusCode) -> Response<Body> {
-    let mut response = Response::new(full(Bytes::new()));
-    *response.status_mut() = code;
     response
 }

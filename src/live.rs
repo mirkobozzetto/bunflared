@@ -21,7 +21,7 @@ use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
 use tokio_tungstenite::tungstenite::protocol::{Message, Role, WebSocketConfig};
 
-use crate::proxy::{Body, full};
+use crate::proxy::{Body, status};
 use crate::share::{Event, Tx};
 use crate::widget;
 
@@ -348,6 +348,16 @@ fn sid(query: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// A page path as the widget's go expects it, from what was typed.
+pub fn absolute(path: &str) -> String {
+    let path = path.trim();
+    if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    }
+}
+
 /// A visitor id as the widget makes them: short, letters and digits.
 pub fn valid_sid(sid: &str) -> bool {
     !sid.is_empty() && sid.len() <= MAX_SID && sid.chars().all(|c| c.is_ascii_alphanumeric())
@@ -367,10 +377,4 @@ fn same_origin(headers: &HeaderMap) -> bool {
         (None, _) => true,
         _ => false,
     }
-}
-
-fn status(code: StatusCode) -> Response<Body> {
-    let mut response = Response::new(full(Bytes::new()));
-    *response.status_mut() = code;
-    response
 }
