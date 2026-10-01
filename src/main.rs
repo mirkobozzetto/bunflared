@@ -26,6 +26,7 @@ const AFTER_HELP: &str = r#"Examples:
   bunflared 5173                  share one app
   bunflared 5173 3000             app at /, its API at /_port/3000
   bunflared 5173 3000 --detach    print the ready line, keep sharing in the background
+  bunflared 5173 --local          the same, on this computer only: no tunnel, no link
   bunflared ls [--json]           list live shares
   bunflared down <id> | --all     stop shares
   bunflared agents                teach your coding agents to use bunflared
@@ -82,6 +83,10 @@ struct Cli {
     /// Leave the pages as they are: no feedback button, no live session.
     #[arg(long)]
     no_widget: bool,
+
+    /// Only on this computer, at http://127.0.0.1:<port>: no tunnel, no link.
+    #[arg(long)]
+    local: bool,
 
     /// Colors for a light or dark terminal. Auto asks the terminal.
     #[arg(long, value_enum, default_value_t = ThemeChoice::Auto)]
@@ -146,7 +151,7 @@ fn main() {
         Some(Command::Ls { json }) => state::list(json),
         Some(Command::Down { id, all }) => state::down(id, all),
         Some(Command::Agents { print, remove }) => agents::run(print, remove),
-        None if cli.detach => state::detach(&cli.ports, cli.no_widget),
+        None if cli.detach => state::detach(&cli.ports, cli.no_widget, cli.local),
         None => {
             let no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
             let interactive = !cli.json && std::io::stdout().is_terminal();
@@ -163,7 +168,13 @@ fn main() {
                 .then(|| std::env::current_dir().ok())
                 .flatten()
                 .map(|dir| dir.join(widget::FOLDER));
-            share(cli.ports, theme, feedback)
+            let spec = share::Spec {
+                ports: cli.ports,
+                local: cli.local,
+                id: std::process::id().to_string(),
+                copy: true,
+            };
+            share(spec, theme, feedback)
         }
     };
     std::process::exit(code);
@@ -175,12 +186,16 @@ fn machine_output() -> bool {
 }
 
 /// Runs the share with the dashboard when a theme is given, JSON otherwise.
-fn share(ports: Vec<u16>, theme: Option<tui::Theme>, feedback: Option<std::path::PathBuf>) -> i32 {
+fn share(
+    spec: share::Spec,
+    theme: Option<tui::Theme>,
+    feedback: Option<std::path::PathBuf>,
+) -> i32 {
     let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
     let (tx, rx) = mpsc::channel();
     let (stop, stop_rx) = watch::channel(false);
     let hub = std::sync::Arc::new(live::Hub::new(tx.clone(), feedback.clone()));
-    let shared = ports.clone();
+    let ports = spec.ports.clone();
     let backend_hub = hub.clone();
     let replayer = proxy::Replayer {
         runtime: runtime.handle().clone(),
@@ -188,7 +203,7 @@ fn share(ports: Vec<u16>, theme: Option<tui::Theme>, feedback: Option<std::path:
     };
     let dashboard = theme.is_some();
     let backend = runtime.spawn(async move {
-        let result = share::run(&shared, &tx, stop_rx, feedback, backend_hub).await;
+        let result = share::run(&spec, &tx, stop_rx, feedback, backend_hub).await;
         let _ = tx.send(Event::Done(result));
         if dashboard {
             tokio::spawn(leave_on_signal());
