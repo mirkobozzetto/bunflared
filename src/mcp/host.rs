@@ -36,6 +36,9 @@ pub struct Host {
     /// Shares still digging their tunnel, out of `shares` until ready.
     opening: AtomicUsize,
     ending: AtomicBool,
+    /// Held for the whole of `close_all`: stdin closing and a signal can both
+    /// call it, and neither may exit while the other still stops shares.
+    closing: Mutex<()>,
     log: Mutex<Log>,
     logged: Condvar,
 }
@@ -86,6 +89,7 @@ impl Host {
             opened: AtomicU32::new(0),
             opening: AtomicUsize::new(0),
             ending: AtomicBool::new(false),
+            closing: Mutex::default(),
             log: Mutex::default(),
             logged: Condvar::new(),
         });
@@ -208,6 +212,7 @@ impl Host {
 
     /// Closes every share, those still opening too, for the end of the session.
     pub fn close_all(&self) {
+        let _closing = self.closing.lock().unwrap();
         self.ending.store(true, Ordering::SeqCst);
         let shares = std::mem::take(&mut *self.shares.lock().unwrap());
         for share in &shares {
