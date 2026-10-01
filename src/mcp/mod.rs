@@ -47,10 +47,13 @@ pub fn run() -> i32 {
         signalled.close_all();
         std::process::exit(0);
     });
-    for line in std::io::stdin().lock().lines() {
+    // Bytes, not lines: a stray non-UTF-8 byte gets a parse error back
+    // instead of ending the session.
+    for line in std::io::stdin().lock().split(b'\n') {
         let Ok(line) = line else {
             break;
         };
+        let line = String::from_utf8_lossy(&line).into_owned();
         if line.trim().is_empty() {
             continue;
         }
