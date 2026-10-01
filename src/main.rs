@@ -2,6 +2,7 @@ mod agents;
 mod clipboard;
 mod cloudflared;
 mod live;
+mod mcp;
 mod os;
 mod proxy;
 mod share;
@@ -116,6 +117,8 @@ enum Command {
         #[arg(long, conflicts_with = "print")]
         remove: bool,
     },
+    /// Speak MCP on stdio, for a coding agent: it opens shares and talks to the pages.
+    Mcp,
     /// Stop a share by id, or all of them.
     Down {
         #[arg(required_unless_present = "all")]
@@ -151,6 +154,7 @@ fn main() {
         Some(Command::Ls { json }) => state::list(json),
         Some(Command::Down { id, all }) => state::down(id, all),
         Some(Command::Agents { print, remove }) => agents::run(print, remove),
+        Some(Command::Mcp) => mcp::run(),
         None if cli.detach => state::detach(&cli.ports, cli.no_widget, cli.local),
         None => {
             let no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
