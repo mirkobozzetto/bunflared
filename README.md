@@ -81,7 +81,8 @@ bunf 5173 --local               # on this computer only, no tunnel, no link
 `--local` serves the app with the widget on `http://127.0.0.1:<port>`, in
 well under a second: the same dashboard, notes and live session, for you and
 your own browser, with nothing reaching Cloudflare. Only this computer can
-open that address.
+open that address. `-l` is the short form, and `bunf -l` opens the home
+screen with that mode already picked.
 
 `bunf` and `bunflared` are the same command.
 

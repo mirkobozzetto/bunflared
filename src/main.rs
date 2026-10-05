@@ -96,7 +96,7 @@ struct Cli {
     no_widget: bool,
 
     /// Only on this computer, at http://127.0.0.1:<port>: no tunnel, no link.
-    #[arg(long)]
+    #[arg(short, long)]
     local: bool,
 
     /// Colors for a light or dark terminal. Auto asks the terminal.
