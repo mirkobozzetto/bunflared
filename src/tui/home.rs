@@ -111,7 +111,7 @@ impl Home {
     fn update(&mut self, mut apps: Vec<Listener>) {
         let here = &self.here;
         // The apps started from this folder first, then the most recent.
-        apps.sort_by_key(|app| (!started_in(app, here), app.age.unwrap_or(u64::MAX), app.port));
+        apps.sort_by_key(|app| (distance(app, here), app.age.unwrap_or(u64::MAX), app.port));
         self.apps = apps;
         if self.fresh
             && let Some(first) = self.apps.first().map(|app| app.port)
@@ -216,16 +216,18 @@ impl Home {
             ));
         }
         let ports = self.ports();
+        let folders: Vec<String> = self.apps.iter().map(|app| self.folder(app)).collect();
+        let longest = folders.iter().map(|f| f.chars().count()).max().unwrap_or(0);
         let folder_width = (inner.width as usize)
             .saturating_sub(4 + 4 + 7 + PROGRAM_WIDTH + 2 + AGE_WIDTH + 2 + ROUTE_WIDTH + 2)
-            .max(MIN_FOLDER);
-        for app in &self.apps {
+            .max(MIN_FOLDER)
+            .min(longest);
+        for (app, folder) in self.apps.iter().zip(folders) {
             let route = match ports.iter().position(|&port| port == app.port) {
                 Some(0) => "/".to_string(),
                 Some(_) => mount(app.port),
                 None => String::new(),
             };
-            let folder = app.folder.as_deref().map(shorten).unwrap_or_default();
             let age = app.age.map(uptime).unwrap_or_default();
             let line = Line::from(vec![
                 Span::raw(format!("   {} ", tick(!route.is_empty()))),
@@ -268,6 +270,20 @@ impl Home {
         frame.render_widget(Paragraph::new(vec![command, keys]), footer);
     }
 
+    /// Where it runs, from here when it is under here.
+    fn folder(&self, app: &Listener) -> String {
+        let Some(folder) = app.folder.as_deref() else {
+            return String::new();
+        };
+        if let Ok(rest) = folder.strip_prefix(&self.here) {
+            return Path::new(".").join(rest).display().to_string();
+        }
+        match crate::os::home().and_then(|home| folder.strip_prefix(home).ok()) {
+            Some(rest) => Path::new("~").join(rest).display().to_string(),
+            None => folder.display().to_string(),
+        }
+    }
+
     fn cursored<'a>(&self, line: Line<'a>, row: Row) -> Line<'a> {
         if self.cursor == row {
             line.style(Style::new().add_modifier(Modifier::REVERSED))
@@ -277,8 +293,13 @@ impl Home {
     }
 }
 
-fn started_in(app: &Listener, here: &Path) -> bool {
-    app.folder.as_deref().is_some_and(|folder| folder.starts_with(here))
+/// 0 started in this very folder, 1 below it, 2 anywhere else.
+fn distance(app: &Listener, here: &Path) -> u8 {
+    match app.folder.as_deref() {
+        Some(folder) if folder == here => 0,
+        Some(folder) if folder.starts_with(here) => 1,
+        _ => 2,
+    }
 }
 
 fn tick(on: bool) -> &'static str {
@@ -287,15 +308,6 @@ fn tick(on: bool) -> &'static str {
 
 fn dot(on: bool) -> &'static str {
     if on { "●" } else { "○" }
-}
-
-/// The home folder as `~`.
-fn shorten(folder: &Path) -> String {
-    match crate::os::home().and_then(|home| folder.strip_prefix(home).ok()) {
-        Some(rest) if rest.as_os_str().is_empty() => "~".into(),
-        Some(rest) => format!("~/{}", rest.display()),
-        None => folder.display().to_string(),
-    }
 }
 
 /// The end of `text` when it is too long: the end of a path says the most.
