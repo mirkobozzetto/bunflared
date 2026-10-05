@@ -4,6 +4,7 @@ mod cloudflared;
 mod live;
 mod mcp;
 mod os;
+mod ports;
 mod proxy;
 mod share;
 mod state;
