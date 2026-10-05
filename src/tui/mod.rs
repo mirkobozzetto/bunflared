@@ -1,6 +1,7 @@
 mod art;
 mod dashboard;
 mod fx;
+pub mod home;
 mod scenes;
 mod shaders;
 mod spectacle;
