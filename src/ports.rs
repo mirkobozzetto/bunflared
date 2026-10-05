@@ -7,6 +7,9 @@ use std::process::{Command, Stdio};
 /// Below this, ports belong to the system.
 const FIRST_PORT: u16 = 1024;
 const OURS: [&str; 3] = ["bunf", "bunflared", "cloudflared"];
+/// Daemons run from the root folder, packaged services (Homebrew's postgres,
+/// a distribution's redis) from these.
+const SERVICE_FOLDERS: [&str; 5] = ["/", "/opt/homebrew", "/usr", "/var", "/Library"];
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Listener {
@@ -26,14 +29,23 @@ pub fn scan() -> Vec<Listener> {
         .into_iter()
         .filter(|l| l.port >= FIRST_PORT && l.pid != me)
         .filter(|l| !OURS.contains(&l.program.trim_end_matches(".exe")))
-        // Daemons run from the root folder.
-        .filter(|l| l.folder.as_deref() != Some(Path::new("/")))
+        .filter(|l| !l.folder.as_deref().is_some_and(service))
         .collect();
     found.sort_by_key(|l| l.port);
     found.dedup_by_key(|l| l.port);
     #[cfg(unix)]
     ages(&mut found);
     found
+}
+
+fn service(folder: &Path) -> bool {
+    SERVICE_FOLDERS.iter().any(|&root| {
+        if root == "/" {
+            folder == Path::new(root)
+        } else {
+            folder.starts_with(root)
+        }
+    })
 }
 
 fn output(program: &str, args: &[&str]) -> String {
@@ -69,9 +81,9 @@ fn ages(found: &mut [Listener]) {
 #[cfg(unix)]
 fn elapsed(text: &str) -> Option<u64> {
     let (days, clock) = text.split_once('-').unwrap_or(("0", text));
-    let clock = clock
-        .split(':')
-        .try_fold(0, |secs: u64, part| Some(secs * 60 + part.parse::<u64>().ok()?))?;
+    let clock = clock.split(':').try_fold(0, |secs: u64, part| {
+        Some(secs * 60 + part.parse::<u64>().ok()?)
+    })?;
     Some(days.parse::<u64>().ok()? * 86_400 + clock)
 }
 
