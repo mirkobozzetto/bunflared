@@ -126,10 +126,11 @@ pub fn run(theme: &Theme, start: Choice) -> Option<Choice> {
         last,
     };
     home.update(ports::scan());
+    // `-l` asks for this machine: a last public share is not what Enter does.
     if home
         .last
         .as_ref()
-        .is_some_and(|last| home.missing(last).is_empty())
+        .is_some_and(|last| home.missing(last).is_empty() && (last.local || !start.local))
     {
         home.cursor = Row::Last;
     }
