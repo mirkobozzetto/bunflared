@@ -16,7 +16,7 @@ use std::io::{IsTerminal, Write};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use tokio::sync::watch;
 
 use share::Event;
@@ -74,7 +74,8 @@ struct Cli {
     command: Option<Command>,
 
     /// Ports to share. The first is served at "/", the others under "/_port/<port>".
-    #[arg(required = true, value_parser = clap::value_parser!(u16).range(1..))]
+    /// None in a terminal: a screen lists the apps running here to pick from.
+    #[arg(value_parser = clap::value_parser!(u16).range(1..))]
     ports: Vec<u16>,
 
     /// No dashboard: print one JSON line once the link is live.
@@ -146,18 +147,18 @@ fn main() {
         default_hook(info);
     }));
 
-    let cli = match Cli::try_parse() {
-        Ok(cli) => cli,
-        Err(err) if err.use_stderr() && machine_output() => {
-            let message = err.to_string();
-            let summary = message.split("\n\n").next().unwrap_or("bad arguments");
-            let summary = summary.split_whitespace().collect::<Vec<_>>().join(" ");
-            let json = serde_json::json!({ "error": summary.trim_start_matches("error: "), "code": EXIT_USAGE });
-            eprintln!("{json}");
-            std::process::exit(EXIT_USAGE);
-        }
-        Err(err) => err.exit(),
-    };
+    let mut cli = Cli::try_parse().unwrap_or_else(|err| usage(err));
+    // A script or an agent never lands on the home screen: no port is the
+    // error it always was.
+    if cli.command.is_none()
+        && cli.ports.is_empty()
+        && (machine_output() || !std::io::stdin().is_terminal())
+        && let Err(err) = Cli::command()
+            .mut_arg("ports", |ports| ports.required(true))
+            .try_get_matches()
+    {
+        usage(err);
+    }
     let code = match cli.command {
         Some(Command::Ls { json }) => state::list(json),
         Some(Command::Down { id, all }) => state::down(id, all),
@@ -167,14 +168,35 @@ fn main() {
         None => {
             let no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
             let interactive = !cli.json && std::io::stdout().is_terminal();
-            let theme = interactive.then(|| tui::Theme {
+            let light = interactive.then(|| match cli.theme {
+                ThemeChoice::Light => true,
+                ThemeChoice::Dark => false,
+                ThemeChoice::Auto => tui::light_terminal(),
+            });
+            if cli.ports.is_empty() {
+                let theme = tui::Theme {
+                    calm: cli.calm || no_color,
+                    color: !no_color,
+                    light: light.unwrap_or(false),
+                };
+                let start = tui::home::Choice {
+                    ports: Vec::new(),
+                    local: cli.local,
+                    widget: !cli.no_widget,
+                    calm: cli.calm || no_color,
+                };
+                let Some(choice) = tui::home::run(&theme, start) else {
+                    std::process::exit(0);
+                };
+                cli.ports = choice.ports;
+                cli.local = choice.local;
+                cli.no_widget = !choice.widget;
+                cli.calm = choice.calm;
+            }
+            let theme = light.map(|light| tui::Theme {
                 calm: cli.calm || no_color,
                 color: !no_color,
-                light: match cli.theme {
-                    ThemeChoice::Light => true,
-                    ThemeChoice::Dark => false,
-                    ThemeChoice::Auto => tui::light_terminal(),
-                },
+                light,
             });
             let feedback = (!cli.no_widget)
                 .then(|| std::env::current_dir().ok())
@@ -190,6 +212,18 @@ fn main() {
         }
     };
     std::process::exit(code);
+}
+
+fn usage(err: clap::Error) -> ! {
+    if err.use_stderr() && machine_output() {
+        let message = err.to_string();
+        let summary = message.split("\n\n").next().unwrap_or("bad arguments");
+        let summary = summary.split_whitespace().collect::<Vec<_>>().join(" ");
+        let json = serde_json::json!({ "error": summary.trim_start_matches("error: "), "code": EXIT_USAGE });
+        eprintln!("{json}");
+        std::process::exit(EXIT_USAGE);
+    }
+    err.exit()
 }
 
 fn machine_output() -> bool {
