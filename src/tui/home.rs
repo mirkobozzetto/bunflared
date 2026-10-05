@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::ops::ControlFlow::{self, Break, Continue};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
 
 use ratatui::Frame;
@@ -21,6 +22,7 @@ use crate::proxy::mount;
 use crate::state::uptime;
 
 const FRAME: Duration = Duration::from_millis(100);
+const RESCAN: Duration = Duration::from_secs(1);
 const PROGRAM_WIDTH: usize = 14;
 const AGE_WIDTH: usize = 8;
 const ROUTE_WIDTH: usize = 12;
@@ -47,7 +49,11 @@ impl Choice {
 
     fn describe(&self) -> String {
         let ports: Vec<String> = self.ports.iter().map(u16::to_string).collect();
-        let place = if self.local { "on this machine" } else { "public link" };
+        let place = if self.local {
+            "on this machine"
+        } else {
+            "public link"
+        };
         let mut words = vec![ports.join(", "), place.to_string()];
         words.extend((!self.widget).then(|| "no feedback button".to_string()));
         words.extend(self.calm.then(|| "no animations".to_string()));
@@ -86,7 +92,9 @@ fn program() -> String {
         .as_deref()
         .map(Path::new)
         .and_then(Path::file_stem)
-        .map_or("bunflared".into(), |name| name.to_string_lossy().into_owned())
+        .map_or("bunflared".into(), |name| {
+            name.to_string_lossy().into_owned()
+        })
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -127,11 +135,19 @@ pub fn run(theme: &Theme, start: Choice) -> Option<Choice> {
         last,
     };
     home.update(ports::scan());
-    if home.last.as_ref().is_some_and(|last| home.missing(last).is_empty()) {
+    if home
+        .last
+        .as_ref()
+        .is_some_and(|last| home.missing(last).is_empty())
+    {
         home.cursor = Row::Last;
     }
+    let scans = watch();
     let mut terminal = ratatui::init();
     let result = loop {
+        if let Some(apps) = scans.try_iter().last() {
+            home.update(apps);
+        }
         if terminal.draw(|frame| home.render(frame, theme)).is_err() {
             break None;
         }
@@ -152,6 +168,20 @@ pub fn run(theme: &Theme, start: Choice) -> Option<Choice> {
         remember(&home.here, choice);
     }
     result
+}
+
+/// A fresh scan every second, until the receiver is gone.
+fn watch() -> Receiver<Vec<Listener>> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(RESCAN);
+            if tx.send(ports::scan()).is_err() {
+                break;
+            }
+        }
+    });
+    rx
 }
 
 impl Home {
@@ -203,7 +233,7 @@ impl Home {
             return last.filter(|last| self.missing(last).is_empty()).cloned();
         }
         let ports = self.ports();
-        (!ports.is_empty()).then(|| Choice {
+        (!ports.is_empty()).then_some(Choice {
             ports,
             local: self.local,
             widget: self.widget,
@@ -245,17 +275,19 @@ impl Home {
 
     fn toggle(&mut self) {
         match self.cursor {
-            Row::Port(port) => match self.checked.iter().position(|&p| p == port) {
-                Some(at) => {
-                    self.checked.remove(at);
+            Row::Port(port) => {
+                match self.checked.iter().position(|&p| p == port) {
+                    Some(at) => {
+                        self.checked.remove(at);
+                    }
+                    None => self.checked.push(port),
                 }
-                None => self.checked.push(port),
-            },
+                self.fresh = false;
+            }
             Row::Widget => self.widget = !self.widget,
             Row::Animations => self.calm = !self.calm,
-            Row::Last => return,
+            Row::Last => {}
         }
-        self.fresh = false;
     }
 
     fn render(&self, frame: &mut Frame, theme: &Theme) {
@@ -272,7 +304,10 @@ impl Home {
             Layout::vertical([Constraint::Min(0), Constraint::Length(2)]).areas(inner);
 
         let bold = Style::new().add_modifier(Modifier::BOLD);
-        let mut lines = vec![Line::styled(" What do you want to share?", bold), Line::raw("")];
+        let mut lines = vec![
+            Line::styled(" What do you want to share?", bold),
+            Line::raw(""),
+        ];
         if self.apps.is_empty() {
             lines.push(Line::styled(
                 "   Start your app, I'll see it arrive.",
@@ -321,7 +356,10 @@ impl Home {
         }
 
         lines.push(Line::raw(""));
-        let (on, off) = (theme.fg(fx::GREEN).add_modifier(Modifier::BOLD), theme.fg(fx::DIM));
+        let (on, off) = (
+            theme.fg(fx::GREEN).add_modifier(Modifier::BOLD),
+            theme.fg(fx::DIM),
+        );
         let (public, local) = if self.local { (off, on) } else { (on, off) };
         lines.push(Line::from(vec![
             Span::raw("   Where   "),
@@ -399,4 +437,3 @@ fn fit(text: &str, width: usize) -> String {
     let tail: String = text.chars().skip(count + 1 - width).collect();
     format!("…{tail}")
 }
-
