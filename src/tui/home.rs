@@ -1,6 +1,8 @@
 //! The screen `bunf` opens without a port: the apps listening here, which to
 //! share and how, and the command that would do the same.
 
+use std::collections::BTreeMap;
+use std::fs;
 use std::ops::ControlFlow::{self, Break, Continue};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -11,6 +13,7 @@ use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Paragraph};
+use serde::{Deserialize, Serialize};
 
 use super::{Theme, fx, stepped};
 use crate::ports::{self, Listener};
@@ -24,7 +27,7 @@ const ROUTE_WIDTH: usize = 12;
 const MIN_FOLDER: usize = 12;
 
 /// What to share and how, as the command's flags say it.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Choice {
     pub ports: Vec<u16>,
     pub local: bool,
@@ -41,6 +44,39 @@ impl Choice {
         words.extend(self.calm.then(|| "--calm".to_string()));
         words.join(" ")
     }
+
+    fn describe(&self) -> String {
+        let ports: Vec<String> = self.ports.iter().map(u16::to_string).collect();
+        let place = if self.local { "on this machine" } else { "public link" };
+        let mut words = vec![ports.join(", "), place.to_string()];
+        words.extend((!self.widget).then(|| "no feedback button".to_string()));
+        words.extend(self.calm.then(|| "no animations".to_string()));
+        words.join(" · ")
+    }
+}
+
+/// The last choice made from the home screen, by folder, beside the share
+/// records and never in the project.
+fn memory_file() -> Option<PathBuf> {
+    Some(crate::os::data_dir()?.join("home").join("last.json"))
+}
+
+fn memory() -> BTreeMap<String, Choice> {
+    memory_file()
+        .and_then(|path| fs::read(path).ok())
+        .and_then(|json| serde_json::from_slice(&json).ok())
+        .unwrap_or_default()
+}
+
+fn remember(here: &Path, choice: &Choice) {
+    let Some(path) = memory_file() else {
+        return;
+    };
+    let mut memory = memory();
+    memory.insert(here.to_string_lossy().into_owned(), choice.clone());
+    if let (Some(dir), Ok(json)) = (path.parent(), serde_json::to_vec_pretty(&memory)) {
+        let _ = fs::create_dir_all(dir).and_then(|_| fs::write(&path, json));
+    }
 }
 
 /// The name it was started under, bunf or bunflared.
@@ -55,6 +91,7 @@ fn program() -> String {
 
 #[derive(Clone, Copy, PartialEq)]
 enum Row {
+    Last,
     Port(u16),
     Widget,
     Animations,
@@ -71,21 +108,28 @@ struct Home {
     calm: bool,
     /// Nothing checked yet: the next app found gets checked.
     fresh: bool,
+    last: Option<Choice>,
 }
 
 /// Shows the screen until Enter launches a share or q leaves without one.
 pub fn run(theme: &Theme, start: Choice) -> Option<Choice> {
+    let here = std::env::current_dir().unwrap_or_default();
+    let last = memory().remove(here.to_string_lossy().as_ref());
     let mut home = Home {
         apps: Vec::new(),
-        here: std::env::current_dir().unwrap_or_default(),
         checked: Vec::new(),
         cursor: Row::Widget,
-        local: start.local,
+        local: start.local || last.as_ref().is_some_and(|last| last.local),
         widget: start.widget,
         calm: start.calm,
         fresh: true,
+        here,
+        last,
     };
     home.update(ports::scan());
+    if home.last.as_ref().is_some_and(|last| home.missing(last).is_empty()) {
+        home.cursor = Row::Last;
+    }
     let mut terminal = ratatui::init();
     let result = loop {
         if terminal.draw(|frame| home.render(frame, theme)).is_err() {
@@ -104,6 +148,9 @@ pub fn run(theme: &Theme, start: Choice) -> Option<Choice> {
         }
     };
     ratatui::restore();
+    if let Some(choice) = &result {
+        remember(&home.here, choice);
+    }
     result
 }
 
@@ -131,6 +178,11 @@ impl Home {
         self.apps.iter().any(|app| app.port == port)
     }
 
+    fn missing(&self, choice: &Choice) -> Vec<String> {
+        let ports = choice.ports.iter().filter(|&&port| !self.listening(port));
+        ports.map(u16::to_string).collect()
+    }
+
     /// The checked ports still listening, the one served at `/` first.
     fn ports(&self) -> Vec<u16> {
         let ports = self.checked.iter().copied();
@@ -138,13 +190,18 @@ impl Home {
     }
 
     fn rows(&self) -> Vec<Row> {
-        let mut rows: Vec<Row> = self.apps.iter().map(|app| Row::Port(app.port)).collect();
+        let mut rows: Vec<Row> = self.last.iter().map(|_| Row::Last).collect();
+        rows.extend(self.apps.iter().map(|app| Row::Port(app.port)));
         rows.extend([Row::Widget, Row::Animations]);
         rows
     }
 
     /// What Enter launches, if anything.
     fn pending(&self) -> Option<Choice> {
+        if self.cursor == Row::Last {
+            let last = self.last.as_ref();
+            return last.filter(|last| self.missing(last).is_empty()).cloned();
+        }
         let ports = self.ports();
         (!ports.is_empty()).then(|| Choice {
             ports,
@@ -167,7 +224,13 @@ impl Home {
             }
             KeyCode::Up | KeyCode::Char('k') => self.step(false),
             KeyCode::Down | KeyCode::Char('j') => self.step(true),
-            KeyCode::Tab | KeyCode::BackTab => self.local = !self.local,
+            KeyCode::Tab | KeyCode::BackTab => {
+                // The last time's line launches as it was: editing leaves it.
+                if self.cursor == Row::Last {
+                    self.cursor = self.rows()[1];
+                }
+                self.local = !self.local;
+            }
             KeyCode::Char(' ') => self.toggle(),
             _ => {}
         }
@@ -190,6 +253,7 @@ impl Home {
             },
             Row::Widget => self.widget = !self.widget,
             Row::Animations => self.calm = !self.calm,
+            Row::Last => return,
         }
         self.fresh = false;
     }
@@ -214,6 +278,19 @@ impl Home {
                 "   Start your app, I'll see it arrive.",
                 theme.fg(fx::YELLOW),
             ));
+        }
+        if let Some(last) = &self.last {
+            let missing = self.missing(last);
+            let mut spans = vec![
+                Span::raw("   ↻ same as last time   "),
+                Span::styled(last.describe(), theme.fg(fx::CYAN)),
+            ];
+            if !missing.is_empty() {
+                let gone = format!("   not listening: {}", missing.join(", "));
+                spans.push(Span::styled(gone, theme.fg(fx::RED)));
+            }
+            lines.push(self.cursored(Line::from(spans), Row::Last));
+            lines.push(Line::raw(""));
         }
         let ports = self.ports();
         let folders: Vec<String> = self.apps.iter().map(|app| self.folder(app)).collect();
@@ -261,6 +338,9 @@ impl Home {
 
         let command = match self.pending() {
             Some(choice) => Line::styled(format!(" $ {}", choice.command()), bold),
+            None if self.cursor == Row::Last => {
+                Line::styled(" Start these apps first, or pick below.", theme.fg(fx::DIM))
+            }
             None => Line::styled(" Check an app with space.", theme.fg(fx::DIM)),
         };
         let keys = Line::styled(
