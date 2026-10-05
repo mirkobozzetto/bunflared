@@ -7,6 +7,11 @@
 No account, no deploy. Send the link to a client, open it on your phone,
 close the terminal and it is gone.
 
+No port to remember: type `bunf` alone in your project. It finds the apps
+you are running, ticks the one started from that folder, and Enter shares
+it, on a public link or only on this computer. The next time, one key
+shares the same way again.
+
 It shares several ports behind one link, so a frontend and its API travel
 together: the first port is served at `/`, the others under `/_port/<port>`,
 and `http://localhost:<port>` inside your pages and scripts is rewritten to
@@ -52,6 +57,25 @@ bunflared agents
 
 ## Use
 
+Start with `bunf` alone, in your project's folder. It lists the apps
+listening on this machine, the ones started from that folder first and the
+first of them already ticked, so Enter shares it:
+
+| Key | Does |
+| --- | --- |
+| `Space` | tick or untick an app; the first ticked is served at `/` |
+| `Tab` | a public link, or only on this computer |
+| `Enter` | share, and open the dashboard |
+| `q` `Esc` | leave without sharing |
+
+Two options tick the same way: the feedback button and the animations. The
+command that does the same is written at the bottom, to reuse in a script.
+The next time in that folder, the first line offers the same share again:
+Enter relaunches it. An app started while the screen is open shows up within
+a second.
+
+The ports can also be given directly, which skips that screen:
+
 ```sh
 bunf 5173                       # share one app
 bunf 5173 3000                  # app at /, its API at /_port/3000
@@ -62,7 +86,8 @@ bunf 5173 --local               # on this computer only, no tunnel, no link
 `--local` serves the app with the widget on `http://127.0.0.1:<port>`, in
 well under a second: the same dashboard, notes and live session, for you and
 your own browser, with nothing reaching Cloudflare. Only this computer can
-open that address.
+open that address. `-l` is the short form, and `bunf -l` opens the home
+screen with that mode already picked.
 
 `bunf` and `bunflared` are the same command.
 
