@@ -7,6 +7,11 @@
 No account, no deploy. Send the link to a client, open it on your phone,
 close the terminal and it is gone.
 
+No port to remember: type `bunf` alone in your project. It finds the apps
+you are running, ticks the one started from that folder, and Enter shares
+it, on a public link or only on this computer. The next time, one key
+shares the same way again.
+
 It shares several ports behind one link, so a frontend and its API travel
 together: the first port is served at `/`, the others under `/_port/<port>`,
 and `http://localhost:<port>` inside your pages and scripts is rewritten to
