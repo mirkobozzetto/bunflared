@@ -25,6 +25,7 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const EXIT_USAGE: i32 = 2;
 
 const AFTER_HELP: &str = r#"Examples:
+  bunflared                       pick among the apps running here, Enter shares
   bunflared 5173                  share one app
   bunflared 5173 3000             app at /, its API at /_port/3000
   bunflared 5173 3000 --detach    print the ready line, keep sharing in the background

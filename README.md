@@ -52,6 +52,25 @@ bunflared agents
 
 ## Use
 
+Start with `bunf` alone, in your project's folder. It lists the apps
+listening on this machine, the ones started from that folder first and the
+first of them already ticked, so Enter shares it:
+
+| Key | Does |
+| --- | --- |
+| `Space` | tick or untick an app; the first ticked is served at `/` |
+| `Tab` | a public link, or only on this computer |
+| `Enter` | share, and open the dashboard |
+| `q` `Esc` | leave without sharing |
+
+Two options tick the same way: the feedback button and the animations. The
+command that does the same is written at the bottom, to reuse in a script.
+The next time in that folder, the first line offers the same share again:
+Enter relaunches it. An app started while the screen is open shows up within
+a second.
+
+The ports can also be given directly, which skips that screen:
+
 ```sh
 bunf 5173                       # share one app
 bunf 5173 3000                  # app at /, its API at /_port/3000
