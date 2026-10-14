@@ -50,7 +50,7 @@ svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; s
 .panel.sheet { left: 0; right: 0; bottom: 0; max-height: calc(100% - 40px); padding: 6px 16px 18px;
   border-radius: 20px 20px 0 0; box-shadow: 0 -10px 40px rgb(17 20 28 / 18%); font-size: 15px;
   animation: sheet .42s var(--ease); }
-.panel.pop { width: min(360px, calc(100% - 64px)); max-height: calc(100% - 24px); padding: 14px 16px 16px;
+.panel.pop { width: min(392px, calc(100% - 64px)); max-height: calc(100% - 24px); padding: 14px 16px 16px;
   border-radius: 16px; box-shadow: var(--shadow); animation: pop .24s var(--ease); }
 .grab { justify-self: center; width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin-bottom: -4px; }
 .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -138,16 +138,18 @@ textarea { font: inherit; width: 100%; min-height: 84px; resize: none; padding: 
 textarea::placeholder, input::placeholder { color: var(--faint); }
 textarea:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px var(--line); }
 .pop textarea { min-height: 64px; }
-.points { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.points li { display: grid; gap: 6px; }
+.points { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.points li { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .pin { margin: 0; display: flex; gap: 8px; align-items: center; padding: 4px 4px 4px 6px; border-radius: 10px;
   background: color-mix(in srgb, var(--pink) 14%, var(--bg)); font-size: 13px; }
-.pin > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A long selector scrolls sideways in its own row, never the panel. */
+.pin > span { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
 .pin .icon { width: 30px; height: 30px; }
 .num { flex: none; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--pink);
   color: var(--ink); font: 700 12px/22px system-ui, -apple-system, sans-serif; text-align: center; }
 .note .comment { min-height: 0; }
-.tools { display: flex; gap: 6px; align-items: center; }
+/* Point at another, Screenshot and Send on one line; Send wraps below in a narrow window. */
+.tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .chip, .send { height: 36px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .chip { padding: 0 12px 0 10px; border: 1px solid var(--line); background: none; color: var(--text); font-size: 13px;
   transition: background .15s, color .15s, border-color .15s; }
