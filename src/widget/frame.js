@@ -1,20 +1,27 @@
 // A page without a mobile viewport is drawn zoomed out on a phone, and a
-// pinch zoom moves what the visitor sees: the widget follows the visible
-// area, at its normal size, and stays above the on-screen keyboard.
+// pinch zoom moves what the visitor sees: the widget covers the visible area,
+// at its normal size, and that area ends above the on-screen keyboard.
 const fit = () => {
   const view = window.visualViewport;
   if (!view) return;
-  const [right, bottom] = [view.offsetLeft + view.width, view.offsetTop + view.height];
-  host.style.inset = "0 auto auto 0";
+  const [width, height] = [view.width * view.scale, view.height * view.scale];
   host.style.transformOrigin = "0 0";
-  host.style.transform =
-    `translate(${right}px, ${bottom}px) scale(${1 / view.scale}) translate(calc(-100% - 16px), calc(-100% - 16px))`;
-  host.style.setProperty("--room", `${view.width * view.scale}px`);
-  host.style.setProperty("--tall", `${view.height * view.scale}px`);
+  host.style.transform = `translate(${view.offsetLeft}px, ${view.offsetTop}px) scale(${1 / view.scale})`;
+  host.style.width = `${width}px`;
+  host.style.height = `${height}px`;
+  host.style.setProperty("--room", `${width}px`);
+  host.style.setProperty("--tall", `${height}px`);
 };
 fit();
 window.visualViewport?.addEventListener("resize", fit);
 window.visualViewport?.addEventListener("scroll", fit);
+
+// A pointer's page coordinates, in the widget's own pixels.
+const toLocal = (x, y) => {
+  const box = host.getBoundingClientRect();
+  const ratio = host.clientWidth / box.width;
+  return { x: (x - box.left) * ratio, y: (y - box.top) * ratio };
+};
 
 // Light or dark like the page under it. A page with no background of its own
 // is white, unless it opts into the computer's dark theme with color-scheme.
@@ -27,3 +34,4 @@ const scheme = () => {
   const prefersDark = matchMedia("(prefers-color-scheme: dark)").matches;
   return declared.includes("dark") && (prefersDark || !declared.includes("light")) ? "dark" : "light";
 };
+const paint = () => { host.dataset.scheme = scheme(); };

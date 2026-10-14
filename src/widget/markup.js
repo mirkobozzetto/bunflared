@@ -5,6 +5,7 @@ const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const phone = matchMedia("(pointer: coarse)").matches;
 root.innerHTML = `
   <style>${STYLE}</style>
+  <div class="dock">
   <p class="watch" hidden>Live: the developer sees your pointer</p>
   <section class="card chat" hidden>
     <header>
@@ -43,6 +44,7 @@ root.innerHTML = `
       <button class="close" type="button">Close</button>
       <button class="send" type="submit">Send</button>
     </div>
-  </form>`;
+  </form>
+  </div>`;
 
 const $ = (selector) => root.querySelector(selector);

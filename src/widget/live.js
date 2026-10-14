@@ -67,7 +67,7 @@ reply.addEventListener("submit", (event) => {
 const handlers = {
   chat: ({ text }) => {
     bubble(text, false);
-    host.style.colorScheme = scheme();
+    paint();
     chat.hidden = false;
   },
   go: ({ path }) => {

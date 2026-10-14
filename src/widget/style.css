@@ -1,5 +1,8 @@
-:host { all: initial; position: fixed; right: 16px; bottom: 16px; z-index: 2147483647;
-  font: 14px/1.4 system-ui, -apple-system, sans-serif; color-scheme: light dark;
+/* The host covers the visible area and lets every click through but its own. */
+:host { all: initial; position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 2147483647;
+  display: block; pointer-events: none; font: 14px/1.4 system-ui, -apple-system, sans-serif; color-scheme: light; }
+:host([data-scheme=dark]) { color-scheme: dark; }
+.dock { position: absolute; right: 16px; bottom: 16px; pointer-events: auto;
   display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 [hidden] { display: none !important; }
 button { font: inherit; cursor: pointer; border-radius: 999px; border: 0; padding: 8px 14px; }

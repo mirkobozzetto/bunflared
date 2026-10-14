@@ -26,7 +26,7 @@ const retake = async () => {
 };
 
 const toggle = (visible) => {
-  host.style.colorScheme = scheme();
+  paint();
   form.hidden = !visible;
   bar.hidden = visible;
   if (!visible) return;
