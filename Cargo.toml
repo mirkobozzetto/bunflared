@@ -1,6 +1,6 @@
 [package]
 name = "bunflared"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2024"
 description = "One command, one throwaway link for your localhost, several ports behind it. Chat with your client from the terminal, send them to a page, follow their cursor, catch their reactions 🔥 Or let your coding agent run the session over MCP."
 license = "MIT"
@@ -8,7 +8,7 @@ repository = "https://github.com/mirkobozzetto/bunflared"
 readme = "README.md"
 keywords = ["tunnel", "localhost", "cloudflare", "share", "tui"]
 categories = ["command-line-utilities", "development-tools", "network-programming"]
-include = ["/src/**", "/Cargo.toml", "/Cargo.lock", "/README.md", "/LICENSE"]
+include = ["/src/**/*.rs", "/src/**/*.js", "/src/**/*.css", "/src/**/*.html", "/Cargo.toml", "/Cargo.lock", "/README.md", "/LICENSE"]
 
 [dependencies]
 bytes = "1.12.1"
