@@ -171,7 +171,7 @@ async function record(browser: Browser, work: string): Promise<Story> {
     const loaded = now();
     await glide(420, 360, 30);
     await web.waitForFunction(
-      () => !document.querySelector("bunflared-feedback")?.shadowRoot?.querySelector(".reactions")?.hidden,
+      () => !document.querySelector("bunflared-feedback")?.shadowRoot?.querySelector(".react")?.hidden,
     );
     const arrived = await arrival;
     await sleep(2500);
@@ -190,13 +190,14 @@ async function record(browser: Browser, work: string): Promise<Story> {
     await press("Escape");
     shot("dashboard", "term", typing - 300, sent + 700, "m writes to them");
     await web.waitForFunction(
-      () => document.querySelector("bunflared-feedback")?.shadowRoot?.querySelector(".thread li"),
+      () => !document.querySelector("bunflared-feedback")?.shadowRoot?.querySelector(".toast")?.hidden,
     );
     await sleep(1800);
-    shot("dashboard", "web", sent - 200, sent + 2000, "The message pops up on their page");
+    shot("dashboard", "web", sent - 200, sent + 2000, "The message waits on their tab");
 
     const answering = now();
-    await clickOn(widget(".reply input"));
+    await clickOn(widget(".toast"));
+    await clickOn(widget("#answer"));
     await web.keyboard.type(ANSWER, { delay: 45 });
     await sleep(250);
     const answered = now();
@@ -207,9 +208,10 @@ async function record(browser: Browser, work: string): Promise<Story> {
     shot("dashboard", "term", answered - 200, answered + 2800, "Their answer lands in the dashboard");
 
     const reacting = now();
-    await clickOn(widget(".reactions button").nth(1));
+    await clickOn(widget(".react button").nth(1));
     const reacted = now();
     await sleep(3000);
+    await web.keyboard.press("Escape");
     shot("dashboard", "web", reacting - 200, reacted + 1400, "They react");
     shot("dashboard", "term", reacted - 200, reacted + 2800, "Each reaction has its own show");
 
@@ -217,7 +219,7 @@ async function record(browser: Browser, work: string): Promise<Story> {
     const picking = now();
     await press("ArrowDown");
     await web.waitForFunction(
-      () => !document.querySelector("bunflared-feedback")?.shadowRoot?.querySelector(".watch")?.hidden,
+      () => document.querySelector("bunflared-feedback")?.shadowRoot?.querySelector(".tab.live"),
     );
     await sleep(1200);
     const moving = now();
@@ -244,15 +246,15 @@ async function record(browser: Browser, work: string): Promise<Story> {
     shot("drive", "web", sentAway - 300, sentAway + 2200, "Their browser follows");
 
     // 4. A note pinned on the element it is about.
-    await clickOn(widget(".open"));
+    await clickOn(widget(".tab"));
     await web.keyboard.type("The pay button is cut", { delay: 30 });
     await clickOn(widget(".point"));
     await clickOn(web.locator(".pay button"));
     await sleep(2500);
     await web.waitForFunction(() => {
       const shadow = document.querySelector("bunflared-feedback")?.shadowRoot;
-      const image = shadow?.querySelector("figure img") as HTMLImageElement | null;
-      return image?.complete && image.naturalWidth > 0;
+      const image = shadow?.querySelector(".thumb") as HTMLImageElement | null;
+      return !image?.hidden && image?.complete && image.naturalWidth > 0;
     });
     await glide(1100, 520, 15);
     await sleep(600);

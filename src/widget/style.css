@@ -1,0 +1,185 @@
+/* The host covers the visible area and lets every click through but its own. */
+:host { all: initial; position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 2147483647;
+  display: block; pointer-events: none; font: 14px/1.4 system-ui, -apple-system, sans-serif; color-scheme: light;
+  --ink: #1f2430; --pink: #ff79c6; --red: #ff5555; --ease: cubic-bezier(.16, 1, .3, 1);
+  --tab-shadow: 0 6px 18px rgb(17 20 28 / 26%); --edge: rgb(31 36 48 / 50%); --edge-on: #1f2430;
+  --bg: #fff; --text: #1f2430; --muted: #565c6b; --faint: #6b7180; --line: rgb(31 36 48 / 13%);
+  --soft: #f2f2f5; --soft-hover: #e8e8ee; --shadow: 0 14px 36px rgb(17 20 28 / 18%), 0 2px 6px rgb(17 20 28 / 8%);
+  --strong: #1f2430; --on-strong: #fff; --ok: #2f8a5b; }
+:host([data-scheme=dark]) { color-scheme: dark;
+  --tab-shadow: 0 0 0 1px rgb(255 255 255 / 18%), 0 6px 18px rgb(0 0 0 / 40%);
+  --edge: rgb(255 255 255 / 45%); --edge-on: #fff;
+  --bg: #1b1f29; --text: #eceef3; --muted: #a9aebb; --faint: #9095a3; --line: rgb(255 255 255 / 14%);
+  --soft: #2a2f3c; --soft-hover: #343a48; --shadow: 0 14px 36px rgb(0 0 0 / 45%), 0 2px 6px rgb(0 0 0 / 30%);
+  --strong: #eceef3; --on-strong: #1b1f29; --ok: #5fd08f; }
+*, *::before { box-sizing: border-box; }
+:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
+svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75;
+  stroke-linecap: round; stroke-linejoin: round; }
+
+/* The tab on the edge, half tucked away while the page scrolls. */
+.tab { position: absolute; width: 40px; height: 46px; padding: 0; display: grid; place-items: center;
+  pointer-events: auto; background: var(--ink); color: #fff; touch-action: none; box-shadow: var(--tab-shadow);
+  transition: transform .3s var(--ease), opacity .3s var(--ease), border-radius .2s; }
+.tab.right { right: 0; border-radius: 23px 0 0 23px; padding-left: 4px; }
+.tab.left { left: 0; border-radius: 0 23px 23px 0; padding-right: 4px; }
+.tab svg { width: 21px; height: 21px; }
+.tab.right.tucked { transform: translateX(24px); opacity: .5; }
+.tab.left.tucked { transform: translateX(-24px); opacity: .5; }
+.tab.dragging { transition: none; border-radius: 23px; box-shadow: 0 12px 28px rgb(17 20 28 / 30%); }
+.tab.will-hide { opacity: .45; transform: scale(.82); }
+
+/* Hidden, the tab leaves a 4 px line on the edge. */
+.sliver { position: absolute; width: 24px; height: 72px; padding: 0; display: flex; align-items: center;
+  pointer-events: auto; background: none; }
+.sliver.right { right: 0; justify-content: flex-end; }
+.sliver.left { left: 0; justify-content: flex-start; }
+.sliver::before { content: ""; width: 4px; height: 52px; background: var(--edge);
+  transition: width .2s var(--ease), background .2s; animation: slide-in .35s var(--ease); }
+.sliver.right::before { border-radius: 3px 0 0 3px; }
+.sliver.left::before { border-radius: 0 3px 3px 0; }
+.sliver:hover::before, .sliver:focus-visible::before { width: 7px; background: var(--edge-on); }
+.sliver.unread::before { width: 6px; background: var(--pink); }
+@keyframes slide-in { from { transform: scaleY(.3); opacity: 0; } }
+
+/* The panel: a sheet over a scrim on a phone, a popover next to the tab on a computer. */
+.scrim { position: absolute; inset: 0; pointer-events: auto; background: rgb(17 20 28 / 22%); animation: fade-in .25s; }
+.panel { position: absolute; pointer-events: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px;
+  overflow-y: auto; overscroll-behavior: contain; background: var(--bg); color: var(--text);
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.panel.sheet { left: 0; right: 0; bottom: 0; max-height: calc(100% - 40px); padding: 6px 16px 18px;
+  border-radius: 20px 20px 0 0; box-shadow: 0 -10px 40px rgb(17 20 28 / 18%); font-size: 15px;
+  animation: sheet .42s var(--ease); }
+.panel.pop { width: min(360px, calc(100% - 64px)); max-height: calc(100% - 24px); padding: 14px 16px 16px;
+  border-radius: 16px; box-shadow: var(--shadow); animation: pop .24s var(--ease); }
+.grab { justify-self: center; width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin-bottom: -4px; }
+.head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+h2 { margin: 0; font: 600 15px/1.3 system-ui, -apple-system, sans-serif; }
+.actions { display: flex; gap: 2px; align-items: center; margin-right: -6px; }
+.ghost, .icon { height: 36px; padding: 0; border-radius: 10px; background: none; color: var(--muted);
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: background .15s, color .15s; }
+.ghost { padding: 0 10px; font-size: 13px; }
+.icon { width: 36px; }
+.ghost:hover, .icon:hover { background: var(--soft); color: var(--text); }
+/* One column that never grows past the panel: long pinned text ellipsizes. */
+.note, .msgs { grid-template-columns: minmax(0, 1fr); }
+.note { display: grid; gap: 8px; }
+@keyframes sheet { from { transform: translateY(100%); } }
+@keyframes fade-in { from { opacity: 0; } }
+[hidden] { display: none !important; }
+button { margin: 0; padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; }
+
+/* The developer follows the pointer: a red ring on the tab, a line in the panel. */
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--red);
+  animation: blink 1.2s ease-in-out infinite; }
+.tab .dot { position: absolute; bottom: 6px; width: 7px; height: 7px; }
+.tab.right .dot { left: 7px; }
+.tab.left .dot { right: 7px; }
+.tab.live { box-shadow: 0 0 0 2px var(--red), var(--tab-shadow); }
+.watch { margin: -6px 0 0; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+
+/* Quick reactions, and the emoji that rises when one is sent or received. */
+.react { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.react button { height: 44px; border-radius: 12px; background: var(--soft); font-size: 22px; line-height: 1;
+  transition: transform .2s var(--ease), background .15s; }
+.react button:hover { background: var(--soft-hover); }
+.react button:active { transform: scale(.92); }
+.float { position: absolute; font-size: 30px; pointer-events: none; animation: rise 1.6s var(--ease) forwards; }
+.float.big { font-size: 56px; }
+@keyframes rise { to { transform: translateY(-170px) scale(1.3); opacity: 0; } }
+@keyframes pop { from { transform: scale(.94); opacity: 0; } }
+@keyframes blink { 50% { opacity: .3; } }
+@keyframes fade { to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before { animation: none !important; transition: none !important; }
+  .float { animation: fade 1.2s forwards !important; }
+}
+
+/* A message from the developer: a badge and a short preview next to the tab. */
+.badge { position: absolute; top: -6px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px;
+  background: var(--pink); color: var(--ink); font: 700 11px/19px system-ui, sans-serif; text-align: center;
+  box-shadow: 0 0 0 2px var(--bg); animation: pop .3s var(--ease); }
+.tab.right .badge { left: -7px; }
+.tab.left .badge { right: -7px; }
+.toast { position: absolute; max-width: 220px; padding: 9px 12px; border-radius: 14px; pointer-events: auto;
+  background: var(--bg); color: var(--text); box-shadow: var(--shadow); font-size: 13px; text-align: left;
+  overflow-wrap: anywhere; animation: pop .3s var(--ease); }
+.toast b { display: block; margin-bottom: 1px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.toast span { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* The conversation: the developer on the left, the visitor on the right. */
+.msgs { display: grid; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+h3 { margin: 0; font: 600 12px system-ui, -apple-system, sans-serif; color: var(--muted); }
+.msgs-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-right: -6px; }
+.pop .msgs-head .ghost { height: 28px; }
+.fold { display: inline-flex; align-items: center; gap: 4px; }
+.fold svg { width: 14px; height: 14px; transition: transform .2s var(--ease); }
+.fold[aria-expanded=false] svg { transform: rotate(-90deg); }
+.thread { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 180px; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.pop .thread { max-height: 160px; }
+/* Older messages above: the top edge fades. */
+.thread.more { -webkit-mask-image: linear-gradient(transparent, #000 28px); mask-image: linear-gradient(transparent, #000 28px); }
+.thread li { justify-self: start; max-width: 85%; padding: 7px 11px; border-radius: 14px 14px 14px 4px;
+  background: color-mix(in srgb, var(--pink) 18%, var(--bg)); overflow-wrap: anywhere; animation: pop .25s var(--ease); }
+.thread li.mine { justify-self: end; border-radius: 14px 14px 4px 14px; background: var(--soft); }
+.reply { display: flex; gap: 6px; }
+.reply input { flex: 1; min-width: 0; height: 36px; padding: 0 14px; border-radius: 999px; font: inherit;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+.reply input:focus { border-color: var(--text); }
+.reply .icon { border-radius: 999px; background: var(--pink); color: var(--ink); }
+
+/* The note: what should change, the element it is about, a screenshot. */
+.note > label { font-weight: 600; }
+textarea { font: inherit; width: 100%; min-height: 84px; resize: none; padding: 10px 12px; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text); transition: border-color .15s, box-shadow .15s; }
+textarea::placeholder, input::placeholder { color: var(--faint); }
+textarea:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px var(--line); }
+.pop textarea { min-height: 64px; }
+.pin { margin: 0; display: flex; gap: 8px; align-items: center; padding: 4px 4px 4px 10px; border-radius: 10px;
+  background: color-mix(in srgb, var(--pink) 14%, var(--bg)); font-size: 13px; }
+.pin span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pin .icon { width: 30px; height: 30px; }
+.tools { display: flex; gap: 6px; align-items: center; }
+.chip, .send { height: 36px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.chip { padding: 0 12px 0 10px; border: 1px solid var(--line); background: none; color: var(--text); font-size: 13px;
+  transition: background .15s, color .15s, border-color .15s; }
+.chip:hover { background: var(--soft); }
+.chip[aria-pressed=true] { background: var(--strong); border-color: var(--strong); color: var(--on-strong); }
+.thumb { width: 18px; height: 18px; border-radius: 5px; object-fit: cover; object-position: top;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 45%); }
+.thumb:not([hidden]) + svg { display: none; }
+.send { margin-left: auto; padding: 0 14px 0 11px; background: var(--pink); color: var(--ink); font-weight: 600;
+  transition: background .15s, transform .2s var(--ease); }
+.send:not(:disabled):active { transform: scale(.96); }
+.send:disabled { background: var(--soft); color: var(--faint); cursor: default; }
+.foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 18px;
+  font-size: 13px; color: var(--muted); }
+.status { margin: 0; display: flex; gap: 6px; align-items: center; }
+.status svg { width: 16px; height: 16px; color: var(--ok); }
+.status.error svg { color: var(--red); }
+.status:not(:empty) + .hint { display: none; }
+.spin { width: 15px; height: 15px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+  animation: rot .7s linear infinite; }
+@keyframes rot { to { transform: rotate(1turn); } }
+
+/* "Point at it": the next click on the page picks an element. */
+.picking { position: absolute; left: 50%; bottom: 22px; translate: -50% 0; margin: 0; pointer-events: auto;
+  display: flex; gap: 10px; align-items: center; padding: 6px 6px 6px 14px; border-radius: 999px; white-space: nowrap;
+  background: var(--ink); color: #fff; box-shadow: var(--shadow); font-size: 14px; animation: pop .25s var(--ease); }
+.picking button { height: 32px; padding: 0 14px; border-radius: 999px; background: var(--pink); color: var(--ink); font-weight: 600; }
+
+/* Touch screens: 44 px targets, Send across, and 16px fields so iOS does not zoom. */
+@media (pointer: coarse) {
+  textarea, input { font-size: 16px; }
+  .chip, .send, .ghost, .reply input { height: 44px; }
+  .react button { height: 48px; }
+  .fold { height: 44px; }
+  .icon, .pin .icon { width: 44px; height: 44px; }
+  .tools { flex-wrap: wrap; }
+  .send { flex: 1 0 100%; justify-content: center; margin-left: 0; }
+  .hint { display: none; }
+  .picking button { height: 40px; }
+}

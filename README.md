@@ -106,6 +106,7 @@ In the dashboard:
 | `g` | send them to a page (the pages already seen are offered) |
 | `R` | reload their page, after a fix |
 | `e` | send them a reaction |
+| `x` | clear the chat panel (the session file keeps everything) |
 | `Enter` | on a request: its headers and bodies |
 | `p` | replay the picked request to your local server |
 | `?` | help |
@@ -118,12 +119,15 @@ small bunny page that retries by itself.
 
 ## Feedback from the people you share with
 
-Every shared page gets a small **✎ Feedback** button. Your client writes a
-remark, a screenshot of the page is attached (or they paste their own), and it
-lands in `bunflared-feedback/`, in the folder you ran bunflared from: one
-Markdown file per note, the image next to it. With **Point at it** they click
-the element they mean first: the note records its CSS selector, its text and
-its position, and the screenshot shows it outlined.
+Every shared page gets a small tab on its edge. It tucks half away while the
+page scrolls, your client can drag it up, down or to the other edge, or push it
+against the edge to leave only a thin line: it never sits on the page's own
+buttons. A tap opens the note: they write a remark, a screenshot of the page
+is attached (or they paste their own), and it lands in `bunflared-feedback/`,
+in the folder you ran bunflared from: one Markdown file per note, the image
+next to it. With **Point at it** they click the element they mean first: the
+note records its CSS selector, its text and its position, and the screenshot
+shows it outlined.
 
 ![A note pinned on the pay button: the element's selector, and a screenshot of the page to send with it](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/note.png)
 
@@ -140,16 +144,19 @@ Each page holds a live connection to the dashboard, and reconnects by itself.
 The GIF at the top is one: a message from the terminal, the answer from the
 page, a reaction.
 
-- **Chat**: `m` opens a message box. The message pops up on their page, they
-  answer from it, and the answer lands in the chat panel and as a toast.
+- **Chat**: `m` opens a message box. The message shows as a badge and a short
+  preview on their tab, they answer from the panel, and the answer lands in the
+  chat panel and as a toast. Their notes join the chat panel too, with the
+  element they point at and whether a screenshot came. On the page, the
+  conversation folds away or clears with one tap.
 - **Drive the demo**: `g` sends them to a page, `R` reloads it.
 - **Radar**: pick a visitor and the radar draws their pointer on an outline of
-  their screen. Their page shows a small "Live" pill while it is followed, and
+  their screen. Their tab wears a red ring while it is followed, and
   nothing is sent while the pointer rests.
 
 ![Driving the demo: pick a visitor, their page says it is followed, the radar draws their pointer, g sends them to the checkout](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/drive.gif)
 
-- **Reactions**: 👍 🔥 😍 😕 next to the feedback button. Each one has its own
+- **Reactions**: 👍 🔥 😍 😕 above the note. Each one has its own
   show in the dashboard, confetti, fireworks, hearts or a worried bunny, and a
   counter. `e` sends one back.
 - **Inspector**: `Tab` to the requests, pick one, `Enter` shows its headers
@@ -160,8 +167,8 @@ page, a reaction.
 
 The chat, the reactions and a link to every note are kept in one
 `session_<date>.md` next to the notes, so the whole conversation is there for
-you or your coding agent afterwards. The widget adapts to phones and follows
-the page's light or dark look.
+you or your coding agent afterwards. On a phone the panel opens as a sheet
+from the bottom, and the widget follows the page's light or dark look.
 
 Tell the people you share with that their visit is followed. `--no-widget`
 leaves the pages untouched. The screenshot library is loaded from jsDelivr

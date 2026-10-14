@@ -43,7 +43,7 @@ visitors' messages and notes reach the session by themselves.
 In a terminal you get the animated dashboard: ? lists its keys. m messages the
 visitors, g sends them to a page, R reloads it, Enter on a request shows it and
 p replays it. Picking a visitor with the arrows follows their pointer, and their
-page shows a "Live" pill meanwhile. Notes, chat and reactions are saved in
+page's tab wears a red ring meanwhile. Notes, chat and reactions are saved in
 bunflared-feedback/.
 
 Otherwise, or with --json, the ready line is one JSON object on stdout:

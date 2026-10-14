@@ -1,5 +1,5 @@
 //! The companion script injected into shared pages: live presence for the
-//! dashboard, and a feedback button whose notes and screenshots are saved in
+//! dashboard, and a feedback tab whose notes and screenshots are saved in
 //! the folder bunflared runs from.
 
 use std::fs;
@@ -20,7 +20,27 @@ use crate::share::{Event, Tx};
 
 pub const PREFIX: &str = "/_bunflared/";
 pub const FOLDER: &str = "bunflared-feedback";
-const SCRIPT: &str = include_str!("widget.js");
+// The page loads one script: its parts share one function scope, in this
+// order, and the stylesheet becomes a string inside it.
+const SCRIPT: &str = concat!(
+    "(() => {\nconst STYLE = String.raw`",
+    include_str!("widget/style.css"),
+    "`;\n",
+    include_str!("widget/presence.js"),
+    include_str!("widget/markup.js"),
+    include_str!("widget/frame.js"),
+    include_str!("widget/capture.js"),
+    include_str!("widget/tab.js"),
+    include_str!("widget/drag.js"),
+    include_str!("widget/panel.js"),
+    include_str!("widget/pointing.js"),
+    include_str!("widget/note.js"),
+    include_str!("widget/chat.js"),
+    include_str!("widget/reactions.js"),
+    include_str!("widget/live.js"),
+    include_str!("widget/boot.js"),
+    "})();\n",
+);
 const TAG: &str = r#"<script src="/_bunflared/widget.js" defer></script>"#;
 const MAX_PING: usize = 4 * 1024;
 const MAX_NOTE: usize = 64 * 1024;
