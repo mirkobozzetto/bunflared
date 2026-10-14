@@ -21,16 +21,17 @@ const ECG: [char; 16] = [
 const BARS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 const PANIC_FOR: f32 = 3.0;
 const HOP_FOR: f32 = 1.2;
-const KEYS: [(&str, &str); 7] = [
+const KEYS: [(&str, &str); 8] = [
     ("c", "copy"),
     ("o", "open"),
     ("r", "qr"),
     ("m", "message"),
     ("g", "go"),
+    ("x", "clear"),
     ("?", "help"),
     ("q", "quit"),
 ];
-const HELP: [&str; 18] = [
+const HELP: [&str; 19] = [
     "c    copy the link",
     "o    open it in your browser",
     "r    big QR code for phones",
@@ -44,6 +45,7 @@ const HELP: [&str; 18] = [
     "g    send them to a page",
     "R    reload their page",
     "e    send them a reaction",
+    "x    clear the chat",
     "",
     "?    this help",
     "q    stop sharing",
@@ -756,7 +758,7 @@ fn draw_chat(app: &App, frame: &mut Frame, area: Rect) {
             ));
         }
         lines.push(Line::from(head));
-        for text in wrap(&message.text, width) {
+        for text in message.text.lines().flat_map(|line| wrap(line, width)) {
             lines.push(Line::from(Span::styled(
                 format!("  {text}"),
                 theme.fg(fx::FG),

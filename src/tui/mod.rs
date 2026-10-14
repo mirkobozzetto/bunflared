@@ -532,12 +532,24 @@ impl App {
                     excerpt,
                     false,
                 );
-                // A visitor often answers in the note field: it joins the chat too.
+                // A visitor often answers in the note field: it joins the chat
+                // too, with what it points at and whether a screenshot came.
+                let mut text = format!("✎ {}", note.message);
+                if let Some(element) = &note.element {
+                    let quoted: String = element.text.chars().take(40).collect();
+                    text.push_str(&format!("\n📍 {}", element.selector));
+                    if !quoted.is_empty() {
+                        text.push_str(&format!(" \"{quoted}\""));
+                    }
+                }
+                if note.shot.is_some() {
+                    text.push_str("\n📷 screenshot");
+                }
                 self.remember_message(Message {
                     mine: false,
                     who: note.device,
                     page: note.page,
-                    text: format!("✎ {}", note.message),
+                    text,
                     clock: widget::clock(),
                 });
                 self.unlock("critic");
@@ -868,6 +880,7 @@ impl App {
                     pick: Some(0),
                 });
             }
+            KeyCode::Char('x') if dashboard => self.chat.clear(),
             KeyCode::Char('R') if dashboard => {
                 let reached = self.hub.send(self.selected.as_deref(), &Command::Reload);
                 self.sent("↻ Reload", reached);
