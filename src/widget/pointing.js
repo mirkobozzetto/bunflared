@@ -36,7 +36,7 @@ const hover = (event) => {
   if (ours(event) || event.target === hovered) return;
   unhover();
   hovered = event.target;
-  unhover = outline(hovered, "2px dashed #ff79c6");
+  unhover = outline(hovered, `2px dashed ${PINK}`);
 };
 const swallow = (event) => {
   if (ours(event)) return;

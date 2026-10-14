@@ -535,7 +535,7 @@ impl App {
                 // A visitor often answers in the note field: it joins the chat
                 // too, with what it points at and whether a screenshot came.
                 let mut text = format!("✎ {}", note.message);
-                if let Some(element) = &note.element {
+                if let Some(element) = note.points.first() {
                     let quoted: String = element.text.chars().take(40).collect();
                     text.push_str(&format!("\n📍 {}", element.selector));
                     if !quoted.is_empty() {

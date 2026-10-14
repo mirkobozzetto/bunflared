@@ -379,8 +379,8 @@ impl Host {
     fn noted(&self, id: &str, note: Feedback) {
         let path = |path: &PathBuf| path.display().to_string();
         let element = note
-            .element
-            .as_ref()
+            .points
+            .first()
             .map(|e| json!({ "selector": e.selector, "text": e.text }));
         self.log(
             id,
@@ -406,7 +406,7 @@ impl Host {
         if let Some(shot) = &note.shot {
             meta["screenshot"] = json!(path(shot));
         }
-        if let Some(element) = &note.element {
+        if let Some(element) = note.points.first() {
             meta["element"] = json!(element.selector);
         }
         self.channel(&note.message, meta);

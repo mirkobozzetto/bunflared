@@ -3,7 +3,7 @@
 //! the folder bunflared runs from.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -17,6 +17,11 @@ use serde::Deserialize;
 use crate::live::{self, Hub};
 use crate::proxy::{Body, full, status};
 use crate::share::{Event, Tx};
+
+mod note;
+
+pub use note::Feedback;
+use note::{Note, save_note};
 
 pub const PREFIX: &str = "/_bunflared/";
 pub const FOLDER: &str = "bunflared-feedback";
@@ -47,7 +52,6 @@ const TAG: &str = r#"<script src="/_bunflared/widget.js" defer></script>"#;
 const MAX_PING: usize = 4 * 1024;
 const MAX_NOTE: usize = 64 * 1024;
 const MAX_SHOT: usize = 12 * 1024 * 1024;
-const MAX_PINNED: usize = 300;
 const LEFT_AFTER: Duration = Duration::from_secs(20);
 // A hidden tab's timers wake up once a minute in Chrome, every 40 s in
 // Safari: its pings slow down without it leaving.
@@ -86,18 +90,6 @@ impl Presence {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Feedback {
-    pub sid: String,
-    pub device: String,
-    pub page: String,
-    pub message: String,
-    /// The note's Markdown file, and its screenshot.
-    pub file: PathBuf,
-    pub shot: Option<PathBuf>,
-    pub element: Option<Element>,
-}
-
 #[derive(Deserialize)]
 struct Ping {
     sid: String,
@@ -106,55 +98,6 @@ struct Ping {
     idle: u32,
     clicks: u32,
     gone: bool,
-}
-
-#[derive(Deserialize)]
-struct Note {
-    sid: String,
-    page: String,
-    message: String,
-    screen: Option<String>,
-    shot: Option<String>,
-    element: Option<Element>,
-}
-
-/// The element a visitor pointed at, so whoever reads the note finds it.
-#[derive(Debug, Clone, Deserialize)]
-pub struct Element {
-    pub selector: String,
-    pub text: String,
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
-}
-
-impl Element {
-    fn markdown(&self) -> String {
-        // Browser text goes inside backticks and quotes: keep it on one line
-        // and unable to close them.
-        let clean = |text: &str| -> String {
-            text.split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ")
-                .replace(['`', '"'], "'")
-                .chars()
-                .take(MAX_PINNED)
-                .collect()
-        };
-        let mut lines = format!("- Element: `{}`\n", clean(&self.selector));
-        if !self.text.trim().is_empty() {
-            lines.push_str(&format!("- Text: \"{}\"\n", clean(&self.text)));
-        }
-        lines.push_str(&format!(
-            "- Position: {}, {} ({}×{}) from the top left of the page\n",
-            self.x.round(),
-            self.y.round(),
-            self.w.round(),
-            self.h.round()
-        ));
-        lines
-    }
 }
 
 /// Adds the script tag before `</body>`, or at the end when there is none.
@@ -216,7 +159,7 @@ pub async fn handle(
             let note = read(request, MAX_NOTE)
                 .await
                 .and_then(|body| serde_json::from_slice::<Note>(&body).ok())
-                .filter(|note| !note.message.trim().is_empty());
+                .filter(Note::written);
             let Some(note) = note else {
                 return status(StatusCode::BAD_REQUEST);
             };
@@ -230,7 +173,7 @@ pub async fn handle(
                         message: note.message.trim().to_string(),
                         file: folder.join(name),
                         shot: shot.map(|shot| folder.join(shot)),
-                        element: note.element,
+                        points: note.points,
                     }));
                     json(serde_json::json!({ "ok": true }))
                 }
@@ -296,49 +239,6 @@ fn save_shot(folder: &Path, image: &[u8]) -> std::io::Result<String> {
     let name = format!("{}.{extension}", stamp());
     fs::write(folder.join(&name), image)?;
     Ok(name)
-}
-
-/// Returns the note's file name, and its screenshot's.
-fn save_note(
-    folder: &Path,
-    note: &Note,
-    device: &str,
-) -> std::io::Result<(String, Option<String>)> {
-    folder_ready(folder)?;
-    // Only a name this module gave out, never a path from the browser.
-    let shot = note.shot.as_deref().filter(|name| {
-        name.chars()
-            .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
-            && !name.contains("..")
-            && folder.join(name).is_file()
-    });
-    let quoted: Vec<String> = note
-        .message
-        .trim()
-        .lines()
-        .map(|line| format!("> {line}"))
-        .collect();
-    let pinned = note.element.as_ref().map(Element::markdown);
-    let mut text = format!(
-        "# Feedback, {}\n\n- Page: `{}`\n- Device: {device}\n- Screen: {}\n- Visitor: {}\n{}\n{}\n",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-        note.page,
-        note.screen.as_deref().unwrap_or("unknown"),
-        note.sid,
-        pinned.unwrap_or_default(),
-        quoted.join("\n"),
-    );
-    if let Some(shot) = shot {
-        let outlined = if note.element.is_some() {
-            ", the element outlined"
-        } else {
-            ""
-        };
-        text.push_str(&format!("\n![Screenshot{outlined}]({shot})\n"));
-    }
-    let name = format!("{}.md", stamp());
-    fs::write(folder.join(&name), text)?;
-    Ok((name, shot.map(str::to_string)))
 }
 
 /// "iPhone · Safari", from the User-Agent and the `Sec-CH-UA` client hint.

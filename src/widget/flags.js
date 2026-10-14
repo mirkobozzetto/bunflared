@@ -11,7 +11,7 @@ function refreshFlags() {
   flagLayer.replaceChildren();
   if (!flagsOn) return;
   points.forEach(({ node }, index) => {
-    unflag.push(outline(node, "3px solid #ff79c6"));
+    unflag.push(outline(node, `3px solid ${PINK}`));
     const flag = document.createElement("b");
     flag.className = "flag";
     flag.textContent = index + 1;
