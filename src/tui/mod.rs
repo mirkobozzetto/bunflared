@@ -532,6 +532,14 @@ impl App {
                     excerpt,
                     false,
                 );
+                // A visitor often answers in the note field: it joins the chat too.
+                self.remember_message(Message {
+                    mine: false,
+                    who: note.device,
+                    page: note.page,
+                    text: format!("✎ {}", note.message),
+                    clock: widget::clock(),
+                });
                 self.unlock("critic");
             }
             Event::Chat(said) => {
