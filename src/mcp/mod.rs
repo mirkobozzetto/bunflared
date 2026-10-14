@@ -242,7 +242,7 @@ fn tools() -> Value {
         },
         {
             "name": "events",
-            "description": "What happened on the shares after a cursor: messages, notes (text, page, pointed element, Markdown file, screenshot), reactions, arrivals, departures, closed shares. Pass back the returned cursor next time.",
+            "description": "What happened on the shares after a cursor: messages, notes (text, page, the elements pointed at with their comments, Markdown file, screenshot), reactions, arrivals, departures, closed shares. Pass back the returned cursor next time.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

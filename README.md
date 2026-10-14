@@ -125,9 +125,13 @@ against the edge to leave only a thin line: it never sits on the page's own
 buttons. A tap opens the note: they write a remark, a screenshot of the page
 is attached (or they paste their own), and it lands in `bunflared-feedback/`,
 in the folder you ran bunflared from: one Markdown file per note, the image
-next to it. With **Point at it** they click the element they mean first: the
-note records its CSS selector, its text and its position, and the screenshot
-shows it outlined.
+next to it. With **Point at it** they click the element they mean: the note
+records its CSS selector, its text and its position, and the screenshot shows
+it outlined. **Point at another** adds the next one: each element gets a
+number, the same on the page and in the panel, and a comment of its own. All
+of it leaves as one note, one file and one screenshot where every element
+carries its number. A note with one element and no comment under it is
+written exactly as before.
 
 ![A note pinned on the pay button: the element's selector, and a screenshot of the page to send with it](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/note.png)
 
@@ -146,9 +150,9 @@ page, a reaction.
 
 - **Chat**: `m` opens a message box. The message shows as a badge and a short
   preview on their tab, they answer from the panel, and the answer lands in the
-  chat panel and as a toast. Their notes join the chat panel too, with the
-  element they point at and whether a screenshot came. On the page, the
-  conversation folds away or clears with one tap.
+  chat panel and as a toast. Their notes join the chat panel too, with a line
+  per element they point at, its comment, and whether a screenshot came. On
+  the page, the conversation folds away or clears with one tap.
 - **Drive the demo**: `g` sends them to a page, `R` reloads it.
 - **Radar**: pick a visitor and the radar draws their pointer on an outline of
   their screen. Their tab wears a red ring while it is followed, and

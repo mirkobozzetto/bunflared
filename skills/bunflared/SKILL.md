@@ -60,7 +60,10 @@ Each shared page carries a feedback button. Notes from visitors are saved in
 `bunflared-feedback/` in the folder bunflared runs from: one Markdown file per
 note (page, device, message) with its screenshot next to it. A note made with
 "Point at it" also names the element: CSS selector, text, position, and the
-screenshot outlines it. `session_<date>.md` there keeps the chat, the
+screenshot outlines it. A note can point at several elements: each gets a
+`## Point N` section with its comment, `## Overall` holds the general remark,
+and the screenshot numbers them the same way. In `events`, `points` lists them
+with their comments and `element` stays the first one. `session_<date>.md` there keeps the chat, the
 reactions and a link to each note, in order. Read them when the user asks what
 their client thought, or to find what to fix. The folder is git-ignored by
 itself. When the user follows a visitor's pointer from the dashboard, that

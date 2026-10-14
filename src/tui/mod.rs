@@ -526,21 +526,18 @@ impl App {
             }
             Event::Feedback(note) => {
                 self.feedback += 1;
-                let excerpt: String = note.message.chars().take(40).collect();
+                let excerpt: String = note.text().replace('\n', " · ").chars().take(40).collect();
                 self.toast(
                     format!("✎ {} on {}", note.device, note.page),
                     excerpt,
                     false,
                 );
                 // A visitor often answers in the note field: it joins the chat
-                // too, with what it points at and whether a screenshot came.
-                let mut text = format!("✎ {}", note.message);
-                if let Some(element) = note.points.first() {
-                    let quoted: String = element.text.chars().take(40).collect();
-                    text.push_str(&format!("\n📍 {}", element.selector));
-                    if !quoted.is_empty() {
-                        text.push_str(&format!(" \"{quoted}\""));
-                    }
+                // too, a line per element it points at, and whether a
+                // screenshot came.
+                let mut text = format!("✎ {}", note.message).trim_end().to_string();
+                for (index, point) in note.points.iter().enumerate() {
+                    text.push_str(&format!("\n📍 {}", point.line(index + 1)));
                 }
                 if note.shot.is_some() {
                     text.push_str("\n📷 screenshot");

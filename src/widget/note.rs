@@ -23,6 +23,27 @@ pub struct Feedback {
     pub points: Vec<Element>,
 }
 
+impl Feedback {
+    /// The remark, then a line per point when the points carry more than the
+    /// file of before: what a reader sees in place of the file.
+    pub fn text(&self) -> String {
+        if plain(&self.points) {
+            return self.message.clone();
+        }
+        let mut lines = Vec::new();
+        if !self.message.is_empty() {
+            lines.push(self.message.clone());
+        }
+        lines.extend(
+            self.points
+                .iter()
+                .enumerate()
+                .map(|(i, point)| point.line(i + 1)),
+        );
+        lines.join("\n")
+    }
+}
+
 #[derive(Deserialize)]
 pub(super) struct Note {
     pub sid: String,
@@ -56,6 +77,24 @@ pub struct Element {
 }
 
 impl Element {
+    /// `2. #buy "Buy now": make it green`, on one line.
+    pub fn line(&self, number: usize) -> String {
+        let mut line = format!("{number}. {}", self.selector);
+        let quoted: String = self.text.chars().take(40).collect();
+        if !quoted.is_empty() {
+            line.push_str(&format!(" \"{quoted}\""));
+        }
+        let comment = self
+            .comment
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        if !comment.is_empty() {
+            line.push_str(&format!(": {comment}"));
+        }
+        line
+    }
+
     fn markdown(&self) -> String {
         // Browser text goes inside backticks and quotes: keep it on one line
         // and unable to close them.
