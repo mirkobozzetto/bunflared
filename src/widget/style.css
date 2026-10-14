@@ -1,0 +1,73 @@
+:host { all: initial; position: fixed; right: 16px; bottom: 16px; z-index: 2147483647;
+  font: 14px/1.4 system-ui, -apple-system, sans-serif; color-scheme: light dark;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+[hidden] { display: none !important; }
+button { font: inherit; cursor: pointer; border-radius: 999px; border: 0; padding: 8px 14px; }
+.open { background: #1f2430; color: #fff; box-shadow: 0 4px 14px rgb(0 0 0 / 25%); }
+.card { width: min(320px, calc(var(--room, 100vw) - 32px)); padding: 14px; border-radius: 14px; box-sizing: border-box;
+  background: Canvas; color: CanvasText; box-shadow: 0 8px 30px rgb(0 0 0 / 30%);
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.chat header { display: flex; justify-content: space-between; align-items: center; }
+.chat .hide { padding: 2px 8px; background: transparent; color: inherit; }
+.thread { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px;
+  max-height: calc(var(--tall, 100vh) * 0.35); overflow-y: auto; }
+.thread li { justify-self: start; max-width: 85%; padding: 6px 10px; border-radius: 12px;
+  overflow-wrap: anywhere; background: color-mix(in srgb, #ff79c6 25%, Canvas); animation: pop 0.25s ease-out; }
+.thread li.mine { justify-self: end; background: color-mix(in srgb, CanvasText 10%, Canvas); }
+.reply { display: flex; gap: 6px; }
+.reply input { flex: 1; min-width: 0; font: inherit; padding: 6px 12px; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); }
+.watch { margin: 0; padding: 4px 12px; border-radius: 999px; font-size: 12px;
+  background: #1f2430; color: #fff; box-shadow: 0 4px 14px rgb(0 0 0 / 25%); }
+.watch::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px;
+  border-radius: 50%; background: #ff5555; animation: blink 1.2s ease-in-out infinite; }
+.bar { display: flex; gap: 8px; align-items: center; }
+.reactions { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: #1f2430;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 25%); }
+.reactions button { padding: 4px 6px; background: transparent; font-size: 16px; line-height: 1;
+  transition: transform 0.15s; }
+.reactions button:hover, .reactions button:focus-visible { transform: scale(1.25); }
+.float { position: absolute; right: 24px; bottom: 40px; font-size: 28px; pointer-events: none;
+  animation: rise 1.6s ease-out forwards; }
+.float.big { font-size: 56px; }
+@keyframes rise { to { transform: translateY(-180px) scale(1.3); opacity: 0; } }
+@keyframes pop { from { transform: scale(0.8); opacity: 0; } }
+@keyframes blink { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) {
+  .thread li, .watch::before { animation: none; }
+  .float { animation: fade 1.2s forwards; }
+}
+@keyframes fade { to { opacity: 0; } }
+/* 16px keeps iOS from zooming into the page when a field gets focus. */
+textarea { font: inherit; width: 100%; box-sizing: border-box; border-radius: 8px;
+  padding: 8px; border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); resize: vertical; }
+label { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+figure { margin: 0; position: relative; }
+figure img { display: block; width: 100%; max-height: 150px; object-fit: cover; object-position: top;
+  border-radius: 8px; border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); }
+figure a { display: block; cursor: zoom-in; }
+figure .tools { position: absolute; right: 6px; top: 6px; display: flex; gap: 4px; }
+figure .tools button { padding: 2px 8px; font-size: 12px; background: rgb(31 36 48 / 80%); color: #fff; }
+.status { margin: 0; min-height: 1.2em; font-size: 13px; opacity: 0.8; }
+.row { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+.hint { margin-right: auto; font-size: 12px; opacity: 0.6; }
+.send, .answer { background: #ff79c6; color: #1f2430; font-weight: 600; }
+.close { background: transparent; color: inherit; }
+.point { justify-self: start; padding: 4px 12px; background: transparent; color: inherit;
+  border: 1px solid color-mix(in srgb, CanvasText 30%, transparent); }
+.pin { margin: 0; display: flex; gap: 6px; align-items: center; font-size: 13px; }
+.pin span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pin button { padding: 0 6px; background: transparent; color: inherit; }
+.picking { margin: 0; padding: 8px 8px 8px 14px; border-radius: 999px; display: flex; gap: 8px;
+  align-items: center; background: #1f2430; color: #fff; box-shadow: 0 4px 14px rgb(0 0 0 / 25%); }
+.picking button { padding: 4px 12px; background: #ff79c6; color: #1f2430; font-weight: 600; }
+/* On a phone the note stays small: no title, a thumbnail, no keyboard
+   until the visitor taps the field. */
+@media (pointer: coarse) {
+  textarea, input { font-size: 16px; }
+  .hint, .note > strong { display: none; }
+  .card { padding: 12px; gap: 8px; }
+  figure img { max-height: 64px; }
+  .status:empty { display: none; }
+  .chat .hide { padding: 6px 12px; }
+}
