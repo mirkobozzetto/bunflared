@@ -10,7 +10,6 @@ const SCREENSHOT_LIB = "https://cdn.jsdelivr.net/npm/modern-screenshot@4.7.0/+es
 const PING_EVERY_MS = 5000;
 const RETRY_MIN_MS = 1000;
 const RETRY_MAX_MS = 30000;
-const THREAD_KEEP = 30;
 const POINTER_EVERY_MS = 125;
 const REACTIONS = ["👍", "🔥", "😍", "😕"];
 

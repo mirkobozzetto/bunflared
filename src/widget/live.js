@@ -1,4 +1,3 @@
-const [chat, thread, reply, answer] = [$(".chat"), $(".thread"), $(".reply"), $(".reply input")];
 const [watch, reactions] = [$(".watch"), $(".reactions")];
 let live = null;
 // True once sent: WebSocket.send itself returns nothing.
@@ -40,36 +39,10 @@ const follow = (on) => {
   following = on;
   watch.hidden = !on;
 };
-const bubble = (text, mine) => {
-  const item = document.createElement("li");
-  item.textContent = text;
-  if (mine) item.className = "mine";
-  thread.append(item);
-  while (thread.children.length > THREAD_KEEP) thread.firstElementChild.remove();
-  thread.scrollTop = thread.scrollHeight;
-};
-$(".hide").addEventListener("click", () => { chat.hidden = true; });
-reply.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const text = answer.value.trim();
-  if (!text) return;
-  if (live?.readyState !== WebSocket.OPEN) {
-    answer.placeholder = "Not connected, try again in a moment.";
-    return;
-  }
-  say({ type: "chat", text, page: page() });
-  bubble(text, true);
-  answer.value = "";
-});
-
 // Presence above does not depend on this channel: a page whose policy
 // blocks it keeps reporting, it just cannot be driven.
 const handlers = {
-  chat: ({ text }) => {
-    bubble(text, false);
-    paint();
-    chat.hidden = false;
-  },
+  chat: ({ text }) => heard(text),
   go: ({ path }) => {
     const target = new URL(path, location.origin);
     if (target.origin === location.origin) location.assign(target);

@@ -69,19 +69,6 @@ h2 { margin: 0; font: 600 15px/1.3 system-ui, -apple-system, sans-serif; }
 [hidden] { display: none !important; }
 button { font: inherit; cursor: pointer; border-radius: 999px; border: 0; padding: 8px 14px; }
 .open { background: #1f2430; color: #fff; box-shadow: 0 4px 14px rgb(0 0 0 / 25%); }
-.card { width: min(320px, calc(var(--room, 100vw) - 32px)); padding: 14px; border-radius: 14px; box-sizing: border-box;
-  background: Canvas; color: CanvasText; box-shadow: 0 8px 30px rgb(0 0 0 / 30%);
-  display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
-.chat header { display: flex; justify-content: space-between; align-items: center; }
-.chat .hide { padding: 2px 8px; background: transparent; color: inherit; }
-.thread { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px;
-  max-height: calc(var(--tall, 100vh) * 0.35); overflow-y: auto; }
-.thread li { justify-self: start; max-width: 85%; padding: 6px 10px; border-radius: 12px;
-  overflow-wrap: anywhere; background: color-mix(in srgb, #ff79c6 25%, Canvas); animation: pop 0.25s ease-out; }
-.thread li.mine { justify-self: end; background: color-mix(in srgb, CanvasText 10%, Canvas); }
-.reply { display: flex; gap: 6px; }
-.reply input { flex: 1; min-width: 0; font: inherit; padding: 6px 12px; border-radius: 999px;
-  border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); }
 .watch { margin: 0; padding: 4px 12px; border-radius: 999px; font-size: 12px;
   background: #1f2430; color: #fff; box-shadow: 0 4px 14px rgb(0 0 0 / 25%); }
 .watch::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px;
@@ -96,17 +83,41 @@ button { font: inherit; cursor: pointer; border-radius: 999px; border: 0; paddin
   animation: rise 1.6s ease-out forwards; }
 .float.big { font-size: 56px; }
 @keyframes rise { to { transform: translateY(-180px) scale(1.3); opacity: 0; } }
-@keyframes pop { from { transform: scale(0.8); opacity: 0; } }
+@keyframes pop { from { transform: scale(.94); opacity: 0; } }
 @keyframes blink { 50% { opacity: 0.3; } }
 @media (prefers-reduced-motion: reduce) {
   .thread li, .watch::before { animation: none; }
   .float { animation: fade 1.2s forwards; }
 }
 @keyframes fade { to { opacity: 0; } }
-.answer { background: #ff79c6; color: #1f2430; font-weight: 600; }
-@media (pointer: coarse) {
-  .chat .hide { padding: 6px 12px; }
-}
+
+/* A message from the developer: a badge and a short preview next to the tab. */
+.badge { position: absolute; top: -6px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px;
+  background: var(--pink); color: var(--ink); font: 700 11px/19px system-ui, sans-serif; text-align: center;
+  box-shadow: 0 0 0 2px var(--bg); animation: pop .3s var(--ease); }
+.tab.right .badge { left: -7px; }
+.tab.left .badge { right: -7px; }
+.toast { position: absolute; max-width: 220px; padding: 9px 12px; border-radius: 14px; pointer-events: auto;
+  background: var(--bg); color: var(--text); box-shadow: var(--shadow); font-size: 13px; text-align: left;
+  overflow-wrap: anywhere; animation: pop .3s var(--ease); }
+.toast b { display: block; margin-bottom: 1px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.toast span { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* The conversation: the developer on the left, the visitor on the right. */
+.msgs { display: grid; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+h3 { margin: 0; font: 600 12px system-ui, -apple-system, sans-serif; color: var(--muted); }
+.thread { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 132px; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.pop .thread { max-height: 96px; }
+.thread li { justify-self: start; max-width: 85%; padding: 7px 11px; border-radius: 14px 14px 14px 4px;
+  background: color-mix(in srgb, var(--pink) 18%, var(--bg)); overflow-wrap: anywhere; animation: pop .25s var(--ease); }
+.thread li.mine { justify-self: end; border-radius: 14px 14px 4px 14px; background: var(--soft); }
+.reply { display: flex; gap: 6px; }
+.reply input { flex: 1; min-width: 0; height: 36px; padding: 0 14px; border-radius: 999px; font: inherit;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+.reply input:focus { border-color: var(--text); }
+.reply .icon { border-radius: 999px; background: var(--pink); color: var(--ink); }
 
 /* The note: what should change, the element it is about, a screenshot. */
 .note > label { font-weight: 600; }
@@ -151,7 +162,7 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px
 /* Touch screens: 44 px targets, Send across, and 16px fields so iOS does not zoom. */
 @media (pointer: coarse) {
   textarea, input { font-size: 16px; }
-  .chip, .send, .ghost { height: 44px; }
+  .chip, .send, .ghost, .reply input { height: 44px; }
   .icon, .pin .icon { width: 44px; height: 44px; }
   .tools { flex-wrap: wrap; }
   .send { flex: 1 0 100%; justify-content: center; margin-left: 0; }

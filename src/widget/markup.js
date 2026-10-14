@@ -18,21 +18,11 @@ const ICON = {
 root.innerHTML = `
   <style>${STYLE}</style>
   <button class="tab right" type="button" aria-label="Talk to the developer" aria-haspopup="dialog"
-    aria-expanded="false">${ICON.bubble}</button>
+    aria-expanded="false">${ICON.bubble}<span class="badge" aria-hidden="true" hidden></span></button>
   <button class="sliver right" type="button" aria-label="Show the feedback tab" hidden></button>
+  <button class="toast" type="button" hidden><b>From the developer</b><span></span></button>
   <div class="dock">
   <p class="watch" hidden>Live: the developer sees your pointer</p>
-  <section class="card chat" hidden>
-    <header>
-      <strong>From the developer</strong>
-      <button class="hide" type="button" title="Hide the conversation">✕</button>
-    </header>
-    <ol class="thread" aria-live="polite"></ol>
-    <form class="reply">
-      <input placeholder="Answer..." maxlength="2000" aria-label="Your answer">
-      <button class="answer" type="submit">Send</button>
-    </form>
-  </section>
   <div class="bar">
     <span class="reactions" hidden>
       ${REACTIONS.map((emoji) => `<button type="button" title="Send ${emoji} to the developer">${emoji}</button>`).join("")}
@@ -51,6 +41,15 @@ root.innerHTML = `
         <button class="icon close" type="button" aria-label="Close">${ICON.close}</button>
       </div>
     </div>
+    <section class="msgs" aria-labelledby="from" hidden>
+      <h3 id="from">From the developer</h3>
+      <ol class="thread" role="log" aria-live="polite"></ol>
+      <form class="reply">
+        <label class="sr" for="answer">Reply to the developer</label>
+        <input id="answer" placeholder="Reply…" maxlength="2000" autocomplete="off">
+        <button class="icon" type="submit" aria-label="Send the reply">${ICON.send}</button>
+      </form>
+    </section>
     <form class="note">
       <label for="note">What should change?</label>
       <p class="pin" hidden>${ICON.pin}<span></span>
@@ -65,6 +64,14 @@ root.innerHTML = `
       </div>
       <div class="foot"><p class="status" role="status"></p><span class="hint">${mac ? "⌘" : "Ctrl"} Enter</span></div>
     </form>
-  </div>`;
+  </div>
+  <p class="sr say" role="status"></p>`;
 
 const $ = (selector) => root.querySelector(selector);
+
+// Read out by screen readers, even when the same words come twice.
+const announce = (text) => {
+  const line = $(".say");
+  line.textContent = "";
+  setTimeout(() => { line.textContent = text; }, 50);
+};

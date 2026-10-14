@@ -9,6 +9,10 @@ function openPanel(focus = phone ? $(".close") : textarea) {
   panel.hidden = false;
   scrim.hidden = !phone;
   tab.setAttribute("aria-expanded", "true");
+  toast.hidden = true;
+  marks.unread = 0;
+  signal();
+  thread.scrollTop = thread.scrollHeight;
   placePanel();
   focus.focus({ preventScroll: true });
   opened();
