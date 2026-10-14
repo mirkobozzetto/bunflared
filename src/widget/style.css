@@ -4,12 +4,15 @@
   --ink: #1f2430; --pink: #ff79c6; --red: #ff5555; --ease: cubic-bezier(.16, 1, .3, 1);
   --tab-shadow: 0 6px 18px rgb(17 20 28 / 26%); --edge: rgb(31 36 48 / 50%); --edge-on: #1f2430;
   --bg: #fff; --text: #1f2430; --muted: #565c6b; --faint: #6b7180; --line: rgb(31 36 48 / 13%);
-  --soft: #f2f2f5; --soft-hover: #e8e8ee; --shadow: 0 14px 36px rgb(17 20 28 / 18%), 0 2px 6px rgb(17 20 28 / 8%); }
+  --soft: #f2f2f5; --soft-hover: #e8e8ee; --shadow: 0 14px 36px rgb(17 20 28 / 18%), 0 2px 6px rgb(17 20 28 / 8%);
+  --strong: #1f2430; --on-strong: #fff; --ok: #2f8a5b; }
 :host([data-scheme=dark]) { color-scheme: dark;
   --tab-shadow: 0 0 0 1px rgb(255 255 255 / 18%), 0 6px 18px rgb(0 0 0 / 40%);
   --edge: rgb(255 255 255 / 45%); --edge-on: #fff;
   --bg: #1b1f29; --text: #eceef3; --muted: #a9aebb; --faint: #9095a3; --line: rgb(255 255 255 / 14%);
-  --soft: #2a2f3c; --soft-hover: #343a48; --shadow: 0 14px 36px rgb(0 0 0 / 45%), 0 2px 6px rgb(0 0 0 / 30%); }
+  --soft: #2a2f3c; --soft-hover: #343a48; --shadow: 0 14px 36px rgb(0 0 0 / 45%), 0 2px 6px rgb(0 0 0 / 30%);
+  --strong: #eceef3; --on-strong: #1b1f29; --ok: #5fd08f; }
+*, *::before { box-sizing: border-box; }
 :focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
 svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75;
   stroke-linecap: round; stroke-linejoin: round; }
@@ -100,36 +103,58 @@ button { font: inherit; cursor: pointer; border-radius: 999px; border: 0; paddin
   .float { animation: fade 1.2s forwards; }
 }
 @keyframes fade { to { opacity: 0; } }
-/* 16px keeps iOS from zooming into the page when a field gets focus. */
-textarea { font: inherit; width: 100%; box-sizing: border-box; border-radius: 8px;
-  padding: 8px; border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); resize: vertical; }
-label { display: flex; gap: 6px; align-items: center; font-size: 13px; }
-figure { margin: 0; position: relative; }
-figure img { display: block; width: 100%; max-height: 150px; object-fit: cover; object-position: top;
-  border-radius: 8px; border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); }
-figure a { display: block; cursor: zoom-in; }
-figure .tools { position: absolute; right: 6px; top: 6px; display: flex; gap: 4px; }
-figure .tools button { padding: 2px 8px; font-size: 12px; background: rgb(31 36 48 / 80%); color: #fff; }
-.status { margin: 0; min-height: 1.2em; font-size: 13px; opacity: 0.8; }
-.row { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
-.hint { margin-right: auto; font-size: 12px; opacity: 0.6; }
-.send, .answer { background: #ff79c6; color: #1f2430; font-weight: 600; }
-.close { background: transparent; color: inherit; }
-.point { justify-self: start; padding: 4px 12px; background: transparent; color: inherit;
-  border: 1px solid color-mix(in srgb, CanvasText 30%, transparent); }
-.pin { margin: 0; display: flex; gap: 6px; align-items: center; font-size: 13px; }
+.answer { background: #ff79c6; color: #1f2430; font-weight: 600; }
+@media (pointer: coarse) {
+  .chat .hide { padding: 6px 12px; }
+}
+
+/* The note: what should change, the element it is about, a screenshot. */
+.note > label { font-weight: 600; }
+textarea { font: inherit; width: 100%; min-height: 84px; resize: none; padding: 10px 12px; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text); transition: border-color .15s, box-shadow .15s; }
+textarea::placeholder, input::placeholder { color: var(--faint); }
+textarea:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px var(--line); }
+.pop textarea { min-height: 64px; }
+.pin { margin: 0; display: flex; gap: 8px; align-items: center; padding: 4px 4px 4px 10px; border-radius: 10px;
+  background: color-mix(in srgb, var(--pink) 14%, var(--bg)); font-size: 13px; }
 .pin span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pin button { padding: 0 6px; background: transparent; color: inherit; }
-.picking { margin: 0; padding: 8px 8px 8px 14px; border-radius: 999px; display: flex; gap: 8px;
-  align-items: center; background: #1f2430; color: #fff; box-shadow: 0 4px 14px rgb(0 0 0 / 25%); }
-.picking button { padding: 4px 12px; background: #ff79c6; color: #1f2430; font-weight: 600; }
-/* On a phone the note stays small: no title, a thumbnail, no keyboard
-   until the visitor taps the field. */
+.pin .icon { width: 30px; height: 30px; }
+.tools { display: flex; gap: 6px; align-items: center; }
+.chip, .send { height: 36px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.chip { padding: 0 12px 0 10px; border: 1px solid var(--line); background: none; color: var(--text); font-size: 13px;
+  transition: background .15s, color .15s, border-color .15s; }
+.chip:hover { background: var(--soft); }
+.chip[aria-pressed=true] { background: var(--strong); border-color: var(--strong); color: var(--on-strong); }
+.thumb { width: 18px; height: 18px; border-radius: 5px; object-fit: cover; object-position: top;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 45%); }
+.thumb:not([hidden]) + svg { display: none; }
+.send { margin-left: auto; padding: 0 14px 0 11px; background: var(--pink); color: var(--ink); font-weight: 600;
+  transition: background .15s, transform .2s var(--ease); }
+.send:not(:disabled):active { transform: scale(.96); }
+.send:disabled { background: var(--soft); color: var(--faint); cursor: default; }
+.foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 18px;
+  font-size: 13px; color: var(--muted); }
+.status { margin: 0; display: flex; gap: 6px; align-items: center; }
+.status svg { width: 16px; height: 16px; color: var(--ok); }
+.status.error svg { color: var(--red); }
+.status:not(:empty) + .hint { display: none; }
+.spin { width: 15px; height: 15px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+  animation: rot .7s linear infinite; }
+@keyframes rot { to { transform: rotate(1turn); } }
+
+/* "Point at it": the next click on the page picks an element. */
+.picking { position: absolute; left: 50%; bottom: 22px; translate: -50% 0; margin: 0; pointer-events: auto;
+  display: flex; gap: 10px; align-items: center; padding: 6px 6px 6px 14px; border-radius: 999px; white-space: nowrap;
+  background: var(--ink); color: #fff; box-shadow: var(--shadow); font-size: 14px; animation: pop .25s var(--ease); }
+.picking button { height: 32px; padding: 0 14px; border-radius: 999px; background: var(--pink); color: var(--ink); font-weight: 600; }
+
+/* Touch screens: 44 px targets, Send across, and 16px fields so iOS does not zoom. */
 @media (pointer: coarse) {
   textarea, input { font-size: 16px; }
-  .hint, .note > strong { display: none; }
-  .card { padding: 12px; gap: 8px; }
-  figure img { max-height: 64px; }
-  .status:empty { display: none; }
-  .chat .hide { padding: 6px 12px; }
+  .chip, .send, .ghost { height: 44px; }
+  .icon, .pin .icon { width: 44px; height: 44px; }
+  .tools { flex-wrap: wrap; }
+  .send { flex: 1 0 100%; justify-content: center; margin-left: 0; }
+  .hint { display: none; }
+  .picking button { height: 40px; }
 }
