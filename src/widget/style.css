@@ -131,17 +131,22 @@ h3 { margin: 0; font: 600 12px system-ui, -apple-system, sans-serif; color: var(
 .reply input:focus { border-color: var(--text); }
 .reply .icon { border-radius: 999px; background: var(--pink); color: var(--ink); }
 
-/* The note: what should change, the element it is about, a screenshot. */
+/* The note: what should change, the elements it is about, a screenshot. */
 .note > label { font-weight: 600; }
 textarea { font: inherit; width: 100%; min-height: 84px; resize: none; padding: 10px 12px; border-radius: 12px;
   border: 1px solid var(--line); background: var(--bg); color: var(--text); transition: border-color .15s, box-shadow .15s; }
 textarea::placeholder, input::placeholder { color: var(--faint); }
 textarea:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px var(--line); }
 .pop textarea { min-height: 64px; }
-.pin { margin: 0; display: flex; gap: 8px; align-items: center; padding: 4px 4px 4px 10px; border-radius: 10px;
+.points { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.points li { display: grid; gap: 6px; }
+.pin { margin: 0; display: flex; gap: 8px; align-items: center; padding: 4px 4px 4px 6px; border-radius: 10px;
   background: color-mix(in srgb, var(--pink) 14%, var(--bg)); font-size: 13px; }
-.pin span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pin > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pin .icon { width: 30px; height: 30px; }
+.num { flex: none; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--pink);
+  color: var(--ink); font: 700 12px/22px system-ui, -apple-system, sans-serif; text-align: center; }
+.note .comment { min-height: 0; }
 .tools { display: flex; gap: 6px; align-items: center; }
 .chip, .send { height: 36px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .chip { padding: 0 12px 0 10px; border: 1px solid var(--line); background: none; color: var(--text); font-size: 13px;

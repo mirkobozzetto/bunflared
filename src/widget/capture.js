@@ -8,12 +8,12 @@ const outline = (node, style) => {
   node.style.outlineOffset = "2px";
   return () => { [node.style.outline, node.style.outlineOffset] = saved; };
 };
-let pinned = null;
+const points = [];
 const capture = async () => {
   const { domToBlob } = await import(SCREENSHOT_LIB);
   const page = document.documentElement;
   const background = getComputedStyle(document.body).backgroundColor;
-  const restore = pinned?.node.isConnected ? outline(pinned.node, "3px solid #ff79c6") : () => {};
+  const undo = points.filter(({ node }) => node.isConnected).map(({ node }) => outline(node, "3px solid #ff79c6"));
   try {
     return await domToBlob(page, {
       scale: 1,
@@ -23,6 +23,6 @@ const capture = async () => {
       filter: (node) => node !== host,
     });
   } finally {
-    restore();
+    for (const restore of undo.reverse()) restore();
   }
 };
