@@ -1,16 +1,11 @@
-// bunflared companion, injected into shared pages: tells the dashboard who is
-// on which page, adds a feedback button whose notes land in the project, and
-// keeps a live channel open so the dashboard can drive the demo.
+// Presence: tells the dashboard who is on which page, whether it is in front,
+// how long it has been idle, and when the visitor leaves.
 
 if (window.__bunflared) return;
 window.__bunflared = true;
 
 const BASE = "/_bunflared";
-const SCREENSHOT_LIB = "https://cdn.jsdelivr.net/npm/modern-screenshot@4.7.0/+esm";
 const PING_EVERY_MS = 5000;
-const RETRY_MIN_MS = 1000;
-const RETRY_MAX_MS = 30000;
-const POINTER_EVERY_MS = 125;
 
 const sid = sessionStorage.getItem("bunflared-sid") || Math.random().toString(36).slice(2, 10);
 sessionStorage.setItem("bunflared-sid", sid);

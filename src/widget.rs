@@ -1,5 +1,5 @@
 //! The companion script injected into shared pages: live presence for the
-//! dashboard, and a feedback button whose notes and screenshots are saved in
+//! dashboard, and a feedback tab whose notes and screenshots are saved in
 //! the folder bunflared runs from.
 
 use std::fs;

@@ -1,3 +1,5 @@
+const SCREENSHOT_LIB = "https://cdn.jsdelivr.net/npm/modern-screenshot@4.7.0/+esm";
+
 // Leaves the widget itself out of the picture, and never lets the page
 // background come out transparent.
 const outline = (node, style) => {
