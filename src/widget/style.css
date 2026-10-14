@@ -64,32 +64,35 @@ h2 { margin: 0; font: 600 15px/1.3 system-ui, -apple-system, sans-serif; }
 .note { display: grid; gap: 8px; }
 @keyframes sheet { from { transform: translateY(100%); } }
 @keyframes fade-in { from { opacity: 0; } }
-.dock { position: absolute; right: 16px; bottom: 16px; pointer-events: auto;
-  display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 [hidden] { display: none !important; }
-button { font: inherit; cursor: pointer; border-radius: 999px; border: 0; padding: 8px 14px; }
-.open { background: #1f2430; color: #fff; box-shadow: 0 4px 14px rgb(0 0 0 / 25%); }
-.watch { margin: 0; padding: 4px 12px; border-radius: 999px; font-size: 12px;
-  background: #1f2430; color: #fff; box-shadow: 0 4px 14px rgb(0 0 0 / 25%); }
-.watch::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px;
-  border-radius: 50%; background: #ff5555; animation: blink 1.2s ease-in-out infinite; }
-.bar { display: flex; gap: 8px; align-items: center; }
-.reactions { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: #1f2430;
-  box-shadow: 0 4px 14px rgb(0 0 0 / 25%); }
-.reactions button { padding: 4px 6px; background: transparent; font-size: 16px; line-height: 1;
-  transition: transform 0.15s; }
-.reactions button:hover, .reactions button:focus-visible { transform: scale(1.25); }
-.float { position: absolute; right: 24px; bottom: 40px; font-size: 28px; pointer-events: none;
-  animation: rise 1.6s ease-out forwards; }
+button { margin: 0; padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; }
+
+/* The developer follows the pointer: a red ring on the tab, a line in the panel. */
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--red);
+  animation: blink 1.2s ease-in-out infinite; }
+.tab .dot { position: absolute; bottom: 6px; width: 7px; height: 7px; }
+.tab.right .dot { left: 7px; }
+.tab.left .dot { right: 7px; }
+.tab.live { box-shadow: 0 0 0 2px var(--red), var(--tab-shadow); }
+.watch { margin: -6px 0 0; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+
+/* Quick reactions, and the emoji that rises when one is sent or received. */
+.react { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.react button { height: 44px; border-radius: 12px; background: var(--soft); font-size: 22px; line-height: 1;
+  transition: transform .2s var(--ease), background .15s; }
+.react button:hover { background: var(--soft-hover); }
+.react button:active { transform: scale(.92); }
+.float { position: absolute; font-size: 30px; pointer-events: none; animation: rise 1.6s var(--ease) forwards; }
 .float.big { font-size: 56px; }
-@keyframes rise { to { transform: translateY(-180px) scale(1.3); opacity: 0; } }
+@keyframes rise { to { transform: translateY(-170px) scale(1.3); opacity: 0; } }
 @keyframes pop { from { transform: scale(.94); opacity: 0; } }
-@keyframes blink { 50% { opacity: 0.3; } }
-@media (prefers-reduced-motion: reduce) {
-  .thread li, .watch::before { animation: none; }
-  .float { animation: fade 1.2s forwards; }
-}
+@keyframes blink { 50% { opacity: .3; } }
 @keyframes fade { to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before { animation: none !important; transition: none !important; }
+  .float { animation: fade 1.2s forwards !important; }
+}
 
 /* A message from the developer: a badge and a short preview next to the tab. */
 .badge { position: absolute; top: -6px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px;
@@ -163,6 +166,7 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px
 @media (pointer: coarse) {
   textarea, input { font-size: 16px; }
   .chip, .send, .ghost, .reply input { height: 44px; }
+  .react button { height: 48px; }
   .icon, .pin .icon { width: 44px; height: 44px; }
   .tools { flex-wrap: wrap; }
   .send { flex: 1 0 100%; justify-content: center; margin-left: 0; }

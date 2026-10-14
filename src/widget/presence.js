@@ -11,7 +11,6 @@ const PING_EVERY_MS = 5000;
 const RETRY_MIN_MS = 1000;
 const RETRY_MAX_MS = 30000;
 const POINTER_EVERY_MS = 125;
-const REACTIONS = ["👍", "🔥", "😍", "😕"];
 
 const sid = sessionStorage.getItem("bunflared-sid") || Math.random().toString(36).slice(2, 10);
 sessionStorage.setItem("bunflared-sid", sid);

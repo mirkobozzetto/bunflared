@@ -3,6 +3,7 @@ const host = document.createElement("bunflared-feedback");
 const root = host.attachShadow({ mode: "open" });
 const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const phone = matchMedia("(pointer: coarse)").matches;
+const REACTIONS = [["👍", "a thumbs up"], ["🔥", "a fire"], ["😍", "heart eyes"], ["😕", "a confused face"]];
 const svg = (body) => `<svg viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`;
 const ICON = {
   bubble: svg(`<path d="M6.8 4h10.4A2.8 2.8 0 0 1 20 6.8v6.4a2.8 2.8 0 0 1-2.8 2.8H11l-4.2 3.6V16A2.8 2.8 0 0 1 4 13.2V6.8A2.8 2.8 0 0 1 6.8 4Z"/><path d="M8.5 8.8h7M8.5 11.8h4.5"/>`),
@@ -18,17 +19,10 @@ const ICON = {
 root.innerHTML = `
   <style>${STYLE}</style>
   <button class="tab right" type="button" aria-label="Talk to the developer" aria-haspopup="dialog"
-    aria-expanded="false">${ICON.bubble}<span class="badge" aria-hidden="true" hidden></span></button>
+    aria-expanded="false">${ICON.bubble}<span class="badge" aria-hidden="true" hidden></span><span
+    class="dot" aria-hidden="true" hidden></span></button>
   <button class="sliver right" type="button" aria-label="Show the feedback tab" hidden></button>
   <button class="toast" type="button" hidden><b>From the developer</b><span></span></button>
-  <div class="dock">
-  <p class="watch" hidden>Live: the developer sees your pointer</p>
-  <div class="bar">
-    <span class="reactions" hidden>
-      ${REACTIONS.map((emoji) => `<button type="button" title="Send ${emoji} to the developer">${emoji}</button>`).join("")}
-    </span>
-  </div>
-  </div>
   <p class="picking" role="status" hidden>${ICON.point}<span>${phone ? "Tap" : "Click"} what you mean</span>
     <button class="stop" type="button">Cancel</button></p>
   <div class="scrim" hidden></div>
@@ -41,6 +35,7 @@ root.innerHTML = `
         <button class="icon close" type="button" aria-label="Close">${ICON.close}</button>
       </div>
     </div>
+    <p class="watch" hidden><span class="dot" aria-hidden="true"></span>The developer sees your pointer</p>
     <section class="msgs" aria-labelledby="from" hidden>
       <h3 id="from">From the developer</h3>
       <ol class="thread" role="log" aria-live="polite"></ol>
@@ -50,6 +45,10 @@ root.innerHTML = `
         <button class="icon" type="submit" aria-label="Send the reply">${ICON.send}</button>
       </form>
     </section>
+    <div class="react" role="group" aria-label="Quick reaction" hidden>
+      ${REACTIONS.map(([emoji, name]) => `<button type="button" data-emoji="${emoji}"
+        aria-label="Send ${name} to the developer">${emoji}</button>`).join("")}
+    </div>
     <form class="note">
       <label for="note">What should change?</label>
       <p class="pin" hidden>${ICON.pin}<span></span>

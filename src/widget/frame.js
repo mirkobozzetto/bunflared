@@ -9,8 +9,6 @@ const fit = () => {
   host.style.transform = `translate(${view.offsetLeft}px, ${view.offsetTop}px) scale(${1 / view.scale})`;
   host.style.width = `${width}px`;
   host.style.height = `${height}px`;
-  host.style.setProperty("--room", `${width}px`);
-  host.style.setProperty("--tall", `${height}px`);
 };
 fit();
 window.visualViewport?.addEventListener("resize", fit);

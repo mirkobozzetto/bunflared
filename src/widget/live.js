@@ -1,4 +1,4 @@
-const [watch, reactions] = [$(".watch"), $(".reactions")];
+const watch = $(".watch");
 let live = null;
 // True once sent: WebSocket.send itself returns nothing.
 const say = (message) => {
@@ -23,21 +23,11 @@ addEventListener("pointermove", (event) => {
   latest = { x: Math.round(event.clientX), y: Math.round(event.clientY), w: innerWidth, h: innerHeight };
   pending ??= setTimeout(sendPointer, Math.max(0, POINTER_EVERY_MS - (Date.now() - sentAt)));
 }, { passive: true, capture: true });
-const float = (emoji, big) => {
-  const item = document.createElement("span");
-  item.className = big ? "float big" : "float";
-  item.textContent = emoji;
-  item.addEventListener("animationend", () => item.remove());
-  root.append(item);
-};
-reactions.addEventListener("click", (event) => {
-  const emoji = event.target.closest("button")?.textContent;
-  if (!emoji || !say({ type: "react", emoji, page: page() })) return;
-  float(emoji, false);
-});
 const follow = (on) => {
   following = on;
   watch.hidden = !on;
+  marks.live = on;
+  signal();
 };
 // Presence above does not depend on this channel: a page whose policy
 // blocks it keeps reporting, it just cannot be driven.
@@ -49,7 +39,7 @@ const handlers = {
   },
   reload: () => location.reload(),
   follow: ({ on }) => follow(on),
-  react: ({ emoji }) => float(emoji, true),
+  react: ({ emoji }) => cheered(emoji),
 };
 let retry = RETRY_MIN_MS;
 const connect = () => {
@@ -62,7 +52,7 @@ const connect = () => {
   }
   socket.addEventListener("open", () => {
     live = socket;
-    reactions.hidden = false;
+    reactRow.hidden = false;
     retry = RETRY_MIN_MS;
   });
   socket.addEventListener("message", (event) => {
@@ -72,7 +62,7 @@ const connect = () => {
   });
   socket.addEventListener("close", () => {
     live = null;
-    reactions.hidden = true;
+    reactRow.hidden = true;
     follow(false);
     setTimeout(connect, retry);
     retry = Math.min(retry * 2, RETRY_MAX_MS);

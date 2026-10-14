@@ -5,6 +5,7 @@ const TUCK_AFTER_SCROLL_MS = 700;
 const TOAST_MS = 4000;
 const [TOP_MIN, TOP_MAX] = [0.12, 0.8];
 const [tab, sliver, badge, toast] = [$(".tab"), $(".sliver"), $(".badge"), $(".toast")];
+const liveDot = $(".tab .dot");
 const spot = { side: "right", y: phone ? 0.56 : 0.7, hidden: false };
 try {
   Object.assign(spot, JSON.parse(sessionStorage.getItem(PLACE_KEY)));
@@ -39,6 +40,8 @@ function signal() {
   badge.textContent = marks.unread;
   badge.hidden = !marks.unread;
   sliver.classList.toggle("unread", marks.unread > 0);
+  tab.classList.toggle("live", marks.live);
+  liveDot.hidden = !marks.live;
 }
 
 let toastTimer;
