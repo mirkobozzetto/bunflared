@@ -61,6 +61,8 @@ h2 { margin: 0; font: 600 15px/1.3 system-ui, -apple-system, sans-serif; }
 .ghost { padding: 0 10px; font-size: 13px; }
 .icon { width: 36px; }
 .ghost:hover, .icon:hover { background: var(--soft); color: var(--text); }
+/* One column that never grows past the panel: long pinned text ellipsizes. */
+.note, .msgs { grid-template-columns: minmax(0, 1fr); }
 .note { display: grid; gap: 8px; }
 @keyframes sheet { from { transform: translateY(100%); } }
 @keyframes fade-in { from { opacity: 0; } }
