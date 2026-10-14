@@ -106,6 +106,7 @@ In the dashboard:
 | `g` | send them to a page (the pages already seen are offered) |
 | `R` | reload their page, after a fix |
 | `e` | send them a reaction |
+| `x` | clear the chat panel (the session file keeps everything) |
 | `Enter` | on a request: its headers and bodies |
 | `p` | replay the picked request to your local server |
 | `?` | help |
@@ -145,7 +146,9 @@ page, a reaction.
 
 - **Chat**: `m` opens a message box. The message shows as a badge and a short
   preview on their tab, they answer from the panel, and the answer lands in the
-  chat panel and as a toast.
+  chat panel and as a toast. Their notes join the chat panel too, with the
+  element they point at and whether a screenshot came. On the page, the
+  conversation folds away or clears with one tap.
 - **Drive the demo**: `g` sends them to a page, `R` reloads it.
 - **Radar**: pick a visitor and the radar draws their pointer on an outline of
   their screen. Their tab wears a red ring while it is followed, and
