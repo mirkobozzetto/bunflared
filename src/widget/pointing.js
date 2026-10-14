@@ -62,6 +62,7 @@ const escape = (event) => {
 };
 const startPicking = () => {
   closePanel(false);
+  showFlags(true);
   picking.hidden = false;
   addEventListener("pointermove", hover, true);
   addEventListener("click", choose, true);

@@ -18,6 +18,7 @@ const ICON = {
 };
 root.innerHTML = `
   <style>${STYLE}</style>
+  <div class="flags" aria-hidden="true"></div>
   <button class="tab right" type="button" aria-label="Talk to the developer" aria-haspopup="dialog"
     aria-expanded="false">${ICON.bubble}<span class="badge" aria-hidden="true" hidden></span><span
     class="dot" aria-hidden="true" hidden></span></button>

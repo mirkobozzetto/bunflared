@@ -7,6 +7,7 @@ const isOpen = () => !panel.hidden;
 function openPanel(focus = phone ? $(".close") : textarea) {
   paint();
   panel.hidden = false;
+  showFlags(true);
   scrim.hidden = !phone;
   tab.setAttribute("aria-expanded", "true");
   toast.hidden = true;
@@ -21,6 +22,7 @@ function openPanel(focus = phone ? $(".close") : textarea) {
 function closePanel(refocus = true) {
   if (!isOpen()) return;
   panel.hidden = scrim.hidden = true;
+  showFlags(false);
   tab.setAttribute("aria-expanded", "false");
   if (refocus) (spot.hidden ? sliver : tab).focus({ preventScroll: true });
 }

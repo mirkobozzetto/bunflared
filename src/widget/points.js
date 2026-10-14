@@ -12,6 +12,7 @@ function renumber() {
   });
   pointWord.textContent = points.length ? "Point at another" : "Point at it";
   pointList.hidden = !points.length;
+  refreshFlags();
   ready();
 }
 

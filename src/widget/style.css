@@ -188,3 +188,9 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px
   .hint { display: none; }
   .picking button { height: 40px; }
 }
+
+/* Each point's number on the page, on its outline's corner. Clicks go through. */
+.flags { position: absolute; inset: 0; overflow: hidden; }
+.flag { position: absolute; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; translate: -50% -50%;
+  background: #ff79c6; color: #1f2430; font: 700 12px/22px system-ui, -apple-system, sans-serif; text-align: center;
+  box-shadow: 0 0 0 2px #fff, 0 2px 6px rgb(17 20 28 / 25%); }
