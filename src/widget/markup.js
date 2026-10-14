@@ -11,6 +11,7 @@ root.innerHTML = `
   <style>${STYLE}</style>
   <button class="tab right" type="button" aria-label="Talk to the developer" aria-haspopup="dialog"
     aria-expanded="false">${ICON.bubble}</button>
+  <button class="sliver right" type="button" aria-label="Show the feedback tab" hidden></button>
   <div class="dock">
   <p class="watch" hidden>Live: the developer sees your pointer</p>
   <section class="card chat" hidden>
