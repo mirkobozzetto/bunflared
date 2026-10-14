@@ -14,11 +14,11 @@ const ICON = {
   send: svg(`<path d="M12 18.5v-13M6.5 11 12 5.5l5.5 5.5"/>`),
   check: svg(`<path d="M5 12.5l4.5 4.5L19 7.5"/>`),
   alert: svg(`<circle cx="12" cy="12" r="8.5"/><path d="M12 7.8v5M12 16.2v.01"/>`),
-  pin: svg(`<path d="M12 21s-6-5.6-6-10.5a6 6 0 1 1 12 0C18 15.4 12 21 12 21Z"/><circle cx="12" cy="10.5" r="2"/>`),
   hide: svg(`<path d="M3.5 3.5l17 17"/><path d="M10.6 5.2A9.6 9.6 0 0 1 12 5c5 0 8.5 4.6 9.5 7-.4 1-1.2 2.2-2.3 3.3M6.6 6.6C4.6 7.9 3.2 9.9 2.5 12c1 2.4 4.5 7 9.5 7 1.8 0 3.4-.5 4.8-1.4"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>`),
 };
 root.innerHTML = `
   <style>${STYLE}</style>
+  <div class="flags" aria-hidden="true"></div>
   <button class="tab right" type="button" aria-label="Talk to the developer" aria-haspopup="dialog"
     aria-expanded="false">${ICON.bubble}<span class="badge" aria-hidden="true" hidden></span><span
     class="dot" aria-hidden="true" hidden></span></button>
@@ -55,12 +55,11 @@ root.innerHTML = `
     </div>
     <form class="note">
       <label for="note">What should change?</label>
-      <p class="pin" hidden>${ICON.pin}<span></span>
-        <button class="icon unpin" type="button" aria-label="Forget this element">${ICON.close}</button></p>
       <textarea id="note" rows="3"
         placeholder="${phone ? "One remark at a time" : "One remark at a time. Paste an image to attach it."}"></textarea>
+      <ol class="points" aria-label="Pointed elements" hidden></ol>
       <div class="tools">
-        <button class="chip point" type="button" aria-pressed="false">${ICON.point}Point at it</button>
+        <button class="chip point" type="button">${ICON.point}<span>Point at it</span></button>
         <button class="chip shot" type="button" aria-pressed="true" aria-label="Attach a screenshot"><img class="thumb"
           alt="" hidden>${ICON.camera}Screenshot</button>
         <button class="send" type="submit" disabled>${ICON.send}Send</button>

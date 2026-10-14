@@ -1,11 +1,13 @@
-// The note: a remark, the element it is about, and a screenshot of the page.
+// The note: a remark, the elements it is about, and a screenshot of the page.
 const [form, textarea, send, status] = [$(".note"), $("#note"), $(".note .send"), $(".status")];
 const [shotChip, thumb] = [$(".shot"), $(".thumb")];
 let image = null;
 let wantShot = true;
 let sending = false;
 
-const ready = () => { send.disabled = sending || !textarea.value.trim(); };
+// Without a point the remark is required; with one, any comment will do.
+const written = () => Boolean(textarea.value.trim()) || points.some((point) => point.field.value.trim());
+const ready = () => { send.disabled = sending || !written(); };
 
 // The line under the note: busy, done or failed.
 const tell = (text = "", kind = "") => {
@@ -67,8 +69,8 @@ textarea.addEventListener("paste", (event) => {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!written() || sending) return;
   const message = textarea.value.trim();
-  if (!message || sending) return;
   sending = true;
   ready();
   tell("Sending...", "busy");
@@ -80,7 +82,8 @@ form.addEventListener("submit", async (event) => {
   const response = await fetch(`${BASE}/feedback`, {
     method: "POST",
     body: JSON.stringify({
-      sid, page: page(), message, screen: `${innerWidth}x${innerHeight}`, shot, element: pinned?.info ?? null,
+      sid, page: page(), message, screen: `${innerWidth}x${innerHeight}`, shot,
+      points: points.map((point) => ({ ...point.info, comment: point.field.value.trim() })),
     }),
   }).catch(() => null);
   sending = false;
@@ -90,9 +93,7 @@ form.addEventListener("submit", async (event) => {
     return;
   }
   textarea.value = "";
-  pinned = null;
-  showPin();
-  ready();
+  clearPoints();
   if (!phone) textarea.focus();
   const done = shot ? "Sent with its image. Anything else?" : "Sent. Anything else?";
   tell(done, "ok");

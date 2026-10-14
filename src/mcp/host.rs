@@ -378,10 +378,16 @@ impl Host {
 
     fn noted(&self, id: &str, note: Feedback) {
         let path = |path: &PathBuf| path.display().to_string();
+        // `element` stays the first point, for agents that read it already.
         let element = note
-            .element
-            .as_ref()
+            .points
+            .first()
             .map(|e| json!({ "selector": e.selector, "text": e.text }));
+        let points: Vec<Value> = note
+            .points
+            .iter()
+            .map(|e| json!({ "selector": e.selector, "text": e.text, "comment": e.comment }))
+            .collect();
         self.log(
             id,
             "note",
@@ -393,6 +399,7 @@ impl Host {
                 "file": path(&note.file),
                 "screenshot": note.shot.as_ref().map(path),
                 "element": element,
+                "points": points,
             }),
         );
         let mut meta = json!({
@@ -406,10 +413,10 @@ impl Host {
         if let Some(shot) = &note.shot {
             meta["screenshot"] = json!(path(shot));
         }
-        if let Some(element) = &note.element {
+        if let Some(element) = note.points.first() {
             meta["element"] = json!(element.selector);
         }
-        self.channel(&note.message, meta);
+        self.channel(&note.text(), meta);
     }
 }
 
