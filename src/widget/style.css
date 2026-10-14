@@ -112,9 +112,14 @@ button { margin: 0; padding: 0; border: 0; background: none; font: inherit; colo
 /* The conversation: the developer on the left, the visitor on the right. */
 .msgs { display: grid; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
 h3 { margin: 0; font: 600 12px system-ui, -apple-system, sans-serif; color: var(--muted); }
-.thread { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 132px; overflow-y: auto;
+.fold { display: inline-flex; align-items: center; gap: 4px; }
+.fold svg { width: 14px; height: 14px; transition: transform .2s var(--ease); }
+.fold[aria-expanded=false] svg { transform: rotate(-90deg); }
+.thread { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 180px; overflow-y: auto;
   scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
-.pop .thread { max-height: 96px; }
+.pop .thread { max-height: 160px; }
+/* Older messages above: the top edge fades. */
+.thread.more { -webkit-mask-image: linear-gradient(transparent, #000 28px); mask-image: linear-gradient(transparent, #000 28px); }
 .thread li { justify-self: start; max-width: 85%; padding: 7px 11px; border-radius: 14px 14px 14px 4px;
   background: color-mix(in srgb, var(--pink) 18%, var(--bg)); overflow-wrap: anywhere; animation: pop .25s var(--ease); }
 .thread li.mine { justify-self: end; border-radius: 14px 14px 4px 14px; background: var(--soft); }
@@ -169,6 +174,7 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px
   textarea, input { font-size: 16px; }
   .chip, .send, .ghost, .reply input { height: 44px; }
   .react button { height: 48px; }
+  .fold { height: 44px; }
   .icon, .pin .icon { width: 44px; height: 44px; }
   .tools { flex-wrap: wrap; }
   .send { flex: 1 0 100%; justify-content: center; margin-left: 0; }

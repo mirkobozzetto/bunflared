@@ -1,7 +1,7 @@
 // The conversation with the developer, inside the panel. A message never
 // covers the page: it waits as a badge and a short preview on the tab.
 const THREAD_KEEP = 30;
-const [msgs, thread, reply, answer] = [$(".msgs"), $(".thread"), $(".reply"), $("#answer")];
+const [msgs, thread, reply, answer, fold] = [$(".msgs"), $(".thread"), $(".reply"), $("#answer"), $(".fold")];
 
 const bubble = (text, mine) => {
   const item = document.createElement("li");
@@ -13,7 +13,17 @@ const bubble = (text, mine) => {
   thread.scrollTop = thread.scrollHeight;
 };
 
+// The conversation folds away; the reply field stays.
+const unfold = (open) => {
+  fold.setAttribute("aria-expanded", String(open));
+  thread.hidden = !open;
+  if (open) thread.scrollTop = thread.scrollHeight;
+};
+fold.addEventListener("click", () => unfold(fold.getAttribute("aria-expanded") !== "true"));
+thread.addEventListener("scroll", () => thread.classList.toggle("more", thread.scrollTop > 2), { passive: true });
+
 function heard(text) {
+  unfold(true);
   bubble(text, false);
   paint();
   if (isOpen()) return;

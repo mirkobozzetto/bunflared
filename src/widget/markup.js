@@ -7,6 +7,7 @@ const REACTIONS = [["👍", "a thumbs up"], ["🔥", "a fire"], ["😍", "heart 
 const svg = (body) => `<svg viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`;
 const ICON = {
   bubble: svg(`<path d="M6.8 4h10.4A2.8 2.8 0 0 1 20 6.8v6.4a2.8 2.8 0 0 1-2.8 2.8H11l-4.2 3.6V16A2.8 2.8 0 0 1 4 13.2V6.8A2.8 2.8 0 0 1 6.8 4Z"/><path d="M8.5 8.8h7M8.5 11.8h4.5"/>`),
+  chevron: svg(`<path d="M6 9l6 6 6-6"/>`),
   close: svg(`<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>`),
   point: svg(`<circle cx="12" cy="12" r="6.5"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/>`),
   camera: svg(`<path d="M4 8.6A2.6 2.6 0 0 1 6.6 6h1.6l1.4-2h4.8l1.4 2h1.6A2.6 2.6 0 0 1 20 8.6v7.8a2.6 2.6 0 0 1-2.6 2.6H6.6A2.6 2.6 0 0 1 4 16.4Z"/><circle cx="12" cy="12.4" r="3.2"/>`),
@@ -37,8 +38,8 @@ root.innerHTML = `
     </div>
     <p class="watch" hidden><span class="dot" aria-hidden="true"></span>The developer sees your pointer</p>
     <section class="msgs" aria-labelledby="from" hidden>
-      <h3 id="from">From the developer</h3>
-      <ol class="thread" role="log" aria-live="polite"></ol>
+      <h3><button class="fold" id="from" type="button" aria-expanded="true" aria-controls="thread">${ICON.chevron}From the developer</button></h3>
+      <ol class="thread" id="thread" role="log" aria-live="polite"></ol>
       <form class="reply">
         <label class="sr" for="answer">Reply to the developer</label>
         <input id="answer" placeholder="Reply…" maxlength="2000" autocomplete="off">
