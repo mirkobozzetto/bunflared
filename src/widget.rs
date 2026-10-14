@@ -20,7 +20,21 @@ use crate::share::{Event, Tx};
 
 pub const PREFIX: &str = "/_bunflared/";
 pub const FOLDER: &str = "bunflared-feedback";
-const SCRIPT: &str = include_str!("widget.js");
+// The page loads one script: its parts share one function scope, in this
+// order, and the stylesheet becomes a string inside it.
+const SCRIPT: &str = concat!(
+    "(() => {\nconst STYLE = String.raw`",
+    include_str!("widget/style.css"),
+    "`;\n",
+    include_str!("widget/presence.js"),
+    include_str!("widget/markup.js"),
+    include_str!("widget/frame.js"),
+    include_str!("widget/capture.js"),
+    include_str!("widget/pointing.js"),
+    include_str!("widget/note.js"),
+    include_str!("widget/live.js"),
+    "})();\n",
+);
 const TAG: &str = r#"<script src="/_bunflared/widget.js" defer></script>"#;
 const MAX_PING: usize = 4 * 1024;
 const MAX_NOTE: usize = 64 * 1024;
