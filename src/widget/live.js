@@ -1,5 +1,5 @@
 const [chat, thread, reply, answer] = [$(".chat"), $(".thread"), $(".reply"), $(".reply input")];
-const watch = $(".watch");
+const [watch, reactions] = [$(".watch"), $(".reactions")];
 let live = null;
 // True once sent: WebSocket.send itself returns nothing.
 const say = (message) => {

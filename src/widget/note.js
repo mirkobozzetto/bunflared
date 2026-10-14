@@ -1,38 +1,55 @@
-const [form, textarea] = [$(".note"), $("textarea")];
-const checkbox = $(".note input[type=checkbox]");
-const [figure, preview, status, send] = [$("figure"), $("figure img"), $(".status"), $(".note .send")];
-const enlarge = $("figure a");
-const reactions = $(".reactions");
+// The note: a remark, the element it is about, and a screenshot of the page.
+const [form, textarea, send, status] = [$(".note"), $("#note"), $(".note .send"), $(".status")];
+const [shotChip, thumb] = [$(".shot"), $(".thumb")];
 let image = null;
+let wantShot = true;
+let sending = false;
+
+const ready = () => { send.disabled = sending || !textarea.value.trim(); };
+
+// The line under the note: busy, done or failed.
+const tell = (text = "", kind = "") => {
+  status.className = `status ${kind}`;
+  status.innerHTML = { busy: `<span class="spin" aria-hidden="true"></span>`, ok: ICON.check, error: ICON.alert }[kind] ?? "";
+  if (text) status.append(text);
+};
 
 const show = (blob) => {
-  if (preview.src) URL.revokeObjectURL(preview.src);
+  if (thumb.src) URL.revokeObjectURL(thumb.src);
   image = blob;
-  preview.src = blob ? URL.createObjectURL(blob) : "";
-  if (blob) enlarge.href = preview.src;
-  else enlarge.removeAttribute("href");
-  figure.hidden = !blob;
+  if (blob) thumb.src = URL.createObjectURL(blob);
+  else thumb.removeAttribute("src");
+  thumb.hidden = !blob;
 };
 
 const retake = async () => {
-  status.textContent = "Taking a screenshot...";
+  tell("Taking a screenshot...", "busy");
   try {
     show(await capture());
-    status.textContent = "";
+    tell();
   } catch {
     show(null);
-    status.textContent = "No screenshot this time. You can paste one.";
+    tell("No screenshot this time. You can paste one.", "error");
   }
 };
 
 // The panel opened: a fresh screenshot of the page, unless one is waiting.
 function opened() {
-  if (checkbox.checked && !image) retake();
+  if (wantShot && !image) retake();
 }
-$(".retake").addEventListener("click", () => { checkbox.checked = true; retake(); });
-$(".drop").addEventListener("click", () => { checkbox.checked = false; show(null); });
-checkbox.addEventListener("change", () => (checkbox.checked ? retake() : show(null)));
 
+const want = (on) => {
+  wantShot = on;
+  shotChip.setAttribute("aria-pressed", String(on));
+};
+shotChip.addEventListener("click", () => {
+  want(!wantShot);
+  if (wantShot) return retake();
+  show(null);
+  tell();
+});
+
+textarea.addEventListener("input", ready);
 form.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
     event.preventDefault();
@@ -43,19 +60,20 @@ form.addEventListener("keydown", (event) => {
 textarea.addEventListener("paste", (event) => {
   const item = [...event.clipboardData.items].find((entry) => entry.type.startsWith("image/"));
   if (!item) return;
-  checkbox.checked = true;
+  want(true);
   show(item.getAsFile());
-  status.textContent = "Pasted image attached.";
+  tell("Pasted image attached.", "ok");
 });
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const message = textarea.value.trim();
-  if (!message || send.disabled) return;
-  send.disabled = true;
-  status.textContent = "Sending...";
+  if (!message || sending) return;
+  sending = true;
+  ready();
+  tell("Sending...", "busy");
   let shot = null;
-  if (checkbox.checked && image) {
+  if (wantShot && image) {
     const response = await fetch(`${BASE}/shot`, { method: "POST", body: image }).catch(() => null);
     if (response?.ok) shot = (await response.json()).shot;
   }
@@ -65,21 +83,22 @@ form.addEventListener("submit", async (event) => {
       sid, page: page(), message, screen: `${innerWidth}x${innerHeight}`, shot, element: pinned?.info ?? null,
     }),
   }).catch(() => null);
-  send.disabled = false;
+  sending = false;
+  ready();
   if (!response?.ok) {
-    status.textContent = "Could not send it. Try again?";
+    tell("Could not send it. Try again?", "error");
     return;
   }
   textarea.value = "";
   pinned = null;
-  pinRow.hidden = true;
+  showPin();
+  ready();
   if (!phone) textarea.focus();
-  status.textContent = shot ? "Sent with its image. Anything else?" : "Sent. Anything else?";
+  const done = shot ? "Sent with its image. Anything else?" : "Sent. Anything else?";
+  tell(done, "ok");
   // The next note deserves a fresh picture of the page.
-  if (checkbox.checked) {
+  if (wantShot) {
     show(null);
-    retake().then(() => {
-      status.textContent = shot ? "Sent with its image. Anything else?" : "Sent. Anything else?";
-    });
+    retake().then(() => tell(done, "ok"));
   }
 });

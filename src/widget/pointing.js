@@ -1,6 +1,6 @@
 // "Point at it": the next click on the page picks an element instead of
 // acting on it, so the note says exactly what it is about.
-const [picking, pinRow, pinLabel] = [$(".picking"), $(".pin"), $(".pin span")];
+const [picking, pinRow, pinLabel, pointChip] = [$(".picking"), $(".pin"), $(".pin span"), $(".point")];
 const selector = (node) => {
   const parts = [];
   for (; node?.nodeType === 1 && node.localName !== "html"; node = node.parentElement) {
@@ -29,13 +29,17 @@ const describe = (node) => {
     h: Math.round(rect.height),
   };
 };
-const pin = (node) => {
-  pinned = node && { node, info: describe(node) };
+const showPin = () => {
   const info = pinned?.info;
-  pinLabel.textContent = info ? `📍 ${info.selector}${info.text ? ` · "${info.text.slice(0, 40)}"` : ""}` : "";
+  pinLabel.textContent = info ? `${info.selector}${info.text ? ` · "${info.text.slice(0, 40)}"` : ""}` : "";
   pinLabel.title = info?.selector ?? "";
   pinRow.hidden = !pinned;
-  if (checkbox.checked) retake();
+  pointChip.setAttribute("aria-pressed", String(Boolean(pinned)));
+};
+const pin = (node) => {
+  pinned = node && { node, info: describe(node) };
+  showPin();
+  if (wantShot) retake();
 };
 const ours = (event) => event.composedPath().includes(host);
 let unhover = () => {};
@@ -55,10 +59,16 @@ const BLOCKED = ["pointerdown", "mousedown", "pointerup", "mouseup", "dblclick",
 const choose = (event) => {
   if (ours(event)) return;
   swallow(event);
-  stopPicking();
+  stopPicking(phone ? pointChip : textarea);
   pin(event.target);
 };
-const escape = (event) => event.key === "Escape" && stopPicking();
+// Escape stops here: it must not close the panel that picking reopens.
+const escape = (event) => {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  event.stopPropagation();
+  stopPicking(pointChip);
+};
 const startPicking = () => {
   closePanel(false);
   picking.hidden = false;
@@ -66,8 +76,9 @@ const startPicking = () => {
   addEventListener("click", choose, true);
   addEventListener("keydown", escape, true);
   for (const type of BLOCKED) addEventListener(type, swallow, true);
+  $(".stop").focus({ preventScroll: true });
 };
-function stopPicking() {
+function stopPicking(focus) {
   unhover();
   unhover = () => {};
   hovered = null;
@@ -76,8 +87,8 @@ function stopPicking() {
   removeEventListener("keydown", escape, true);
   for (const type of BLOCKED) removeEventListener(type, swallow, true);
   picking.hidden = true;
-  openPanel();
+  openPanel(focus);
 }
-$(".point").addEventListener("click", startPicking);
-$(".stop").addEventListener("click", stopPicking);
+pointChip.addEventListener("click", () => (pinned ? pin(null) : startPicking()));
+$(".stop").addEventListener("click", () => stopPicking(pointChip));
 $(".unpin").addEventListener("click", () => pin(null));
