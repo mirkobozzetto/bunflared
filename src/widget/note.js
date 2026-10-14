@@ -1,4 +1,4 @@
-const [open, form, textarea] = [$(".open"), $(".note"), $("textarea")];
+const [form, textarea] = [$(".note"), $("textarea")];
 const checkbox = $(".note input[type=checkbox]");
 const [figure, preview, status, send] = [$("figure"), $("figure img"), $(".status"), $(".note .send")];
 const enlarge = $("figure a");
@@ -29,11 +29,11 @@ const toggle = (visible) => {
   paint();
   form.hidden = !visible;
   bar.hidden = visible;
+  tab.setAttribute("aria-expanded", visible);
   if (!visible) return;
   if (!phone) textarea.focus();
   if (checkbox.checked && !image) retake();
 };
-open.addEventListener("click", () => toggle(true));
 $(".close").addEventListener("click", () => toggle(false));
 $(".retake").addEventListener("click", () => { checkbox.checked = true; retake(); });
 $(".drop").addEventListener("click", () => { checkbox.checked = false; show(null); });

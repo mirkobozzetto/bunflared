@@ -105,6 +105,3 @@ const connect = () => {
     retry = Math.min(retry * 2, RETRY_MAX_MS);
   });
 };
-connect();
-
-document.body.append(host);

@@ -30,9 +30,11 @@ const SCRIPT: &str = concat!(
     include_str!("widget/markup.js"),
     include_str!("widget/frame.js"),
     include_str!("widget/capture.js"),
+    include_str!("widget/tab.js"),
     include_str!("widget/pointing.js"),
     include_str!("widget/note.js"),
     include_str!("widget/live.js"),
+    include_str!("widget/boot.js"),
     "})();\n",
 );
 const TAG: &str = r#"<script src="/_bunflared/widget.js" defer></script>"#;

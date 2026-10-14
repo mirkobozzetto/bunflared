@@ -3,8 +3,14 @@ const host = document.createElement("bunflared-feedback");
 const root = host.attachShadow({ mode: "open" });
 const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const phone = matchMedia("(pointer: coarse)").matches;
+const svg = (body) => `<svg viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`;
+const ICON = {
+  bubble: svg(`<path d="M6.8 4h10.4A2.8 2.8 0 0 1 20 6.8v6.4a2.8 2.8 0 0 1-2.8 2.8H11l-4.2 3.6V16A2.8 2.8 0 0 1 4 13.2V6.8A2.8 2.8 0 0 1 6.8 4Z"/><path d="M8.5 8.8h7M8.5 11.8h4.5"/>`),
+};
 root.innerHTML = `
   <style>${STYLE}</style>
+  <button class="tab right" type="button" aria-label="Talk to the developer" aria-haspopup="dialog"
+    aria-expanded="false">${ICON.bubble}</button>
   <div class="dock">
   <p class="watch" hidden>Live: the developer sees your pointer</p>
   <section class="card chat" hidden>
@@ -22,7 +28,6 @@ root.innerHTML = `
     <span class="reactions" hidden>
       ${REACTIONS.map((emoji) => `<button type="button" title="Send ${emoji} to the developer">${emoji}</button>`).join("")}
     </span>
-    <button class="open" type="button">✎ Feedback</button>
   </div>
   <p class="picking" hidden>${phone ? "Tap" : "Click"} what you mean <button class="stop" type="button">Cancel</button></p>
   <form class="card note" hidden>
