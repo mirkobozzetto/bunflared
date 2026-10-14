@@ -38,7 +38,10 @@ root.innerHTML = `
     </div>
     <p class="watch" hidden><span class="dot" aria-hidden="true"></span>The developer sees your pointer</p>
     <section class="msgs" aria-labelledby="from" hidden>
-      <h3><button class="fold" id="from" type="button" aria-expanded="true" aria-controls="thread">${ICON.chevron}From the developer</button></h3>
+      <div class="msgs-head">
+        <h3><button class="fold" id="from" type="button" aria-expanded="true" aria-controls="thread">${ICON.chevron}From the developer</button></h3>
+        <button class="ghost clear-chat" type="button" aria-label="Clear the conversation">Clear</button>
+      </div>
       <ol class="thread" id="thread" role="log" aria-live="polite"></ol>
       <form class="reply">
         <label class="sr" for="answer">Reply to the developer</label>

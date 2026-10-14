@@ -20,6 +20,11 @@ const unfold = (open) => {
   if (open) thread.scrollTop = thread.scrollHeight;
 };
 fold.addEventListener("click", () => unfold(fold.getAttribute("aria-expanded") !== "true"));
+// Clears this page's copy only: the dashboard and the session file keep theirs.
+$(".clear-chat").addEventListener("click", () => {
+  thread.replaceChildren();
+  thread.classList.remove("more");
+});
 thread.addEventListener("scroll", () => thread.classList.toggle("more", thread.scrollTop > 2), { passive: true });
 
 function heard(text) {

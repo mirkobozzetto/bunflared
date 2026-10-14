@@ -112,6 +112,8 @@ button { margin: 0; padding: 0; border: 0; background: none; font: inherit; colo
 /* The conversation: the developer on the left, the visitor on the right. */
 .msgs { display: grid; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
 h3 { margin: 0; font: 600 12px system-ui, -apple-system, sans-serif; color: var(--muted); }
+.msgs-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-right: -6px; }
+.pop .msgs-head .ghost { height: 28px; }
 .fold { display: inline-flex; align-items: center; gap: 4px; }
 .fold svg { width: 14px; height: 14px; transition: transform .2s var(--ease); }
 .fold[aria-expanded=false] svg { transform: rotate(-90deg); }
