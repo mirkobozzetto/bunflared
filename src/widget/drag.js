@@ -42,5 +42,5 @@ const drop = (event) => {
 tab.addEventListener("pointerup", drop);
 tab.addEventListener("pointercancel", drop);
 tab.addEventListener("click", () => {
-  if (!dragged) toggle(form.hidden);
+  if (!dragged) isOpen() ? closePanel() : openPanel();
 });

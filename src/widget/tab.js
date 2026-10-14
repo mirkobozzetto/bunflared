@@ -30,7 +30,7 @@ function place() {
 function stow(hidden) {
   spot.hidden = hidden;
   keep();
-  if (hidden) toggle(false);
+  if (hidden) closePanel(false);
   place();
   (hidden ? sliver : tab).focus({ preventScroll: true });
 }

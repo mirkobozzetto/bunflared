@@ -2,7 +2,7 @@ const [form, textarea] = [$(".note"), $("textarea")];
 const checkbox = $(".note input[type=checkbox]");
 const [figure, preview, status, send] = [$("figure"), $("figure img"), $(".status"), $(".note .send")];
 const enlarge = $("figure a");
-const [bar, reactions] = [$(".bar"), $(".reactions")];
+const reactions = $(".reactions");
 let image = null;
 
 const show = (blob) => {
@@ -25,16 +25,10 @@ const retake = async () => {
   }
 };
 
-const toggle = (visible) => {
-  paint();
-  form.hidden = !visible;
-  bar.hidden = visible;
-  tab.setAttribute("aria-expanded", visible);
-  if (!visible) return;
-  if (!phone) textarea.focus();
+// The panel opened: a fresh screenshot of the page, unless one is waiting.
+function opened() {
   if (checkbox.checked && !image) retake();
-};
-$(".close").addEventListener("click", () => toggle(false));
+}
 $(".retake").addEventListener("click", () => { checkbox.checked = true; retake(); });
 $(".drop").addEventListener("click", () => { checkbox.checked = false; show(null); });
 checkbox.addEventListener("change", () => (checkbox.checked ? retake() : show(null)));
@@ -43,8 +37,6 @@ form.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
     event.preventDefault();
     form.requestSubmit();
-  } else if (event.key === "Escape") {
-    toggle(false);
   }
 });
 

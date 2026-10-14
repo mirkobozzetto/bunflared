@@ -2,10 +2,14 @@
 :host { all: initial; position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 2147483647;
   display: block; pointer-events: none; font: 14px/1.4 system-ui, -apple-system, sans-serif; color-scheme: light;
   --ink: #1f2430; --pink: #ff79c6; --red: #ff5555; --ease: cubic-bezier(.16, 1, .3, 1);
-  --tab-shadow: 0 6px 18px rgb(17 20 28 / 26%); --edge: rgb(31 36 48 / 50%); --edge-on: #1f2430; }
+  --tab-shadow: 0 6px 18px rgb(17 20 28 / 26%); --edge: rgb(31 36 48 / 50%); --edge-on: #1f2430;
+  --bg: #fff; --text: #1f2430; --muted: #565c6b; --faint: #6b7180; --line: rgb(31 36 48 / 13%);
+  --soft: #f2f2f5; --soft-hover: #e8e8ee; --shadow: 0 14px 36px rgb(17 20 28 / 18%), 0 2px 6px rgb(17 20 28 / 8%); }
 :host([data-scheme=dark]) { color-scheme: dark;
   --tab-shadow: 0 0 0 1px rgb(255 255 255 / 18%), 0 6px 18px rgb(0 0 0 / 40%);
-  --edge: rgb(255 255 255 / 45%); --edge-on: #fff; }
+  --edge: rgb(255 255 255 / 45%); --edge-on: #fff;
+  --bg: #1b1f29; --text: #eceef3; --muted: #a9aebb; --faint: #9095a3; --line: rgb(255 255 255 / 14%);
+  --soft: #2a2f3c; --soft-hover: #343a48; --shadow: 0 14px 36px rgb(0 0 0 / 45%), 0 2px 6px rgb(0 0 0 / 30%); }
 :focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
 svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75;
   stroke-linecap: round; stroke-linejoin: round; }
@@ -34,6 +38,29 @@ svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; s
 .sliver:hover::before, .sliver:focus-visible::before { width: 7px; background: var(--edge-on); }
 .sliver.unread::before { width: 6px; background: var(--pink); }
 @keyframes slide-in { from { transform: scaleY(.3); opacity: 0; } }
+
+/* The panel: a sheet over a scrim on a phone, a popover next to the tab on a computer. */
+.scrim { position: absolute; inset: 0; pointer-events: auto; background: rgb(17 20 28 / 22%); animation: fade-in .25s; }
+.panel { position: absolute; pointer-events: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px;
+  overflow-y: auto; overscroll-behavior: contain; background: var(--bg); color: var(--text);
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.panel.sheet { left: 0; right: 0; bottom: 0; max-height: calc(100% - 40px); padding: 6px 16px 18px;
+  border-radius: 20px 20px 0 0; box-shadow: 0 -10px 40px rgb(17 20 28 / 18%); font-size: 15px;
+  animation: sheet .42s var(--ease); }
+.panel.pop { width: min(360px, calc(100% - 64px)); max-height: calc(100% - 24px); padding: 14px 16px 16px;
+  border-radius: 16px; box-shadow: var(--shadow); animation: pop .24s var(--ease); }
+.grab { justify-self: center; width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin-bottom: -4px; }
+.head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+h2 { margin: 0; font: 600 15px/1.3 system-ui, -apple-system, sans-serif; }
+.actions { display: flex; gap: 2px; align-items: center; margin-right: -6px; }
+.ghost, .icon { height: 36px; padding: 0; border-radius: 10px; background: none; color: var(--muted);
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: background .15s, color .15s; }
+.ghost { padding: 0 10px; font-size: 13px; }
+.icon { width: 36px; }
+.ghost:hover, .icon:hover { background: var(--soft); color: var(--text); }
+.note { display: grid; gap: 8px; }
+@keyframes sheet { from { transform: translateY(100%); } }
+@keyframes fade-in { from { opacity: 0; } }
 .dock { position: absolute; right: 16px; bottom: 16px; pointer-events: auto;
   display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 [hidden] { display: none !important; }

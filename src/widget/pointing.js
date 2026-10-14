@@ -60,7 +60,7 @@ const choose = (event) => {
 };
 const escape = (event) => event.key === "Escape" && stopPicking();
 const startPicking = () => {
-  form.hidden = true;
+  closePanel(false);
   picking.hidden = false;
   addEventListener("pointermove", hover, true);
   addEventListener("click", choose, true);
@@ -76,7 +76,7 @@ function stopPicking() {
   removeEventListener("keydown", escape, true);
   for (const type of BLOCKED) removeEventListener(type, swallow, true);
   picking.hidden = true;
-  form.hidden = false;
+  openPanel();
 }
 $(".point").addEventListener("click", startPicking);
 $(".stop").addEventListener("click", stopPicking);
