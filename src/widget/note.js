@@ -28,12 +28,19 @@ const show = (blob) => {
   thumb.hidden = !blob;
 };
 
+// Only the latest screenshot counts: an older one finishing late, after a
+// note was sent, must not bring back its picture or erase "Sent".
+let shots = 0;
 const retake = async () => {
+  const turn = ++shots;
   tell("Taking a screenshot...", "busy");
   try {
-    show(await capture());
+    const blob = await capture();
+    if (turn !== shots) return;
+    show(blob);
     tell();
   } catch {
+    if (turn !== shots) return;
     show(null);
     tell("No screenshot this time. You can paste one.", "error");
   }
