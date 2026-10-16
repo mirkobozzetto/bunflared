@@ -28,7 +28,11 @@ and `wait` to hold the call until something happens instead of polling. Answer w
 `replay` inspect the traffic. With channels on, visitors' messages and notes also \
 arrive by themselves as <channel source=\"bunflared\" kind=\"message|note\" share=... \
 visitor=...>: answer with `say`, passing that share and visitor. Notes are Markdown \
-files with a screenshot, in bunflared-feedback/. Every share closes when this session ends.";
+files with a screenshot, in bunflared-feedback/. A note point made with the widget's Edit \
+mode carries exact changes in its comment, before and after (`Moved from place 3 to place 1 \
+of 4; Margin top and bottom 8 -> 16 px`, colors in hex), shown to the visitor as a preview: \
+make them in the code, then `reload` so the real page replaces it. Every share closes when \
+this session ends.";
 
 pub fn run() -> i32 {
     let folder = std::env::current_dir()
