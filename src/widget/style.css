@@ -223,5 +223,5 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px
 @media (pointer: coarse) {
   .bar { left: 0; bottom: 0; width: 100%; max-height: 60%; translate: none; border-radius: 16px 16px 0 0; }
   .bar.top { top: 0; border-radius: 0 0 16px 16px; }
-  .move .chip, .bar-end .ghost, .done, .knob input { height: 44px; }
+  .move .chip, .bar-end .ghost, .done, .knob input, .knob input[type=color] { height: 44px; }
 }
