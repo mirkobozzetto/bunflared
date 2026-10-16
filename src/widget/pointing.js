@@ -44,12 +44,19 @@ const swallow = (event) => {
   event.stopImmediatePropagation();
 };
 const BLOCKED = ["pointerdown", "mousedown", "pointerup", "mouseup", "dblclick", "submit"];
+// What the click picks goes to a note point, or to Edit; the panel reopens
+// on the chip that started it.
+let picked = null;
+let pickedFrom = pointChip;
 // The hover outline goes first: the point's own outline replaces it.
 const choose = (event) => {
   if (ours(event)) return;
   swallow(event);
   endPicking();
-  const point = addPoint(event.target);
+  picked(event.target);
+};
+const pickPoint = (node) => {
+  const point = addPoint(node);
   openPanel(phone ? pointChip : point.field);
   if (wantShot) retake();
 };
@@ -60,7 +67,9 @@ const escape = (event) => {
   event.stopPropagation();
   stopPicking();
 };
-const startPicking = () => {
+const startPicking = (then, from) => {
+  picked = then;
+  pickedFrom = from;
   closePanel(false);
   showFlags(true);
   picking.hidden = false;
@@ -80,9 +89,9 @@ function endPicking() {
   for (const type of BLOCKED) removeEventListener(type, swallow, true);
   picking.hidden = true;
 }
-pointChip.addEventListener("click", startPicking);
+pointChip.addEventListener("click", () => startPicking(pickPoint, pointChip));
 const stopPicking = () => {
   endPicking();
-  openPanel(pointChip);
+  openPanel(pickedFrom);
 };
 $(".stop").addEventListener("click", stopPicking);

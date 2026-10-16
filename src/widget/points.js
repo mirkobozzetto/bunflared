@@ -16,8 +16,8 @@ function renumber() {
   ready();
 }
 
-function addPoint(node) {
-  const info = describe(node);
+// Edit hands over the element as it was described before any move.
+function addPoint(node, info = describe(node)) {
   const row = document.createElement("li");
   row.innerHTML = `<p class="pin"><b class="num"></b><span></span>
     <button class="icon unpin" type="button">${ICON.close}</button></p>

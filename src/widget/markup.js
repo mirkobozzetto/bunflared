@@ -9,6 +9,7 @@ const ICON = {
   bubble: svg(`<path d="M6.8 4h10.4A2.8 2.8 0 0 1 20 6.8v6.4a2.8 2.8 0 0 1-2.8 2.8H11l-4.2 3.6V16A2.8 2.8 0 0 1 4 13.2V6.8A2.8 2.8 0 0 1 6.8 4Z"/><path d="M8.5 8.8h7M8.5 11.8h4.5"/>`),
   chevron: svg(`<path d="M6 9l6 6 6-6"/>`),
   close: svg(`<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>`),
+  edit: svg(`<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>`),
   point: svg(`<circle cx="12" cy="12" r="6.5"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/>`),
   camera: svg(`<path d="M4 8.6A2.6 2.6 0 0 1 6.6 6h1.6l1.4-2h4.8l1.4 2h1.6A2.6 2.6 0 0 1 20 8.6v7.8a2.6 2.6 0 0 1-2.6 2.6H6.6A2.6 2.6 0 0 1 4 16.4Z"/><circle cx="12" cy="12.4" r="3.2"/>`),
   send: svg(`<path d="M12 18.5v-13M6.5 11 12 5.5l5.5 5.5"/>`),
@@ -60,12 +61,26 @@ root.innerHTML = `
       <ol class="points" aria-label="Pointed elements" hidden></ol>
       <div class="tools">
         <button class="chip point" type="button">${ICON.point}<span>Point at it</span></button>
+        <button class="chip edit" type="button">${ICON.edit}Edit</button>
         <button class="chip shot" type="button" aria-pressed="true" aria-label="Attach a screenshot"><img class="thumb"
           alt="" hidden>${ICON.camera}Screenshot</button>
         <button class="send" type="submit" disabled>${ICON.send}Send</button>
       </div>
       <div class="foot"><p class="status" role="status"></p><span class="hint">${mac ? "⌘" : "Ctrl"} Enter</span></div>
     </form>
+  </div>
+  <div class="bar" role="dialog" aria-labelledby="bar-title" hidden>
+    <div class="bar-head"><h2 id="bar-title">Edit</h2><span class="bar-name"></span></div>
+    <div class="move" role="group" aria-label="Place in its block">
+      <button class="chip earlier" type="button">Move earlier</button>
+      <span class="place"></span>
+      <button class="chip later" type="button">Move later</button>
+    </div>
+    <div class="knobs"></div>
+    <div class="bar-end">
+      <button class="ghost cancel-edit" type="button">Cancel</button>
+      <button class="done" type="button">${ICON.check}Done</button>
+    </div>
   </div>
   <p class="sr say" role="status"></p>`;
 
