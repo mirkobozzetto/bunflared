@@ -1,11 +1,16 @@
 const SCREENSHOT_LIB = "https://cdn.jsdelivr.net/npm/modern-screenshot@4.7.0/+esm";
 const PINK = "#ff79c6";
 
+// Undone, an element that had no style attribute is left without one.
 const outline = (node, style) => {
   const saved = [node.style.outline, node.style.outlineOffset];
+  const bare = !node.hasAttribute("style");
   node.style.outline = style;
   node.style.outlineOffset = "2px";
-  return () => { [node.style.outline, node.style.outlineOffset] = saved; };
+  return () => {
+    [node.style.outline, node.style.outlineOffset] = saved;
+    if (bare && !node.style.length) node.removeAttribute("style");
+  };
 };
 const points = [];
 
