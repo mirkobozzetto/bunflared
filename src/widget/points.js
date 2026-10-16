@@ -16,14 +16,19 @@ function renumber() {
   ready();
 }
 
-// Edit hands over the element as it was described before any move.
-function addPoint(node, info = describe(node)) {
+// Edit hands over the element as it was described before any move, with its
+// changes and how to take them back.
+function addPoint(node, info = describe(node), edit = null) {
   const row = document.createElement("li");
   row.innerHTML = `<p class="pin"><b class="num"></b><span></span>
     <button class="icon unpin" type="button">${ICON.close}</button></p>
-    <textarea class="comment" rows="2" placeholder="What about it?"></textarea>`;
+    ${edit ? `<ul class="changes"></ul>` : ""}
+    <textarea class="comment" rows="2" placeholder="${edit ? "Anything else about it?" : "What about it?"}"></textarea>`;
   const [num, name, field, cross] = ["b", "span", "textarea", "button"].map((tag) => row.querySelector(tag));
-  const point = { node, info, row, num, field, cross };
+  const point = { node, info, row, num, field, cross, edit };
+  for (const change of edit?.changes ?? []) {
+    row.querySelector(".changes").append(Object.assign(document.createElement("li"), { textContent: change }));
+  }
   name.textContent = pointLabel(info);
   name.title = info.selector;
   point.field.addEventListener("input", ready);
@@ -37,11 +42,13 @@ function addPoint(node, info = describe(node)) {
 
 // The focus moves to the cross now in the same place, so several points go in
 // a row; with none left, to the button that adds one.
+// An edited element goes back once its pink outline is off.
 function removePoint(point) {
   const index = points.indexOf(point);
   points.splice(index, 1);
   point.row.remove();
   renumber();
+  point.edit?.undo();
   announce(`Point ${index + 1} removed`);
   ((points[index] ?? points[index - 1])?.cross ?? pointChip).focus();
   if (wantShot) retake();

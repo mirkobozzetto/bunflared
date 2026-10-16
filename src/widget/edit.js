@@ -120,8 +120,8 @@ const editChanges = () => {
 const doneEdit = () => {
   const { node, info } = editing;
   const changes = editChanges();
-  endEdit(true);
-  const point = addPoint(node, info);
+  const undo = endEdit(true);
+  const point = addPoint(node, info, changes.length ? { changes, undo } : null);
   openPanel(phone ? editChip : point.field);
   if (wantShot) retake();
 };

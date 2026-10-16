@@ -148,6 +148,7 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px
 .num { flex: none; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--pink);
   color: var(--ink); font: 700 12px/22px system-ui, -apple-system, sans-serif; text-align: center; }
 .note .comment { min-height: 0; }
+.changes { margin: 0; padding: 0 6px 0 28px; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 /* Point at another, Screenshot and Send on one line; Send wraps below in a narrow window. */
 .tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .chip, .send { height: 36px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }

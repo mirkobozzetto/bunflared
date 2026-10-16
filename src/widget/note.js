@@ -5,8 +5,12 @@ let image = null;
 let wantShot = true;
 let sending = false;
 
-// Without a point the remark is required; with one, any comment will do.
-const written = () => Boolean(textarea.value.trim()) || points.some((point) => point.field.value.trim());
+// Without a point the remark is required; with one, any comment will do, and
+// an edited element speaks for itself.
+const written = () => Boolean(textarea.value.trim()) || points.some((point) => point.edit || point.field.value.trim());
+// An edited element's changes, then what the visitor adds: one line that
+// every reader of the note keeps whole.
+const comment = (point) => [...(point.edit?.changes ?? []), point.field.value.trim()].filter(Boolean).join("; ");
 const ready = () => { send.disabled = sending || !written(); };
 
 // The line under the note: busy, done or failed.
@@ -83,7 +87,7 @@ form.addEventListener("submit", async (event) => {
     method: "POST",
     body: JSON.stringify({
       sid, page: page(), message, screen: `${innerWidth}x${innerHeight}`, shot,
-      points: points.map((point) => ({ ...point.info, comment: point.field.value.trim() })),
+      points: points.map((point) => ({ ...point.info, comment: comment(point) })),
     }),
   }).catch(() => null);
   sending = false;
