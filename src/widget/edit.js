@@ -72,11 +72,12 @@ function startEdit(node, event) {
     from: placeOf(node).at,
     info: describe(node),
     bare: !node.getAttribute("style"),
-    kept: keepInline(node, EDIT_STYLES),
+    kept: keepInline(node, [...EDIT_STYLES, ...KNOB_PROPS]),
     unmark: outline(node, `3px solid ${PINK}`),
   };
   node.style.setProperty("touch-action", "none", "important");
   editName.textContent = pointLabel(editing.info);
+  loadKnobs(node);
   showPlace(false);
   bar.hidden = false;
   placeBar();
@@ -112,7 +113,8 @@ function endEdit(keep) {
 // What Done sends: each change, before and after.
 const editChanges = () => {
   const { at, of } = placeOf(editing.node);
-  return [at === editing.from ? "" : `Moved from place ${editing.from} to place ${at} of ${of}`].filter(Boolean);
+  const moved = at === editing.from ? [] : [`Moved from place ${editing.from} to place ${at} of ${of}`];
+  return [...moved, ...knobChanges()];
 };
 
 const doneEdit = () => {
