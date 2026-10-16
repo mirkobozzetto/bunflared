@@ -53,7 +53,13 @@ const choose = (event) => {
   if (ours(event)) return;
   swallow(event);
   endPicking();
-  picked(event.target);
+  picked(event.target, event);
+};
+// Edit picks on the press itself with a mouse, so the same press can drag;
+// a finger still taps, its press being free to scroll.
+let pickOnPress = false;
+const press = (event) => {
+  if (event.pointerType !== "touch" && !event.button) choose(event);
 };
 const pickPoint = (node) => {
   const point = addPoint(node);
@@ -67,12 +73,14 @@ const escape = (event) => {
   event.stopPropagation();
   stopPicking();
 };
-const startPicking = (then, from) => {
+const startPicking = (then, from, onPress = false) => {
   picked = then;
   pickedFrom = from;
+  pickOnPress = onPress;
   closePanel(false);
   showFlags(true);
   picking.hidden = false;
+  if (onPress) addEventListener("pointerdown", press, true);
   addEventListener("pointermove", hover, true);
   addEventListener("click", choose, true);
   addEventListener("keydown", escape, true);
@@ -83,6 +91,7 @@ function endPicking() {
   unhover();
   unhover = () => {};
   hovered = null;
+  if (pickOnPress) removeEventListener("pointerdown", press, true);
   removeEventListener("pointermove", hover, true);
   removeEventListener("click", choose, true);
   removeEventListener("keydown", escape, true);

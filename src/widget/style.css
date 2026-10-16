@@ -203,6 +203,7 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px
   display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 12px 14px 14px; border-radius: 16px;
   background: var(--bg); color: var(--text); box-shadow: var(--shadow); animation: pop .24s var(--ease); }
 .bar.top { bottom: auto; top: 12px; }
+.bar.faded { opacity: .2; pointer-events: none; transition: opacity .15s; }
 .bar-head { display: flex; gap: 10px; align-items: baseline; }
 .bar-name { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; scrollbar-width: none; font-size: 13px;
   color: var(--muted); }

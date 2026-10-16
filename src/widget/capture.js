@@ -4,7 +4,7 @@ const PINK = "#ff79c6";
 // Undone, an element that had no style attribute is left without one.
 const outline = (node, style) => {
   const saved = [node.style.outline, node.style.outlineOffset];
-  const bare = !node.hasAttribute("style");
+  const bare = !node.getAttribute("style");
   node.style.outline = style;
   node.style.outlineOffset = "2px";
   return () => {
