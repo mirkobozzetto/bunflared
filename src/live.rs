@@ -19,9 +19,9 @@ use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
 use tokio_tungstenite::tungstenite::protocol::{Message, Role, WebSocketConfig};
 
+use crate::event::{Event, Pointer, Reacted, Said, Tx};
 use crate::http::{Body, status};
 use crate::notes::Transcript;
-use crate::share::{Event, Tx};
 
 const MAX_MESSAGE: usize = 16 * 1024;
 const MAX_TEXT: usize = 2000;
@@ -76,32 +76,6 @@ enum Incoming {
         #[serde(default)]
         page: String,
     },
-}
-
-/// A reaction from a visitor, as an index in `REACTIONS`.
-#[derive(Debug, Clone)]
-pub struct Reacted {
-    pub device: String,
-    pub kind: usize,
-}
-
-/// Where a followed visitor's pointer is, in their viewport.
-#[derive(Debug, Clone)]
-pub struct Pointer {
-    pub sid: String,
-    pub x: f32,
-    pub y: f32,
-    pub w: f32,
-    pub h: f32,
-}
-
-/// A chat message from a visitor.
-#[derive(Debug, Clone)]
-pub struct Said {
-    pub sid: String,
-    pub device: String,
-    pub page: String,
-    pub text: String,
 }
 
 struct Socket {

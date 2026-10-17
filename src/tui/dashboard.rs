@@ -9,8 +9,8 @@ use super::art::{self, Frame3};
 use super::fx::{self, put};
 use super::scenes::wrap;
 use super::{App, Ask, Focus, LANE_TRIP, Qr, Replay, Row, Theme, plural};
+use crate::event::{CAPTURE, Capture};
 use crate::live::REACTIONS;
-use crate::proxy::{CAPTURE, Capture};
 use crate::visitors::Visitor;
 
 const MIN_WIDTH: u16 = 64;

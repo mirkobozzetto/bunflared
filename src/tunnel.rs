@@ -11,7 +11,7 @@ use tokio::net::UdpSocket;
 use tokio::process::{Child, Command};
 use tokio::time::{sleep, timeout};
 
-use crate::share::{EXIT_TUNNEL_FAILED, Event, Failure, Tx};
+use crate::event::{EXIT_TUNNEL_FAILED, Event, Failure, Tx};
 
 // The hyphen excludes api.trycloudflare.com, which cloudflared names in its errors.
 static TUNNEL_URL: LazyLock<Regex> =

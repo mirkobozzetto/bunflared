@@ -14,10 +14,11 @@ use serde_json::{Value, json};
 use tokio::sync::watch;
 
 use crate::clock::{clock, uptime};
+use crate::event::{Capture, Event, Hit};
 use crate::live::{self, Command, Hub, REACTIONS};
 use crate::notes::Feedback;
-use crate::proxy::{self, Capture};
-use crate::share::{self, Event, Hit, Spec};
+use crate::proxy;
+use crate::share::{self, Spec};
 use crate::state::{self, Record};
 use crate::visitors::{Presence, Roster};
 

@@ -1,104 +1,20 @@
 use std::path::PathBuf;
 use std::sync::Arc;
-
-use std::sync::mpsc::Sender;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio::time::{sleep, timeout};
 
-use crate::live::{Hub, Pointer, Reacted, Said};
-use crate::{clipboard, cloudflared, notes, os, proxy, state, tunnel, visitors};
-
-pub const EXIT_TUNNEL_CLOSED: i32 = 1;
-pub const EXIT_NO_CLOUDFLARED: i32 = 3;
-pub const EXIT_PORT_DOWN: i32 = 4;
-pub const EXIT_CONFIG_YAML: i32 = 5;
-pub const EXIT_TUNNEL_FAILED: i32 = 6;
-pub const EXIT_HANGUP: i32 = 129;
+use crate::event::{
+    EXIT_CONFIG_YAML, EXIT_HANGUP, EXIT_NO_CLOUDFLARED, EXIT_PORT_DOWN, EXIT_TUNNEL_CLOSED,
+    EXIT_TUNNEL_FAILED, Event, Failure, Tx,
+};
+use crate::live::Hub;
+use crate::{clipboard, cloudflared, os, proxy, state, tunnel};
 
 const PORT_TIMEOUT: Duration = Duration::from_secs(3);
 const HEALTH_EVERY: Duration = Duration::from_secs(3);
-
-pub type Tx = Sender<Event>;
-
-#[derive(Debug, Clone)]
-pub struct Failure {
-    pub code: i32,
-    pub message: String,
-}
-
-impl Failure {
-    pub fn new(code: i32, message: impl Into<String>) -> Self {
-        Self {
-            code,
-            message: message.into(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Hit {
-    pub method: String,
-    pub path: String,
-    pub status: u16,
-    pub ms: u32,
-    pub port: u16,
-    pub visitor: String,
-    pub upgrade: bool,
-    pub exchange: Arc<proxy::Exchange>,
-}
-
-impl Hit {
-    /// Why it cannot be sent again as it was, if it cannot.
-    pub fn unreplayable(&self) -> Option<String> {
-        if self.upgrade {
-            Some("A WebSocket cannot be sent again.".into())
-        } else if !self.exchange.request_body.lock().unwrap().complete() {
-            Some(format!(
-                "Its body is over {} KiB: only the start was kept.",
-                proxy::CAPTURE / 1024
-            ))
-        } else {
-            None
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum Event {
-    PortChecked {
-        port: u16,
-        ok: bool,
-    },
-    FetchingCloudflared,
-    TunnelStarting,
-    TunnelUrl(String),
-    TunnelRegistered,
-    DnsAttempt(u32),
-    Ready {
-        record: state::Record,
-        resolved: bool,
-        copied: bool,
-    },
-    Request(Hit),
-    Presence(visitors::Presence),
-    Feedback(notes::Feedback),
-    Chat(Said),
-    Pointer(Pointer),
-    Reacted(Reacted),
-    Replayed {
-        n: u32,
-        status: Result<u16, String>,
-        ms: u32,
-    },
-    PortHealth {
-        port: u16,
-        ok: bool,
-    },
-    Done(Result<(), Failure>),
-}
 
 /// What to share, and how.
 pub struct Spec {

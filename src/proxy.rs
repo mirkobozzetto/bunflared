@@ -18,9 +18,9 @@ use hyper_util::rt::TokioIo;
 use regex::Regex;
 use tokio::net::{TcpListener, TcpStream};
 
+use crate::event::{CAPTURE, Capture, Event, Exchange, Hit, Tx};
 use crate::http::{Body, full, html, plain};
 use crate::live::Hub;
-use crate::share::{Event, Hit, Tx};
 use crate::widget;
 
 mod rewrite;
@@ -39,19 +39,6 @@ const HOP_BY_HOP: [&str; 6] = [
     "upgrade",
 ];
 const BUNNY_PAGE: &str = include_str!("bunny-down.html");
-/// How much of each body the inspector keeps; a request over it cannot be replayed.
-pub const CAPTURE: usize = 32 * 1024;
-/// Content types the inspector shows as text.
-const READABLE: [&str; 8] = [
-    "text/",
-    "json",
-    "javascript",
-    "xml",
-    "html",
-    "css",
-    "form-urlencoded",
-    "graphql",
-];
 const ACCEPT_RETRY: Duration = Duration::from_millis(100);
 // Not 502: Cloudflare swaps an origin's 502 page for its own.
 const DOWN: StatusCode = StatusCode::SERVICE_UNAVAILABLE;
@@ -63,42 +50,6 @@ struct Ctx {
     /// Where feedback lands; `None` keeps the widget out of the pages.
     feedback: Option<PathBuf>,
     hub: Arc<Hub>,
-}
-
-/// The start of a body as it went through, and its full size.
-#[derive(Debug, Default)]
-pub struct Capture {
-    pub bytes: Vec<u8>,
-    pub total: usize,
-}
-
-impl Capture {
-    pub fn complete(&self) -> bool {
-        self.bytes.len() == self.total
-    }
-
-    /// Whether the kept start can be shown as text, going by its headers.
-    pub fn readable(&self, headers: &HeaderMap) -> bool {
-        let kind = headers
-            .get(header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
-        !headers.contains_key(header::CONTENT_ENCODING)
-            && if kind.is_empty() {
-                std::str::from_utf8(&self.bytes).is_ok()
-            } else {
-                READABLE.iter().any(|t| kind.contains(t))
-            }
-    }
-}
-
-/// What the inspector shows of a request and its answer.
-#[derive(Debug)]
-pub struct Exchange {
-    pub request_headers: HeaderMap,
-    pub response_headers: HeaderMap,
-    pub request_body: Arc<Mutex<Capture>>,
-    pub response_body: Arc<Mutex<Capture>>,
 }
 
 /// Passes a body through untouched, keeping a copy of its start.

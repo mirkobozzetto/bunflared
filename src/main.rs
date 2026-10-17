@@ -2,6 +2,7 @@ mod agents;
 mod clipboard;
 mod clock;
 mod cloudflared;
+mod event;
 mod http;
 mod live;
 mod mcp;
@@ -23,7 +24,7 @@ use std::time::Duration;
 use clap::{CommandFactory, Parser, Subcommand};
 use tokio::sync::watch;
 
-use share::Event;
+use event::Event;
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const EXIT_USAGE: i32 = 2;
@@ -281,7 +282,7 @@ async fn leave_on_signal() {
     if !hung_up {
         ratatui::restore();
     }
-    std::process::exit(if hung_up { share::EXIT_HANGUP } else { 0 });
+    std::process::exit(if hung_up { event::EXIT_HANGUP } else { 0 });
 }
 
 // Writes ignore errors: a detached share outlives the pipe it was started with.

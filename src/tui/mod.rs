@@ -23,10 +23,10 @@ use tokio::sync::watch;
 
 use crate::clipboard;
 use crate::clock::{self, uptime};
-use crate::live::{self, Command, Hub, Pointer, REACTIONS};
+use crate::event::{Event, Failure, Hit, Pointer};
+use crate::live::{self, Command, Hub, REACTIONS};
 use crate::notes;
 use crate::proxy::{Replayer, mount};
-use crate::share::{Event, Failure, Hit};
 use crate::state::Record;
 use crate::visitors::Roster;
 
