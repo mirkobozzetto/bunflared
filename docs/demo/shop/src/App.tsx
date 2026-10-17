@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BASKET, CODES, DELIVERY_FEES, euros } from "./basket";
+import { BASKET, CODES, DELIVERY_FEES, euros, placeOrder } from "./basket";
 import { Header } from "./Header";
 import { Home } from "./Home";
 
@@ -21,7 +21,7 @@ function Summary() {
         <dd className="total">{euros(total)}</dd>
       </dl>
       <p className="when">Charged on Wednesday, once the harvest is confirmed.</p>
-      <button className="pay" type="button">
+      <button className="pay" type="button" onClick={placeOrder}>
         Pay {euros(total + DELIVERY_FEES[slot])} now
       </button>
       <form className="code" onSubmit={(event) => event.preventDefault()}>

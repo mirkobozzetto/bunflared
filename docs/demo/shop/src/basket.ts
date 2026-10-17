@@ -15,3 +15,10 @@ export const CODES: Record<string, { percent: number }> = {
 
 export const euros = (amount: number) =>
   amount.toLocaleString("fr-FR", { style: "currency", currency: "EUR" });
+
+export const placeOrder = () =>
+  fetch("/_port/3000/api/orders", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ lines: BASKET.map((line) => line.name), slot: "Thursday 18:00-20:00" }),
+  }).catch(() => {});
