@@ -92,6 +92,8 @@ it as `"password"`. Visitors get a small page that asks for it, then a
 cookie lets their browser through; anything else without the cookie,
 `curl` included, gets a 401. A `--local` share has no use for it.
 
+<img src="https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/password.png" alt="On a phone, the shared page asks for the password before showing the app" width="320">
+
 `--for` takes `90s`, `30m`, `2h` or `1h30m`. The dashboard shows the time
 left, visitors hear a minute before that the link closes, and the share then
 stops as if you had pressed Ctrl+C.
@@ -133,6 +135,8 @@ small bunny page that retries by itself.
 
 ## Testing webhooks
 
+![The inspector: a payment fails with a 500, / keeps only the POST, Enter opens its headers and JSON body, p replays it, c copies it as curl, and the curl pasted in a terminal gets the same 500](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/inspect.gif)
+
 Give Stripe, GitHub or Slack the public link as the webhook URL, then send a
 test event. In the dashboard, `/` then `POST` or the webhook's path keeps
 only its requests. `Tab` and `Enter` open one: its headers and JSON body as
@@ -144,6 +148,8 @@ An agent gets the same command in the `curl` field of the MCP `request` tool.
 A request whose body is over 32 KiB, or is not text, has no curl.
 
 ## Feedback from the people you share with
+
+![A note with three numbered points on a shop's home page, each with its own comment, and under it the source file and line each point came with](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/note.png)
 
 Every shared page gets a small tab on its edge. It tucks half away while the
 page scrolls, your client can drag it up, down or to the other edge, or push it
@@ -159,6 +165,12 @@ of it leaves as one note, one file and one screenshot where every element
 carries its number. A note with one element and no comment under it is
 written exactly as before.
 
+When the app runs from its development build, each point also says where the
+element comes from in the code, in the note's file and for your agent:
+`src/App.tsx:24 in Summary`. React gives the file, the line and the
+component, Svelte the file, the line and the column, Vue the file alone.
+A production build, or another framework, sends the note without it.
+
 **Edit** shows a change instead of describing it. Click an element, then drag
 it among its neighbours, or out of its block into another one (**Move
 earlier**, **Move later** and Alt with an arrow move it a place). Its settings
@@ -173,7 +185,7 @@ Background #e5e7eb -> #1f6548`. **Adjust** on a point opens it again. The
 selector is the element's before any move. Your agent makes the change in the
 code and reloads the page: the real render replaces the preview.
 
-![A note pinned on the pay button: the element's selector, and a screenshot of the page to send with it](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/note.png)
+![Edit mode: a pricing card is dragged before the two others, its background and padding change on the page, and the agent receives each change with the file to make it in](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/edit.gif)
 
 That folder ignores itself
 in git, so client notes never end up in a commit. Hand it to your coding
@@ -207,8 +219,6 @@ page, a reaction.
   and the start of its bodies, `p` replays it to your local server and shows
   the new status next to the old one.
 
-![The inspector: a 500 makes the log glitch, Enter opens its headers and bodies, p replays it](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/inspect.gif)
-
 The chat, the reactions and a link to every note are kept in one
 `session_<date>.md` next to the notes, so the whole conversation is there for
 you or your coding agent afterwards. On a phone the panel opens as a sheet
@@ -237,6 +247,8 @@ notes on your app while your agent works, and it reads them in
 
 ### Your agent in the live session
 
+![An agent connected over MCP: a note on a pay button that says NaN arrives with src/App.tsx:24, the agent takes a screenshot of the page, then a JavaScript error reaches it with its line](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/agent.gif)
+
 `bunflared mcp` is an MCP server on stdio. Your agent opens its own shares
 and does what the dashboard does: talk to the visitors, send them to a page,
 reload it after a fix, read their messages and notes as they come, inspect
@@ -256,11 +268,23 @@ agent works in.
 
 | Tool | Does |
 | --- | --- |
-| `open`, `list`, `close` | start a share (local, or `public`), list them, stop one |
+| `open`, `list`, `close` | start a share (local, or `public`, and with `for` it closes by itself), list them, stop one |
 | `visitors` | who is on a share: device, page, active or idle |
-| `say`, `go`, `reload` | a chat bubble, a page to go to, a reload: for one visitor or everyone |
-| `events` | messages, notes, reactions, arrivals and departures since a cursor; it can wait for the next one |
-| `requests`, `request`, `replay` | the latest requests, one in full, sent again |
+| `say`, `go`, `reload` | a chat bubble, a page to go to, a reload: for one visitor or everyone. `reload` with a `selector` waits for the page and returns a screenshot of that element |
+| `screenshot` | what a visitor sees now, as an image the agent sees, with the page's title, path, screen size and visible text |
+| `events` | messages, notes, reactions, arrivals, departures and the page's JavaScript errors since a cursor; it can wait for the next one |
+| `requests`, `request`, `replay` | the latest requests, one in full with a `curl` command that sends it again, sent again |
+
+A page's errors reach `events` within a second: an error never caught, a
+promise rejected with nothing to handle it, or a `console.error`, each with
+the file and line it came from. The same error over and over comes once in a
+while, with how many times it happened.
+
+On a public link, the visitor decides first: the first screenshot asked shows
+a bar on their page, "The developer's assistant asks to see this page and its
+errors", with **Allow** and **No**. Their answer holds for the visit, and
+their page's errors go to the agent only after **Allow**. On your own
+computer nothing is asked.
 
 Claude Code's channels (a research preview) bring each message and note into
 the session by itself, without the agent asking. bunflared is not on
