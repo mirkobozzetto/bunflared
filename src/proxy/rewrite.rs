@@ -14,7 +14,8 @@ use hyper::body::Body as HttpBody;
 use hyper::body::{Frame, Incoming};
 use regex::bytes::{Captures, Regex};
 
-use super::{Body, Ctx, mount};
+use super::{Ctx, mount};
+use crate::http::Body;
 
 static LOCAL_URL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"https?://(?:localhost|127\.0\.0\.1):(\d+)").unwrap());

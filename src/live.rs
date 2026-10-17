@@ -21,7 +21,7 @@ use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
 use tokio_tungstenite::tungstenite::protocol::{Message, Role, WebSocketConfig};
 
-use crate::proxy::{Body, status};
+use crate::http::{Body, status};
 use crate::share::{Event, Tx};
 use crate::widget;
 

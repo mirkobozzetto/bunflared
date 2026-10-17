@@ -14,8 +14,8 @@ use hyper::header::{self, HeaderValue};
 use hyper::{Method, Request, Response, StatusCode};
 use serde::Deserialize;
 
+use crate::http::{Body, full, json, status};
 use crate::live::{self, Hub};
-use crate::proxy::{Body, full, status};
 use crate::share::{Event, Tx};
 
 mod note;
@@ -286,14 +286,5 @@ fn script() -> Response<Body> {
         HeaderValue::from_static("text/javascript; charset=utf-8"),
     );
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
-    response
-}
-
-fn json(value: serde_json::Value) -> Response<Body> {
-    let mut response = Response::new(full(value.to_string()));
-    response.headers_mut().insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("application/json"),
-    );
     response
 }

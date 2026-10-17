@@ -1,6 +1,7 @@
 mod agents;
 mod clipboard;
 mod cloudflared;
+mod http;
 mod live;
 mod mcp;
 mod os;

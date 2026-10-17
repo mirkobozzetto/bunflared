@@ -8,7 +8,6 @@ use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Empty, Full};
 use hyper::body::{Frame, Incoming, SizeHint};
 use hyper::header::{self, HeaderMap, HeaderValue};
@@ -19,13 +18,13 @@ use hyper_util::rt::TokioIo;
 use regex::Regex;
 use tokio::net::{TcpListener, TcpStream};
 
+use crate::http::{Body, full, html, plain};
 use crate::live::Hub;
 use crate::share::{Event, Hit, Tx};
 use crate::widget;
 
 mod rewrite;
 
-pub type Body = BoxBody<Bytes, hyper::Error>;
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
 static TEXT_TYPES: LazyLock<Regex> =
@@ -406,37 +405,4 @@ fn accepts_html(headers: &HeaderMap) -> bool {
         .get(header::ACCEPT)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|v| v.contains("text/html"))
-}
-
-pub fn full(bytes: impl Into<Bytes>) -> Body {
-    Full::new(bytes.into())
-        .map_err(|never| match never {})
-        .boxed()
-}
-
-/// An empty answer with this status.
-pub fn status(code: StatusCode) -> Response<Body> {
-    let mut response = Response::new(full(Bytes::new()));
-    *response.status_mut() = code;
-    response
-}
-
-fn plain(status: StatusCode, text: &'static str) -> Response<Body> {
-    let mut response = Response::new(full(text));
-    *response.status_mut() = status;
-    response.headers_mut().insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("text/plain; charset=utf-8"),
-    );
-    response
-}
-
-fn html(status: StatusCode, page: String) -> Response<Body> {
-    let mut response = Response::new(full(page));
-    *response.status_mut() = status;
-    response.headers_mut().insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("text/html; charset=utf-8"),
-    );
-    response
 }
