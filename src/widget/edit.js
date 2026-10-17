@@ -27,11 +27,15 @@ const editGuard = (event) => {
     grabNode(editing.node, event, whileDragged);
   }
 };
+// Escape cancels; Alt and an arrow move the element a place.
+const STEPS = { ArrowUp: -1, ArrowLeft: -1, ArrowDown: 1, ArrowRight: 1 };
 const editKey = (event) => {
-  if (event.key !== "Escape") return;
+  const by = event.altKey && STEPS[event.key];
+  if (event.key !== "Escape" && !by) return;
   event.preventDefault();
   event.stopPropagation();
-  cancelEdit();
+  if (by) step(by);
+  else cancelEdit();
 };
 
 // Above or below the element, whichever leaves it in view.

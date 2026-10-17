@@ -3,6 +3,7 @@
 const UNSEEN = ["script", "style", "template", "link", "meta", "noscript"];
 const SHIFT_MS = 160;
 const LIFT_PX = 4;
+const EDGE_PX = 48;
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
 const seen = (node) => node !== host && !UNSEEN.includes(node.localName) && getComputedStyle(node).display !== "none";
 
@@ -80,28 +81,46 @@ const placeUnder = (node, x, y) => {
 
 // A press on the element: past a few pixels it is lifted and follows the
 // pointer, its siblings making room. The window hears the pointer, since a
-// node moved in the page loses its pointer capture. `dragged` hears each
-// move, then the drop.
+// node moved in the page loses its pointer capture. Near the top or bottom
+// of the window, the page scrolls, faster closer to the edge. `dragged`
+// hears each move, then the drop.
+// ponytail: only the window scrolls, not a block that scrolls by itself.
 function grabNode(node, event, dragged) {
   const box = layoutBox(node);
   const start = { x: event.clientX, y: event.clientY };
   const hold = { x: event.clientX - box.left, y: event.clientY - box.top };
   const kept = keepInline(node, ["translate"]);
-  let moving = false;
+  let [moving, last, frame] = [false, null, 0];
+  const place = ({ clientX: x, clientY: y }) => {
+    moveTo(node, placeUnder(node, x, y), true);
+    const slot = layoutBox(node);
+    node.style.setProperty("translate", `${x - hold.x - slot.left}px ${y - hold.y - slot.top}px`, "important");
+    dragged(false);
+  };
+  const scroll = () => {
+    frame = 0;
+    const near = Math.min(last.clientY, innerHeight - last.clientY);
+    if (near >= EDGE_PX) return;
+    const before = scrollY;
+    scrollBy(0, Math.ceil((EDGE_PX - near) / 3) * (last.clientY < innerHeight / 2 ? -1 : 1));
+    if (scrollY === before) return;
+    place(last);
+    frame = requestAnimationFrame(scroll);
+  };
   const follow = (move) => {
     if (move.pointerId !== event.pointerId) return;
     if (!moving && Math.hypot(move.clientX - start.x, move.clientY - start.y) < LIFT_PX) return;
     moving = true;
-    moveTo(node, placeUnder(node, move.clientX, move.clientY), true);
-    const slot = layoutBox(node);
-    node.style.setProperty("translate", `${move.clientX - hold.x - slot.left}px ${move.clientY - hold.y - slot.top}px`, "important");
-    dragged(false);
+    last = move;
+    place(move);
+    if (!frame) frame = requestAnimationFrame(scroll);
   };
   const drop = (up) => {
     if (up.pointerId !== event.pointerId) return;
     removeEventListener("pointermove", follow, true);
     removeEventListener("pointerup", drop, true);
     removeEventListener("pointercancel", drop, true);
+    cancelAnimationFrame(frame);
     if (!moving) return;
     glide([node], () => putInline(node, kept));
     dragged(true);
