@@ -15,6 +15,13 @@ use super::{cast, hose};
 
 const DRAGON: Color = Color::Rgb(215, 50, 60);
 const STEEL: Color = Color::Rgb(175, 190, 205);
+// A Paris firefighter in a red helmet. Navy and black are lifted a little so
+// they still show on a dark terminal.
+const HELMET: Color = Color::Rgb(230, 50, 50);
+const NAVY: Color = Color::Rgb(45, 70, 140);
+const FLUO: Color = Color::Rgb(220, 255, 40);
+const BOOTS: Color = Color::Rgb(60, 60, 66);
+const FIGHTER_ROWS: i32 = 7;
 const DRAGON_ROWS: i32 = 11;
 const FLY_SPEED: f32 = 11.0;
 const FLAP: f32 = 0.22;
@@ -94,7 +101,7 @@ pub fn burrow(
     }
     let (e, dt) = (app.elapsed(), app.dt);
     let fleeing = app.ready_at.map(|at| (app.now - at).as_secs_f32());
-    let fighter = (x0 + 2, surface - 5);
+    let fighter = (x0 + 2, surface - FIGHTER_ROWS);
     let nozzle = (
         fighter.0 + cast::FIREFIGHTER_NOZZLE.0 + 1,
         fighter.1 + cast::FIREFIGHTER_NOZZLE.1,
@@ -217,10 +224,15 @@ pub fn burrow(
     if seen {
         cast::draw(buf, at, grid, flip, |_| red);
     }
-    cast::draw(buf, fighter, cast::FIREFIGHTER, false, |ink| match ink {
-        b'r' => theme.fg(fx::RED),
-        b's' => theme.fg(STEEL),
-        _ => theme.fg(fx::FG),
+    cast::draw(buf, fighter, cast::FIREFIGHTER, false, |ink| {
+        theme.fg(match ink {
+            b'h' => HELMET,
+            b'j' => NAVY,
+            b'y' => FLUO,
+            b'b' => BOOTS,
+            b's' => STEEL,
+            _ => fx::FG,
+        })
     });
     let ball = theme
         .fg(fx::hsv(30.0, 0.9, 1.0))
