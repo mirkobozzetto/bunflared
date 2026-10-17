@@ -70,7 +70,8 @@ root.innerHTML = `
     </form>
   </div>
   <div class="bar" role="dialog" aria-labelledby="bar-title" hidden>
-    <div class="bar-head"><h2 id="bar-title">Edit</h2><span class="bar-name"></span></div>
+    <div class="bar-head"><h2 id="bar-title">Edit</h2><span class="bar-name"></span>
+      <button class="chip parent" type="button">Parent</button><button class="chip child" type="button">Child</button></div>
     <div class="move" role="group" aria-label="Place in its block">
       <button class="chip earlier" type="button">Move earlier</button>
       <span class="place"></span>

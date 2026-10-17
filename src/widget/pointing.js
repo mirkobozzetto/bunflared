@@ -32,10 +32,17 @@ const describe = (node) => {
 const ours = (event) => event.composedPath().includes(host);
 let unhover = () => {};
 let hovered = null;
+const clearHover = () => {
+  unhover();
+  unhover = () => {};
+  hovered = null;
+};
+// In Edit, neither the element being edited nor anything while it is dragged.
 const hover = (event) => {
   if (ours(event) || event.target === hovered) return;
-  unhover();
+  clearHover();
   hovered = event.target;
+  if (editing && (dragging || editing.node.contains(hovered))) return;
   unhover = outline(hovered, `2px dashed ${PINK}`);
 };
 const swallow = (event) => {
@@ -88,9 +95,7 @@ const startPicking = (then, from, onPress = false) => {
   $(".stop").focus({ preventScroll: true });
 };
 function endPicking() {
-  unhover();
-  unhover = () => {};
-  hovered = null;
+  clearHover();
   if (pickOnPress) removeEventListener("pointerdown", press, true);
   removeEventListener("pointermove", hover, true);
   removeEventListener("click", choose, true);
