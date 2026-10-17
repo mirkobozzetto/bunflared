@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use super::{folder_ready, stamp};
+use super::folder_ready;
+use crate::clock::stamp;
 
 const MAX_PINNED: usize = 300;
 

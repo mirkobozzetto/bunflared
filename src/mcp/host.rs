@@ -13,11 +13,12 @@ use hyper::HeaderMap;
 use serde_json::{Value, json};
 use tokio::sync::watch;
 
+use crate::clock::{clock, uptime};
 use crate::live::{self, Command, Hub, REACTIONS};
 use crate::proxy::{self, Capture};
 use crate::share::{self, Event, Hit, Spec};
 use crate::state::{self, Record};
-use crate::widget::{Feedback, Presence, clock};
+use crate::widget::{Feedback, Presence};
 
 const KEEP_EVENTS: usize = 1000;
 const KEEP_REQUESTS: usize = 200;
@@ -441,7 +442,7 @@ impl Share {
             "local": self.local,
             "visitors": here,
             "requests": seen.total,
-            "uptime": state::uptime(now.saturating_sub(self.record.started_at)),
+            "uptime": uptime(now.saturating_sub(self.record.started_at)),
         })
     }
 
@@ -454,7 +455,7 @@ impl Share {
             .map(|v| {
                 let mut entry = visitor(&v.presence);
                 entry["status"] = json!(v.presence.status(v.seen.elapsed()));
-                entry["here_for"] = json!(state::uptime(v.first.elapsed().as_secs()));
+                entry["here_for"] = json!(uptime(v.first.elapsed().as_secs()));
                 entry
             })
             .collect();

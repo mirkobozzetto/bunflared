@@ -21,6 +21,7 @@ use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
 use tokio_tungstenite::tungstenite::protocol::{Message, Role, WebSocketConfig};
 
+use crate::clock::stamp;
 use crate::http::{Body, status};
 use crate::share::{Event, Tx};
 use crate::widget;
@@ -239,7 +240,7 @@ impl Hub {
         };
         let mut transcript = self.transcript.lock().unwrap();
         let path = transcript
-            .get_or_insert_with(|| folder.join(format!("session_{}.md", widget::stamp())));
+            .get_or_insert_with(|| folder.join(format!("session_{}.md", stamp())));
         let fresh = !path.exists();
         if widget::folder_ready(folder).is_err() {
             return;

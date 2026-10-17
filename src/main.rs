@@ -1,5 +1,6 @@
 mod agents;
 mod clipboard;
+mod clock;
 mod cloudflared;
 mod http;
 mod live;

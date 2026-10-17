@@ -22,10 +22,11 @@ use ratatui::style::{Color, Style};
 use tokio::sync::watch;
 
 use crate::clipboard;
+use crate::clock::{self, uptime};
 use crate::live::{self, Command, Hub, Pointer, REACTIONS};
 use crate::proxy::{Replayer, mount};
 use crate::share::{Event, Failure, Hit};
-use crate::state::{Record, uptime};
+use crate::state::Record;
 use crate::widget::{self, Presence};
 
 const BOOT: f32 = 2.2;
@@ -547,7 +548,7 @@ impl App {
                     who: note.device,
                     page: note.page,
                     text,
-                    clock: widget::clock(),
+                    clock: clock::clock(),
                 });
                 self.unlock("critic");
             }
@@ -563,7 +564,7 @@ impl App {
                     who: said.device,
                     page: said.page,
                     text: said.text,
-                    clock: widget::clock(),
+                    clock: clock::clock(),
                 });
             }
             Event::Pointer(pointer) => {
@@ -687,7 +688,7 @@ impl App {
         }
         self.rows.push_front(Row {
             hit,
-            clock: widget::clock(),
+            clock: clock::clock(),
             n: self.total,
             replayed: None,
         });
@@ -1076,7 +1077,7 @@ impl App {
                     who: to,
                     page: String::new(),
                     text,
-                    clock: widget::clock(),
+                    clock: clock::clock(),
                 });
             }
         }

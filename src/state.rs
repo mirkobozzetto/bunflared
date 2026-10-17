@@ -7,6 +7,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::clock::uptime;
 use crate::os;
 
 const DOWN_GRACE: Duration = Duration::from_secs(3);
@@ -116,14 +117,6 @@ pub fn list(json: bool) -> i32 {
         );
     }
     0
-}
-
-pub fn uptime(secs: u64) -> String {
-    match secs {
-        0..60 => format!("{secs}s"),
-        60..3600 => format!("{}m {:02}s", secs / 60, secs % 60),
-        _ => format!("{}h {:02}m", secs / 3600, secs % 3600 / 60),
-    }
 }
 
 pub fn down(id: Option<String>, all: bool) -> i32 {

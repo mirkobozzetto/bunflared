@@ -9,9 +9,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Paragraph};
 
 use super::{Home, Row};
+use crate::clock::uptime;
 use crate::ports::Listener;
 use crate::proxy::mount;
-use crate::state::uptime;
 use crate::tui::{Theme, fx};
 
 const PROGRAM_WIDTH: usize = 14;

@@ -14,6 +14,7 @@ use hyper::header::{self, HeaderValue};
 use hyper::{Method, Request, Response, StatusCode};
 use serde::Deserialize;
 
+use crate::clock::stamp;
 use crate::http::{Body, full, json, status};
 use crate::live::{self, Hub};
 use crate::share::{Event, Tx};
@@ -204,17 +205,6 @@ pub fn folder_ready(folder: &Path) -> std::io::Result<()> {
         fs::write(ignore, "# Client feedback collected by bunflared.\n*\n")?;
     }
     Ok(())
-}
-
-pub fn stamp() -> String {
-    chrono::Local::now()
-        .format("%Y-%m-%d_%H-%M-%S%.3f")
-        .to_string()
-}
-
-/// The time of day, as the logs show it.
-pub fn clock() -> String {
-    chrono::Local::now().format("%H:%M:%S").to_string()
 }
 
 fn save_shot(folder: &Path, image: &[u8]) -> std::io::Result<String> {
