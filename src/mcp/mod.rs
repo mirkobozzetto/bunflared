@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use crate::{notes, os};
+use crate::{clock, notes, os};
 use host::Host;
 
 /// Revisions with an `initialize` handshake, the newest first.
@@ -161,7 +161,18 @@ fn tool(host: &Arc<Host>, name: &str, args: &Value) -> Result<Value, String> {
             .ok_or("Pass the request's number, n.")
     };
     match name {
-        "open" => host.open(ports(args)?, args["public"].as_bool().unwrap_or(false)),
+        "open" => {
+            let expires_in = match &args["for"] {
+                Value::Null => None,
+                Value::String(text) => Some(clock::duration(text)?),
+                _ => return Err("Pass for as a string, like \"30m\".".into()),
+            };
+            host.open(
+                ports(args)?,
+                args["public"].as_bool().unwrap_or(false),
+                expires_in,
+            )
+        }
         "list" => Ok(host.list()),
         "close" => host.close(text("share").ok_or("Pass the id of the share to close.")?),
         "visitors" => Ok(share()?.visitors()),
@@ -220,6 +231,7 @@ fn tools() -> Value {
                 "properties": {
                     "ports": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 65535 }, "minItems": 1 },
                     "public": { "type": "boolean", "description": "Only when someone on another device must open it, a client or a phone: a https link through a Cloudflare quick tunnel, which hands out a limited number of links. Default false." },
+                    "for": { "type": "string", "description": "Close the share by itself after this long: 90s, 30m, 2h, 1h30m. Visitors hear it a minute before. Open until closed when left out." },
                 },
                 "required": ["ports"],
             },

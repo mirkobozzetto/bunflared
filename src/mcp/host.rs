@@ -58,14 +58,24 @@ impl Host {
     }
 
     /// Starts a share and returns once it answers, or with why it could not.
-    pub fn open(self: &Arc<Self>, ports: Vec<u16>, public: bool) -> Result<Value, String> {
+    pub fn open(
+        self: &Arc<Self>,
+        ports: Vec<u16>,
+        public: bool,
+        expires_in: Option<Duration>,
+    ) -> Result<Value, String> {
         self.opening.fetch_add(1, Ordering::SeqCst);
-        let opened = self.start(ports, public);
+        let opened = self.start(ports, public, expires_in);
         self.opening.fetch_sub(1, Ordering::SeqCst);
         opened
     }
 
-    fn start(self: &Arc<Self>, ports: Vec<u16>, public: bool) -> Result<Value, String> {
+    fn start(
+        self: &Arc<Self>,
+        ports: Vec<u16>,
+        public: bool,
+        expires_in: Option<Duration>,
+    ) -> Result<Value, String> {
         let n = self.opened.fetch_add(1, Ordering::Relaxed) + 1;
         let id = format!("{}-{n}", std::process::id());
         let (tx, rx) = mpsc::channel();
@@ -82,6 +92,7 @@ impl Host {
             local: !public,
             id: id.clone(),
             copy: false,
+            expires_in,
         };
         let (folder, served) = (self.folder.clone(), hub.clone());
         let thread = std::thread::spawn(move || {

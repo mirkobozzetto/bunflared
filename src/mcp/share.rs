@@ -77,6 +77,7 @@ impl Share {
             "visitors": here,
             "requests": seen.total,
             "uptime": uptime(now.saturating_sub(self.record.started_at)),
+            "expires_at": self.record.expires_at,
         })
     }
 
