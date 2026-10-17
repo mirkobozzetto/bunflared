@@ -6,9 +6,10 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 
 use super::art::{self, Frame3};
+use super::boot::Qr;
 use super::fx::{self, put};
 use super::scenes::wrap;
-use super::{App, Ask, Focus, LANE_TRIP, Qr, Replay, Row, Theme, plural};
+use super::{App, Ask, Focus, LANE_TRIP, Replay, Row, Theme, plural};
 use crate::event::{CAPTURE, Capture};
 use crate::live::REACTIONS;
 use crate::visitors::Visitor;
@@ -110,7 +111,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     .areas(area);
     draw_header(app, frame, header);
 
-    let qr_size = app.qr_code.as_ref().map_or(0, |qr| qr.size as u16);
+    let qr_size = app.boot.qr_code.as_ref().map_or(0, |qr| qr.size as u16);
     let (qr_width, qr_height) = (qr_size + 2, qr_size.div_ceil(2) + 2);
     let fits = qr_size > 0 && body.width >= qr_width + QR_MIN_MAIN && body.height >= qr_height;
     let mut visitors = None;
@@ -124,7 +125,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         let inner = block.inner(side);
         frame.render_widget(block, side);
         app.spots.qr = Some(side);
-        if let Some(qr) = &app.qr_code {
+        if let Some(qr) = &app.boot.qr_code {
             draw_qr(
                 frame.buffer_mut(),
                 &app.theme,
@@ -210,8 +211,8 @@ fn draw_header(app: &App, frame: &mut Frame, area: Rect) {
         .title_top(live);
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    let url = app.url.clone().unwrap_or_default();
-    let (note, color) = if app.copied {
+    let url = app.boot.url.clone().unwrap_or_default();
+    let (note, color) = if app.boot.copied {
         ("✓ in your clipboard", fx::GREEN)
     } else {
         ("press c to copy", fx::DIM)
@@ -412,6 +413,7 @@ fn draw_ports(app: &App, frame: &mut Frame, area: Rect) {
         (e * 8.0) as usize
     };
     let lines: Vec<Line> = app
+        .boot
         .ports
         .iter()
         .enumerate()
@@ -786,7 +788,7 @@ fn draw_footer(app: &App, frame: &mut Frame, area: Rect) {
 
 fn compact(app: &App, frame: &mut Frame, area: Rect) {
     let theme = &app.theme;
-    let status = if app.ready_at.is_some() {
+    let status = if app.boot.ready_at.is_some() {
         format!("● LIVE {}", hms(app.live_for()))
     } else {
         "digging...".into()
@@ -800,7 +802,7 @@ fn compact(app: &App, frame: &mut Frame, area: Rect) {
             Span::styled(status, theme.fg(fx::RED)),
         ]),
         Line::from(Span::styled(
-            app.url.clone().unwrap_or_default(),
+            app.boot.url.clone().unwrap_or_default(),
             theme.fg(fx::CYAN).add_modifier(Modifier::BOLD),
         )),
         Line::from(Span::styled(
@@ -1044,7 +1046,7 @@ fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
 pub fn overlays(app: &mut App, frame: &mut Frame) {
     let area = frame.area();
     if app.qr
-        && let Some(qr) = &app.qr_code
+        && let Some(qr) = &app.boot.qr_code
     {
         let rect = centered_rect(area, qr.size as u16 + 4, qr.size.div_ceil(2) as u16 + 4);
         frame.render_widget(Clear, rect);

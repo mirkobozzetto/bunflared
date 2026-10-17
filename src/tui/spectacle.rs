@@ -101,7 +101,7 @@ pub fn burrow(
         return;
     }
     let (e, dt) = (app.elapsed(), app.dt);
-    let fleeing = app.ready_at.map(|at| (app.now - at).as_secs_f32());
+    let fleeing = app.boot.ready_at.map(|at| (app.now - at).as_secs_f32());
     let fighter = (x0 + 2, surface - FIGHTER_ROWS);
     let nozzle = (
         fighter.0 + cast::FIREFIGHTER_NOZZLE.0 + 1,

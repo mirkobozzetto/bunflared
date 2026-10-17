@@ -1,4 +1,5 @@
 mod art;
+mod boot;
 mod cast;
 mod dashboard;
 mod fx;
@@ -23,12 +24,12 @@ use tokio::sync::watch;
 
 use crate::clipboard;
 use crate::clock::{self, uptime};
-use crate::event::{Event, Failure, Hit, Pointer};
+use crate::event::{Event, Hit, Pointer};
 use crate::live::{self, Command, Hub, REACTIONS};
 use crate::notes;
-use crate::proxy::{Replayer, mount};
-use crate::state::Record;
+use crate::proxy::Replayer;
 use crate::visitors::Roster;
+use boot::Boot;
 
 const BOOT: f32 = 2.2;
 const LAUNCH: f32 = 4.0;
@@ -116,14 +117,6 @@ pub enum Phase {
     Failed,
 }
 
-pub struct PortState {
-    pub port: u16,
-    pub route: String,
-    pub checked: Option<bool>,
-    pub up: bool,
-    pub hits: u32,
-}
-
 pub struct Row {
     pub hit: Hit,
     pub clock: String,
@@ -188,11 +181,6 @@ pub struct Prompt {
     pub pick: Option<usize>,
 }
 
-pub struct Qr {
-    pub size: usize,
-    pub dark: Vec<bool>,
-}
-
 pub struct App {
     pub theme: Theme,
     pub phase: Phase,
@@ -211,18 +199,9 @@ pub struct App {
     pub runners: Vec<Runner>,
     pub launch_bursts: u8,
 
-    pub ports: Vec<PortState>,
-    pub url: Option<String>,
-    pub record: Option<Record>,
-    pub qr_code: Option<Qr>,
+    pub boot: Boot,
     /// Particles skip this area: the QR code, the freshly announced link.
     pub keep_clear: Option<Rect>,
-    pub resolved: bool,
-    pub copied: bool,
-    pub progress: f32,
-    target: f32,
-    pub stage: String,
-    pub ready_at: Option<Instant>,
     pub rows: VecDeque<Row>,
     pub total: u32,
     pub classes: [u32; 4],
@@ -233,7 +212,6 @@ pub struct App {
     bucket_at: Instant,
     pub last_hit: Option<Instant>,
     pub last_error: Option<Instant>,
-    pub failure: Option<Failure>,
     pub unlocked: Vec<&'static art::Achievement>,
     pub roster: Roster,
     /// The followed visitors' pointers, and when they last moved.
@@ -306,17 +284,6 @@ impl App {
     fn new(ports: &[u16], theme: Theme, hub: Arc<Hub>, replayer: Replayer) -> Self {
         let calm = theme.calm;
         let now = Instant::now();
-        let ports = ports
-            .iter()
-            .enumerate()
-            .map(|(i, &port)| PortState {
-                port,
-                route: if i == 0 { "/".into() } else { mount(port) },
-                checked: None,
-                up: true,
-                hits: 0,
-            })
-            .collect();
         Self {
             theme,
             phase: Phase::Boot,
@@ -334,17 +301,8 @@ impl App {
             toasts: Vec::new(),
             runners: Vec::new(),
             launch_bursts: 0,
-            ports,
-            url: None,
-            record: None,
-            qr_code: None,
+            boot: Boot::new(ports),
             keep_clear: None,
-            resolved: false,
-            copied: false,
-            progress: 0.0,
-            target: 0.05,
-            stage: "Sniffing around".into(),
-            ready_at: None,
             rows: VecDeque::new(),
             total: 0,
             classes: [0; 4],
@@ -355,7 +313,6 @@ impl App {
             bucket_at: now,
             last_hit: None,
             last_error: None,
-            failure: None,
             unlocked: Vec::new(),
             roster: Roster::default(),
             pointers: HashMap::new(),
@@ -416,13 +373,13 @@ impl App {
     }
 
     pub fn live_for(&self) -> u64 {
-        self.ready_at.map_or(0, |at| (self.now - at).as_secs())
+        self.boot.ready_at.map_or(0, |at| (self.now - at).as_secs())
     }
 
     pub fn sleeping(&self) -> bool {
         let since = self
             .last_hit
-            .or(self.ready_at)
+            .or(self.boot.ready_at)
             .map_or(0.0, |at| (self.now - at).as_secs_f32());
         since > SLEEP_AFTER
     }
@@ -459,46 +416,14 @@ impl App {
     fn on_event(&mut self, event: Event, now: Instant) {
         self.now = now;
         match event {
-            Event::PortChecked { port, ok } => {
-                if let Some(state) = self.ports.iter_mut().find(|p| p.port == port) {
-                    state.checked = Some(ok);
-                    state.up = ok;
-                }
-            }
-            Event::FetchingCloudflared => {
-                self.target = self.target.max(0.08);
-                self.stage = "Fetching cloudflared, first run only".into();
-            }
-            Event::TunnelStarting => {
-                self.target = self.target.max(0.12);
-                self.stage = "Waking up cloudflared".into();
-            }
-            Event::TunnelUrl(url) => {
-                self.url = Some(url);
-                self.target = self.target.max(0.35);
-                self.stage = "Plugging into Cloudflare's edge".into();
-            }
-            Event::TunnelRegistered => {
-                self.target = self.target.max(0.5);
-                self.stage = "Waiting for DNS to notice".into();
-            }
-            Event::DnsAttempt(attempt) => {
-                let dns = 0.5 + 0.45 * (1.0 - 0.85f32.powi(attempt as i32));
-                self.target = self.target.max(dns);
-                self.stage = format!("Waiting for DNS to notice, attempt {attempt}");
-            }
-            Event::Ready {
-                record,
-                resolved,
-                copied,
-            } => {
-                self.url = Some(record.url.clone());
-                self.qr_code = qr(&record.url);
-                self.record = Some(record);
-                self.resolved = resolved;
-                self.copied = copied;
-                self.ready_at = Some(now);
-                self.target = 1.0;
+            Event::PortChecked { .. }
+            | Event::FetchingCloudflared
+            | Event::TunnelStarting
+            | Event::TunnelUrl(_)
+            | Event::TunnelRegistered
+            | Event::DnsAttempt(_) => self.boot.on(event, now),
+            Event::Ready { .. } => {
+                self.boot.on(event, now);
                 if local_hour() < 5 {
                     self.unlock("owl");
                 }
@@ -583,9 +508,7 @@ impl App {
                 self.toast(title, body, false);
             }
             Event::PortHealth { port, ok } => {
-                if let Some(state) = self.ports.iter_mut().find(|p| p.port == port) {
-                    state.up = ok;
-                }
+                self.boot.health(port, ok);
                 if ok {
                     self.toast(
                         format!("♥ port {port} is back"),
@@ -607,7 +530,7 @@ impl App {
             }
             Event::Done(Err(failure)) => {
                 if self.quitting.is_none() {
-                    self.failure = Some(failure);
+                    self.boot.failure = Some(failure);
                     self.go(Phase::Failed);
                 }
             }
@@ -627,9 +550,7 @@ impl App {
         if let Some(back) = self.per_second.back_mut() {
             *back += 1;
         }
-        if let Some(state) = self.ports.iter_mut().find(|p| p.port == hit.port) {
-            state.hits += 1;
-        }
+        self.boot.hit(hit.port);
         if self.visitors.insert(hit.visitor.clone()) {
             match self.visitors.len() {
                 1 => self.unlock("first"),
@@ -688,8 +609,8 @@ impl App {
         match self.phase {
             Phase::Boot if calm || t >= BOOT => self.go(Phase::Preflight),
             Phase::Preflight => {
-                let checked = self.ports.iter().all(|p| p.checked.is_some());
-                let shown = calm || t >= 0.3 + SNIFF * self.ports.len() as f32 + 0.4;
+                let checked = self.boot.ports.iter().all(|p| p.checked.is_some());
+                let shown = calm || t >= 0.3 + SNIFF * self.boot.ports.len() as f32 + 0.4;
                 if checked && shown {
                     self.go(Phase::Digging);
                 }
@@ -697,6 +618,7 @@ impl App {
             // The dragon flees before LIVE!.
             Phase::Digging
                 if self
+                    .boot
                     .ready_at
                     .is_some_and(|at| calm || (now - at).as_secs_f32() >= spectacle::FLEE) =>
             {
@@ -712,17 +634,14 @@ impl App {
             _ => {}
         }
         if self
+            .boot
             .ready_at
             .is_some_and(|at| (now - at).as_secs_f32() >= MARATHON)
         {
             self.unlock("marathon");
         }
 
-        if self.ready_at.is_none() {
-            // Creep between milestones so the bar never looks stuck.
-            self.target = (self.target + self.dt * 0.01).min(0.97);
-        }
-        self.progress += (self.target - self.progress) * (self.dt * 3.0).min(1.0);
+        self.boot.tick(self.dt);
         while now.duration_since(self.bucket_at) >= Duration::from_secs(1) {
             self.bucket_at += Duration::from_secs(1);
             self.per_second.push_back(0);
@@ -763,7 +682,7 @@ impl App {
                 return;
             }
             Phase::Failed => {
-                self.exit = Some(self.failure.as_ref().map_or(1, |f| f.code));
+                self.exit = Some(self.boot.failure.as_ref().map_or(1, |f| f.code));
                 return;
             }
             _ if quit => {
@@ -877,7 +796,7 @@ impl App {
             }
             KeyCode::Char('?') => self.help = !self.help,
             // The code already on screen flashes instead of opening twice.
-            KeyCode::Char('r') if self.qr_code.is_some() => {
+            KeyCode::Char('r') if self.boot.qr_code.is_some() => {
                 if self.qr || self.spots.qr.is_none() {
                     self.qr = !self.qr;
                 } else if self.theme.calm {
@@ -887,9 +806,9 @@ impl App {
                 }
             }
             KeyCode::Char('c') => {
-                if let Some(url) = &self.url {
-                    self.copied = clipboard::copy(url);
-                    let body = if self.copied {
+                if let Some(url) = &self.boot.url {
+                    self.boot.copied = clipboard::copy(url);
+                    let body = if self.boot.copied {
                         "Paste it anywhere."
                     } else {
                         "No clipboard tool found."
@@ -898,7 +817,12 @@ impl App {
                 }
             }
             KeyCode::Char('o') => {
-                if let Some(url) = self.url.clone().filter(|_| self.ready_at.is_some()) {
+                if let Some(url) = self
+                    .boot
+                    .url
+                    .clone()
+                    .filter(|_| self.boot.ready_at.is_some())
+                {
                     clipboard::open(&url);
                     self.toast("Opening your browser", "Say hi to the bunny.", false);
                 }
@@ -1189,11 +1113,16 @@ impl App {
 
     /// What stays in the scrollback once the terminal is restored.
     fn farewell(&self) {
-        if let Some(failure) = &self.failure {
+        if let Some(failure) = &self.boot.failure {
             eprintln!("bunflared: {}", failure.message);
             return;
         }
-        let Some(url) = &self.url.as_ref().filter(|_| self.ready_at.is_some()) else {
+        let Some(url) = &self
+            .boot
+            .url
+            .as_ref()
+            .filter(|_| self.boot.ready_at.is_some())
+        else {
             return;
         };
         let paint = |code: &str, text: &str| {
@@ -1258,21 +1187,6 @@ fn stepped<T: PartialEq + Clone>(items: &[T], current: Option<&T>, down: bool) -
         (Some(i), false) => i.saturating_sub(1),
     };
     Some(items[next].clone())
-}
-
-fn qr(url: &str) -> Option<Qr> {
-    const QUIET: usize = 2;
-    let code = qrcode::QrCode::with_error_correction_level(url, qrcode::EcLevel::L).ok()?;
-    let width = code.width();
-    let colors = code.to_colors();
-    let size = width + QUIET * 2;
-    let mut dark = vec![false; size * size];
-    for y in 0..width {
-        for x in 0..width {
-            dark[(y + QUIET) * size + x + QUIET] = colors[y * width + x] == qrcode::Color::Dark;
-        }
-    }
-    Some(Qr { size, dark })
 }
 
 fn local_hour() -> u32 {

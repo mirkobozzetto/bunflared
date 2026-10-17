@@ -174,7 +174,7 @@ pub fn preflight(app: &mut App, frame: &mut Frame) {
     let t = app.t();
     let calm = app.theme.calm;
     let buf = frame.buffer_mut();
-    let rows = app.ports.len() as i32;
+    let rows = app.boot.ports.len() as i32;
     let top = area.y as i32 + (area.height as i32 - (3 + rows * 2)) / 2;
     let x0 = center(area, 52);
     centered(
@@ -185,7 +185,7 @@ pub fn preflight(app: &mut App, frame: &mut Frame) {
         app.theme.fg(fx::PINK).add_modifier(Modifier::BOLD),
     );
 
-    for (i, port) in app.ports.iter().enumerate() {
+    for (i, port) in app.boot.ports.iter().enumerate() {
         let appear = 0.3 + i as f32 * SNIFF;
         if !calm && t < appear {
             continue;
@@ -271,7 +271,7 @@ pub fn digging(app: &mut App, frame: &mut Frame) {
         }
     }
     let run = cast::width(cast::RUN_A);
-    let head = x0 + ((width - run - 1) as f32 * app.progress) as i32;
+    let head = x0 + ((width - run - 1) as f32 * app.boot.progress) as i32;
     for col in x0..(head + run).min(x0 + width) {
         for row in 1..=4 {
             put(buf, col, surface + row, " ", Style::new());
@@ -287,7 +287,7 @@ pub fn digging(app: &mut App, frame: &mut Frame) {
     cast::draw(buf, (x_pose, surface + 1), pose, false, |_| fg);
 
     let bar = width - 24;
-    let filled = (bar as f32 * app.progress) as i32;
+    let filled = (bar as f32 * app.boot.progress) as i32;
     let y = surface + 7;
     put(buf, x0, y, "[", theme.fg(fx::DIM));
     for i in 0..bar {
@@ -300,12 +300,12 @@ pub fn digging(app: &mut App, frame: &mut Frame) {
     }
     let depth = format!(
         "] {:>3}%  depth {:.1} m",
-        (app.progress * 100.0) as i32,
-        app.progress * DEPTH_METERS
+        (app.boot.progress * 100.0) as i32,
+        app.boot.progress * DEPTH_METERS
     );
     put(buf, x0 + 1 + bar, y, &depth, theme.fg(fx::FG));
-    put(buf, x0, y + 1, &app.stage, theme.fg(fx::DIM));
-    if let Some(url) = &app.url {
+    put(buf, x0, y + 1, &app.boot.stage, theme.fg(fx::DIM));
+    if let Some(url) = &app.boot.url {
         put(
             buf,
             x0,
@@ -361,7 +361,7 @@ pub fn launch(app: &mut App, frame: &mut Frame) {
     let fg = theme.fg(fx::FG);
     cast::draw(buf, hands, pose, false, |_| fg);
 
-    let Some(url) = &app.url else {
+    let Some(url) = &app.boot.url else {
         hint(buf, area, theme, "any key for the dashboard");
         return;
     };
@@ -399,7 +399,7 @@ pub fn launch(app: &mut App, frame: &mut Frame) {
         &format!("╰{}╯", "─".repeat(inner as usize)),
         border,
     );
-    let (note, color) = if app.copied {
+    let (note, color) = if app.boot.copied {
         ("✓ copied to your clipboard", fx::GREEN)
     } else {
         ("press c to copy", fx::DIM)
@@ -407,7 +407,7 @@ pub fn launch(app: &mut App, frame: &mut Frame) {
     if x == rest {
         centered(buf, area, y + 4, note, theme.fg(color));
     }
-    if !app.resolved {
+    if !app.boot.resolved {
         centered(
             buf,
             area,
@@ -469,7 +469,7 @@ pub fn failed(app: &mut App, frame: &mut Frame) {
         "Oh no.",
         theme.fg(fx::RED).add_modifier(Modifier::BOLD),
     );
-    let message = app.failure.as_ref().map_or("", |f| f.message.as_str());
+    let message = app.boot.failure.as_ref().map_or("", |f| f.message.as_str());
     let width = (area.width as usize).saturating_sub(6).max(20);
     for (i, line) in message
         .lines()
