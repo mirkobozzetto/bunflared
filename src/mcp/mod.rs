@@ -3,6 +3,7 @@
 //! dashboard gives a person.
 
 mod host;
+mod journal;
 
 use std::io::{BufRead, Write};
 use std::sync::Arc;
