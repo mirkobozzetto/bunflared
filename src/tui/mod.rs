@@ -24,11 +24,11 @@ use tokio::sync::watch;
 use crate::clipboard;
 use crate::clock::{self, uptime};
 use crate::live::{self, Command, Hub, Pointer, REACTIONS};
+use crate::notes;
 use crate::proxy::{Replayer, mount};
 use crate::share::{Event, Failure, Hit};
 use crate::state::Record;
 use crate::visitors::Roster;
-use crate::widget;
 
 const BOOT: f32 = 2.2;
 const LAUNCH: f32 = 4.0;
@@ -1235,7 +1235,7 @@ impl App {
             let note = format!(
                 "✎ {} saved in {}/",
                 plural(self.feedback as usize, "feedback note"),
-                widget::FOLDER
+                notes::FOLDER
             );
             println!("               {}", paint("36", &note));
         }

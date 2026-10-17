@@ -2,7 +2,6 @@
 //! dashboard, and a feedback tab whose notes and screenshots are saved in
 //! the folder bunflared runs from.
 
-use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -13,19 +12,13 @@ use hyper::header::{self, HeaderValue};
 use hyper::{Method, Request, Response, StatusCode};
 use serde::Deserialize;
 
-use crate::clock::stamp;
 use crate::http::{Body, full, json, status};
 use crate::live::{self, Hub};
+use crate::notes::{Feedback, Note, save_note, save_shot};
 use crate::share::{Event, Tx};
 use crate::visitors::{Presence, device};
 
-mod note;
-
-pub use note::Feedback;
-use note::{Note, save_note};
-
 pub const PREFIX: &str = "/_bunflared/";
-pub const FOLDER: &str = "bunflared-feedback";
 // The page loads one script: its parts share one function scope, in this
 // order, and the stylesheet becomes a string inside it.
 const SCRIPT: &str = concat!(
@@ -156,44 +149,6 @@ async fn read(request: Request<Incoming>, max: usize) -> Option<Bytes> {
         .await
         .ok()
         .map(|collected| collected.to_bytes())
-}
-
-/// The feedback folder, created with a `.gitignore` of its own so no project
-/// ever commits a client's notes by accident.
-pub fn folder_ready(folder: &Path) -> std::io::Result<()> {
-    fs::create_dir_all(folder)?;
-    let ignore = folder.join(".gitignore");
-    if !ignore.exists() {
-        fs::write(ignore, "# Client feedback collected by bunflared.\n*\n")?;
-    }
-    Ok(())
-}
-
-fn save_shot(folder: &Path, image: &[u8]) -> std::io::Result<String> {
-    let extension = match image {
-        [0x89, b'P', b'N', b'G', ..] => "png",
-        [0xFF, 0xD8, 0xFF, ..] => "jpg",
-        [
-            b'R',
-            b'I',
-            b'F',
-            b'F',
-            _,
-            _,
-            _,
-            _,
-            b'W',
-            b'E',
-            b'B',
-            b'P',
-            ..,
-        ] => "webp",
-        _ => return Err(std::io::ErrorKind::InvalidData.into()),
-    };
-    folder_ready(folder)?;
-    let name = format!("{}.{extension}", stamp());
-    fs::write(folder.join(&name), image)?;
-    Ok(name)
 }
 
 fn script() -> Response<Body> {

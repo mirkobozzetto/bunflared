@@ -2,8 +2,6 @@
 //! bunflared, so the dashboard can talk to visitors and drive the demo.
 
 use std::collections::HashMap;
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -21,10 +19,9 @@ use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
 use tokio_tungstenite::tungstenite::protocol::{Message, Role, WebSocketConfig};
 
-use crate::clock::stamp;
 use crate::http::{Body, status};
+use crate::notes::Transcript;
 use crate::share::{Event, Tx};
-use crate::widget;
 
 const MAX_MESSAGE: usize = 16 * 1024;
 const MAX_TEXT: usize = 2000;
@@ -116,9 +113,8 @@ pub struct Hub {
     sockets: Mutex<HashMap<u64, Socket>>,
     next: AtomicU64,
     tx: Tx,
-    /// The feedback folder, where the chat transcript goes too.
-    folder: Option<PathBuf>,
-    transcript: Mutex<Option<PathBuf>>,
+    /// In the feedback folder, when there is one.
+    transcript: Option<Transcript>,
     followed: Mutex<Option<String>>,
 }
 
@@ -128,8 +124,7 @@ impl Hub {
             sockets: Mutex::default(),
             next: AtomicU64::new(0),
             tx,
-            folder,
-            transcript: Mutex::default(),
+            transcript: folder.map(Transcript::new),
             followed: Mutex::default(),
         }
     }
@@ -235,23 +230,9 @@ impl Hub {
     }
 
     fn keep(&self, line: &str) {
-        let Some(folder) = &self.folder else {
-            return;
-        };
-        let mut transcript = self.transcript.lock().unwrap();
-        let path = transcript.get_or_insert_with(|| folder.join(format!("session_{}.md", stamp())));
-        let fresh = !path.exists();
-        if widget::folder_ready(folder).is_err() {
-            return;
+        if let Some(transcript) = &self.transcript {
+            transcript.keep(line);
         }
-        let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) else {
-            return;
-        };
-        let now = chrono::Local::now();
-        if fresh {
-            let _ = writeln!(file, "# Live session, {}\n", now.format("%Y-%m-%d %H:%M"));
-        }
-        let _ = writeln!(file, "- {} {line}", now.format("%H:%M:%S"));
     }
 
     async fn serve(

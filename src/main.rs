@@ -5,6 +5,7 @@ mod cloudflared;
 mod http;
 mod live;
 mod mcp;
+mod notes;
 mod os;
 mod ports;
 mod proxy;
@@ -205,7 +206,7 @@ fn main() {
             let feedback = (!cli.no_widget)
                 .then(|| std::env::current_dir().ok())
                 .flatten()
-                .map(|dir| dir.join(widget::FOLDER));
+                .map(|dir| dir.join(notes::FOLDER));
             let spec = share::Spec {
                 ports: cli.ports,
                 local: cli.local,

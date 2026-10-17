@@ -15,11 +15,11 @@ use tokio::sync::watch;
 
 use crate::clock::{clock, uptime};
 use crate::live::{self, Command, Hub, REACTIONS};
+use crate::notes::Feedback;
 use crate::proxy::{self, Capture};
 use crate::share::{self, Event, Hit, Spec};
 use crate::state::{self, Record};
 use crate::visitors::{Presence, Roster};
-use crate::widget::Feedback;
 
 const KEEP_EVENTS: usize = 1000;
 const KEEP_REQUESTS: usize = 200;
