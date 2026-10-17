@@ -136,7 +136,10 @@ impl Share {
             Some(error) => return Err(format!("The page could not take the screenshot: {error}")),
             None => {}
         }
-        let folder = self.folder.as_ref().ok_or("No folder to keep screenshots in.")?;
+        let folder = self
+            .folder
+            .as_ref()
+            .ok_or("No folder to keep screenshots in.")?;
         let shot = looked
             .shot
             .filter(|name| notes::kept(folder, name))

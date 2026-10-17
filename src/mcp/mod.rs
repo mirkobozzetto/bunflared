@@ -3,10 +3,12 @@
 //! dashboard gives a person.
 
 mod host;
+mod image;
 mod journal;
 mod share;
 
 use std::io::{BufRead, Write};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -30,7 +32,10 @@ and `wait` to hold the call until something happens instead of polling. Answer w
 `replay` inspect the traffic. With channels on, visitors' messages and notes also \
 arrive by themselves as <channel source=\"bunflared\" kind=\"message|note\" share=... \
 visitor=...>: answer with `say`, passing that share and visitor. Notes are Markdown \
-files with a screenshot, in bunflared-feedback/. A note point made with the widget's Edit \
+files with a screenshot, in bunflared-feedback/; a pointed element carries its source \
+file, line and component when the app's dev build exposes them. `screenshot` shows you \
+what a visitor sees now; `reload` with a `selector` reloads and shows you that element, \
+to check a fix. A note point made with the widget's Edit \
 mode carries exact changes in its comment, before and after (`Moved from place 3 to place 1 \
 of 4; Margin top and bottom 8 -> 16 px`, colors in hex; a move to another block gives the \
 new block's selector after the move), shown to the visitor as a preview: make them in the code, then `reload` so the real page replaces it. \
@@ -129,14 +134,20 @@ fn initialize(params: &Value) -> Value {
 
 fn call(host: &Arc<Host>, params: &Value) -> Value {
     let name = params["name"].as_str().unwrap_or("");
-    let (text, failed) = match tool(host, name, &params["arguments"]) {
+    let (text, failed, image) = match tool(host, name, &params["arguments"]) {
+        // A screenshot the tool took goes along as an image the agent sees.
         Ok(value) => (
             serde_json::to_string_pretty(&value).unwrap_or_default(),
             false,
+            value["screenshot"]
+                .as_str()
+                .and_then(|path| image::block(Path::new(path))),
         ),
-        Err(message) => (message, true),
+        Err(message) => (message, true, None),
     };
-    json!({ "content": [{ "type": "text", "text": text }], "isError": failed })
+    let mut content = vec![json!({ "type": "text", "text": text })];
+    content.extend(image);
+    json!({ "content": content, "isError": failed })
 }
 
 fn tool(host: &Arc<Host>, name: &str, args: &Value) -> Result<Value, String> {
@@ -156,7 +167,11 @@ fn tool(host: &Arc<Host>, name: &str, args: &Value) -> Result<Value, String> {
         "visitors" => Ok(share()?.visitors()),
         "say" => share()?.say(visitor, text("text").unwrap_or("")),
         "go" => share()?.go(visitor, text("path").unwrap_or("")),
-        "reload" => share()?.reload(visitor),
+        "reload" => match text("selector") {
+            Some(selector) => share()?.look(visitor, Some(selector), true),
+            None => share()?.reload(visitor),
+        },
+        "screenshot" => share()?.look(visitor, None, false),
         "events" => {
             let since = args["since"].as_u64().unwrap_or(0);
             let wait = args["wait"].as_u64().unwrap_or(0).min(MAX_WAIT);
@@ -244,7 +259,19 @@ fn tools() -> Value {
         },
         {
             "name": "reload",
-            "description": "Reload the pages, after a fix for instance.",
+            "description": "Reload the pages, after a fix for instance. With a selector, reload one visitor's page and return a screenshot of that element once it is back, to check the fix.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "selector": { "type": "string", "description": "A CSS selector, like a note point's." },
+                    "visitor": visitor,
+                    "share": share,
+                },
+            },
+        },
+        {
+            "name": "screenshot",
+            "description": "What a visitor sees now: a screenshot of their screen, and its title, path, size and visible text. On a public link the visitor is asked first. The visitor can be left out when only one is here.",
             "inputSchema": { "type": "object", "properties": { "visitor": visitor, "share": share } },
         },
         {
