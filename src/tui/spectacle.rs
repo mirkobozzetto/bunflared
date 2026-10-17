@@ -113,11 +113,11 @@ pub fn burrow(
     let land = ((reach + 3) as f32, (x0 + width - 6) as f32);
     // Rows the dragon may zigzag through, when the terminal is tall enough.
     let room = surface - 1 - sky - DRAGON_ROWS;
-    let show = &mut app.spectacle;
+    let show = &mut app.show.spectacle;
     let wild = (show.soaked / SOAKED).min(1.0);
 
     let (mut x, mut heading) = show.dragon.unwrap_or((high as f32, -1.0));
-    if app.rng.range(0.0, 1.0) < wild * dt * 1.5 {
+    if app.show.rng.range(0.0, 1.0) < wild * dt * 1.5 {
         heading = -heading;
     }
     x = (x + heading * FLY_SPEED * (1.0 + wild) * dt).clamp(low as f32, high.max(low) as f32);
@@ -143,7 +143,8 @@ pub fn burrow(
     if fleeing.is_none() && e >= show.next_spit && show.flames.len() + show.spits.len() < MAX_FLAMES
     {
         show.next_spit = e + SPIT_EVERY * (1.0 - 0.5 * wild);
-        let ahead = app.rng.range(3.0, 10.0) * heading + app.rng.range(-10.0, 10.0) * wild;
+        let ahead =
+            app.show.rng.range(3.0, 10.0) * heading + app.show.rng.range(-10.0, 10.0) * wild;
         let to = (
             (mouth.0 + ahead).clamp(land.0, land.1),
             (surface - 1) as f32,
@@ -185,28 +186,31 @@ pub fn burrow(
     if show.flames.first().is_some_and(|flame| flame.wet >= DOUSE) {
         let out = show.flames.remove(0);
         for _ in 0..10 {
-            let x = out.x as f32 + app.rng.range(-1.5, 1.5);
-            app.particles.steam(&mut app.rng, x, (surface - 1) as f32);
+            let x = out.x as f32 + app.show.rng.range(-1.5, 1.5);
+            app.show
+                .particles
+                .steam(&mut app.show.rng, x, (surface - 1) as f32);
         }
     }
-    if seen && app.rng.range(0.0, 1.0) < wild * 0.5 {
+    if seen && app.show.rng.range(0.0, 1.0) < wild * 0.5 {
         // A soaked dragon drips, and steams where the water hits it.
-        let x = (at.0 + 3) as f32 + app.rng.range(0.0, (wide - 6) as f32);
-        let y = (at.1 + 3) as f32 + app.rng.range(0.0, 6.0);
-        app.particles.0.push(Particle {
+        let x = (at.0 + 3) as f32 + app.show.rng.range(0.0, (wide - 6) as f32);
+        let y = (at.1 + 3) as f32 + app.show.rng.range(0.0, 6.0);
+        app.show.particles.0.push(Particle {
             x,
             y,
-            vx: app.rng.range(-1.0, 1.0),
+            vx: app.show.rng.range(-1.0, 1.0),
             vy: 0.0,
             gravity: 18.0,
-            life: app.rng.range(0.4, 0.8),
-            ch: app.rng.pick("·',"),
+            life: app.show.rng.range(0.4, 0.8),
+            ch: app.show.rng.pick("·',"),
             color: DRIP,
             leaf: false,
         });
         if target == Some(body) {
-            app.particles
-                .steam(&mut app.rng, body.0 as f32, body.1 as f32);
+            app.show
+                .particles
+                .steam(&mut app.show.rng, body.0 as f32, body.1 as f32);
         }
     }
 
@@ -215,7 +219,7 @@ pub fn burrow(
         let fuel = 0.95 * (1.0 - flame.wet / DOUSE);
         flame
             .fire
-            .step(&mut app.rng, FLAME_WIDTH, FLAME_ROWS, fuel, 14);
+            .step(&mut app.show.rng, FLAME_WIDTH, FLAME_ROWS, fuel, 14);
         let at = flame.x - FLAME_WIDTH as i32 / 2;
         flame
             .fire
@@ -245,7 +249,7 @@ pub fn burrow(
             spit.from.1 + (spit.to.1 - spit.from.1) * k,
         );
         put(buf, x.round() as i32, y.round() as i32, "●", ball);
-        app.particles.flare(&mut app.rng, x, y);
+        app.show.particles.flare(&mut app.show.rng, x, y);
     }
     if let Some(to) = target {
         hose::spray(app, buf, (nozzle, to), sky);
@@ -300,22 +304,22 @@ pub fn delivery(
         cast::draw(buf, at, cast::CARROT, false, |ink| {
             if ink == b'l' { leaf } else { carrot }
         });
-    } else if k >= 1.0 && !app.spectacle.munched {
-        app.spectacle.munched = true;
+    } else if k >= 1.0 && !app.show.spectacle.munched {
+        app.show.spectacle.munched = true;
         let (x, y) = (mouth.0 as f32, mouth.1 as f32);
         for _ in 0..10 {
-            app.particles.0.push(Particle {
+            app.show.particles.0.push(Particle {
                 x,
                 y,
-                vx: app.rng.range(-6.0, 6.0),
-                vy: app.rng.range(-4.0, 1.0),
+                vx: app.show.rng.range(-6.0, 6.0),
+                vy: app.show.rng.range(-4.0, 1.0),
                 gravity: 15.0,
-                life: app.rng.range(0.4, 0.8),
-                ch: app.rng.pick("·,'"),
+                life: app.show.rng.range(0.4, 0.8),
+                ch: app.show.rng.pick("·,'"),
                 color: fx::CARROT,
                 leaf: false,
             });
         }
-        app.particles.hearts(&mut app.rng, x, y);
+        app.show.particles.hearts(&mut app.show.rng, x, y);
     }
 }

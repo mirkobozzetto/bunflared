@@ -9,8 +9,9 @@ use super::art::{self, Frame3};
 use super::boot::Qr;
 use super::fx::{self, put};
 use super::scenes::wrap;
+use super::show::LANE_TRIP;
 use super::traffic::{Replay, Row};
-use super::{App, Ask, Focus, LANE_TRIP, Theme, plural};
+use super::{App, Ask, Focus, Theme, plural};
 use crate::event::{CAPTURE, Capture};
 use crate::live::REACTIONS;
 use crate::visitors::Visitor;
@@ -85,7 +86,7 @@ fn highlight(line: Line<'_>, selected: bool) -> Line<'_> {
 }
 
 fn panel<'a>(app: &App, title: &str) -> Block<'a> {
-    let border = if app.disco {
+    let border = if app.show.disco {
         fx::rainbow(app.elapsed() * 150.0 + title.len() as f32 * 45.0)
     } else {
         fx::DIM
@@ -125,7 +126,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         let block = panel(app, "scan me");
         let inner = block.inner(side);
         frame.render_widget(block, side);
-        app.spots.qr = Some(side);
+        app.show.spots.qr = Some(side);
         if let Some(qr) = &app.boot.qr_code {
             draw_qr(
                 frame.buffer_mut(),
@@ -135,7 +136,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
                 inner.y as i32,
             );
         }
-        app.keep_clear = Some(inner);
+        app.show.keep_clear = Some(inner);
         main
     } else {
         body
@@ -164,9 +165,9 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     if let Some(area) = visitors {
         draw_visitors(app, frame, area);
     }
-    app.spots.visitors = visitors;
+    app.show.spots.visitors = visitors;
     let (log, side) = split_side(app, log);
-    app.spots.log = Some(log);
+    app.show.spots.log = Some(log);
     draw_log(app, frame, log);
     if let Some(side) = side {
         draw_side(app, frame, side);
@@ -200,7 +201,7 @@ fn draw_header(app: &App, frame: &mut Frame, area: Rect) {
         ),
     ])
     .right_aligned();
-    let border = if app.disco {
+    let border = if app.show.disco {
         fx::rainbow(e * 150.0)
     } else {
         fx::DIM
@@ -244,7 +245,7 @@ fn mood(app: &App) -> Mood {
     let recent = |at: Option<std::time::Instant>, window: f32| {
         at.is_some_and(|at| (app.now - at).as_secs_f32() < window)
     };
-    if app.disco {
+    if app.show.disco {
         let pose = if alt(4.0) {
             &art::DANCE_B
         } else {
@@ -256,7 +257,7 @@ fn mood(app: &App) -> Mood {
             jitter: 0,
             color: fx::rainbow(e * 200.0),
         }
-    } else if app.worried_until.is_some() {
+    } else if app.show.worried_until.is_some() {
         let pose = if alt(3.0) {
             &art::WORRIED_B
         } else {
@@ -361,11 +362,11 @@ fn draw_lane(app: &mut App, frame: &mut Frame, area: Rect) {
             }
         }
     }
-    for sprite in &app.sprites {
+    for sprite in &app.show.sprites {
         let trip = (app.now - sprite.born).as_secs_f32() / LANE_TRIP;
         let x = left + ((right - left) as f32 * trip) as i32;
         let y = inner.y as i32 + 1 + sprite.lane as i32;
-        let color = if app.disco {
+        let color = if app.show.disco {
             fx::rainbow(x as f32 * 8.0)
         } else {
             sprite.color
@@ -397,9 +398,12 @@ fn draw_lane(app: &mut App, frame: &mut Frame, area: Rect) {
         theme.fg(mood.color),
     );
 
-    if !theme.calm && mood.label == "napping" && app.rng.range(0.0, 1.0) < app.dt * 1.2 {
-        app.particles
-            .snore(&mut app.rng, inner.x as f32 + 9.0, inner.y as f32 + 1.0);
+    if !theme.calm && mood.label == "napping" && app.show.rng.range(0.0, 1.0) < app.dt * 1.2 {
+        app.show.particles.snore(
+            &mut app.show.rng,
+            inner.x as f32 + 9.0,
+            inner.y as f32 + 1.0,
+        );
     }
 }
 
@@ -1004,7 +1008,7 @@ fn draw_details(app: &mut App, frame: &mut Frame, area: Rect) {
         Paragraph::new(lines).scroll((app.traffic.details_scroll, 0)),
         inner,
     );
-    app.keep_clear = Some(rect);
+    app.show.keep_clear = Some(rect);
 }
 
 /// The text box of `g`, low on the screen so the panels stay readable.
@@ -1083,7 +1087,7 @@ pub fn overlays(app: &mut App, frame: &mut Frame) {
             inner.x as i32 + 1,
             inner.y as i32 + 1,
         );
-        app.keep_clear = Some(rect);
+        app.show.keep_clear = Some(rect);
     }
     if app.help {
         let rect = centered_rect(area, HELP_WIDTH, HELP.len() as u16 + 4);
@@ -1109,7 +1113,7 @@ pub fn overlays(app: &mut App, frame: &mut Frame) {
     }
     draw_details(app, frame, area);
     draw_prompt(app, frame, area);
-    for (i, toast) in app.toasts.iter().enumerate() {
+    for (i, toast) in app.show.toasts.iter().enumerate() {
         let width = (Span::raw(toast.title.as_str())
             .width()
             .max(Span::raw(toast.body.as_str()).width()) as u16

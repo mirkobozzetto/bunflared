@@ -8,6 +8,7 @@ pub mod home;
 mod hose;
 mod scenes;
 mod shaders;
+mod show;
 mod spectacle;
 mod traffic;
 
@@ -20,7 +21,6 @@ use ratatui::Frame;
 use ratatui::crossterm::event::{
     self, Event as Term, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
 };
-use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use tokio::sync::watch;
 
@@ -32,22 +32,17 @@ use crate::notes;
 use crate::proxy::Replayer;
 use audience::Audience;
 use boot::Boot;
+use show::Show;
 use traffic::Traffic;
 
 const BOOT: f32 = 2.2;
 const LAUNCH: f32 = 4.0;
 const GOODBYE: f32 = 1.6;
 const SNIFF: f32 = 0.35;
-pub const LANE_TRIP: f32 = 1.4;
-const TOAST_LIFE: f32 = 3.5;
 pub const SLEEP_AFTER: f32 = 60.0;
 const MARATHON: f32 = 3600.0;
 const STAMPEDE_PRESSES: usize = 5;
 const STAMPEDE_WINDOW: Duration = Duration::from_millis(1500);
-const PYRO: u32 = 10;
-const WORRY_FOR: Duration = Duration::from_secs(3);
-// Past this, a reaction still counts and toasts, without more confetti.
-const MAX_PARTICLES: usize = 800;
 // No command key in it, or typing it would copy, open or quit.
 const CARROT_WORD: &str = "yum";
 const FAST_FRAME: Duration = Duration::from_millis(33);
@@ -115,26 +110,6 @@ pub enum Phase {
     Failed,
 }
 
-pub struct Sprite {
-    pub born: Instant,
-    pub lane: u16,
-    pub glyph: char,
-    pub color: Color,
-}
-
-pub struct Toast {
-    pub title: String,
-    pub body: String,
-    pub born: Instant,
-    pub gold: bool,
-}
-
-pub struct Runner {
-    pub x: f32,
-    pub y: f32,
-    pub speed: f32,
-}
-
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum Focus {
     Visitors,
@@ -162,35 +137,17 @@ pub struct App {
     started: Instant,
     pub now: Instant,
     pub dt: f32,
-    pub rng: fx::Rng,
-    pub particles: fx::Particles,
-    pub fire: fx::Fire,
-    pub spectacle: spectacle::Spectacle,
-    shaders: shaders::Shaders,
-    pub spots: shaders::Spots,
-    pub sprites: Vec<Sprite>,
-    pub toasts: Vec<Toast>,
-    pub runners: Vec<Runner>,
-    pub launch_bursts: u8,
-
     pub boot: Boot,
     pub traffic: Traffic,
     pub audience: Audience,
-    /// Particles skip this area: the QR code, the freshly announced link.
-    pub keep_clear: Option<Rect>,
-    pub unlocked: Vec<&'static art::Achievement>,
+    pub show: Show,
     pub focus: Option<Focus>,
     pub prompt: Option<Prompt>,
-    pub worried_until: Option<Instant>,
-
-    pub disco: bool,
     pub qr: bool,
     pub help: bool,
     keys: VecDeque<KeyCode>,
     typed: String,
     b_presses: VecDeque<Instant>,
-    fireworks: u32,
-    pub carrots_until: Option<Instant>,
     pub quitting: Option<Instant>,
     exit: Option<i32>,
 }
@@ -241,32 +198,17 @@ impl App {
             started: now,
             now,
             dt: 0.0,
-            rng: fx::Rng::seeded(),
-            particles: fx::Particles::default(),
-            fire: fx::Fire::default(),
-            spectacle: spectacle::Spectacle::default(),
-            shaders: shaders::Shaders::new(calm),
-            spots: shaders::Spots::default(),
-            sprites: Vec::new(),
-            toasts: Vec::new(),
-            runners: Vec::new(),
-            launch_bursts: 0,
             boot: Boot::new(ports),
             traffic: Traffic::new(replayer, now),
             audience: Audience::new(hub),
-            keep_clear: None,
-            unlocked: Vec::new(),
+            show: Show::new(calm),
             focus: None,
             prompt: None,
-            worried_until: None,
-            disco: false,
             qr: false,
             help: false,
             keys: VecDeque::new(),
             typed: String::new(),
             b_presses: VecDeque::new(),
-            fireworks: 0,
-            carrots_until: None,
             quitting: None,
             exit: None,
         }
@@ -285,21 +227,13 @@ impl App {
         self.phase = phase;
         self.phase_at = self.now;
         if phase == Phase::Dashboard {
-            self.shaders.entry();
+            self.show.shaders.entry();
         }
     }
 
     /// Animations need 30 fps; a quiet dashboard is fine at 10.
     fn busy(&self) -> bool {
-        !self.theme.calm
-            && (self.phase != Phase::Dashboard
-                || !self.particles.is_empty()
-                || !self.sprites.is_empty()
-                || !self.toasts.is_empty()
-                || !self.runners.is_empty()
-                || self.disco
-                || self.carrots_until.is_some()
-                || self.shaders.busy())
+        !self.theme.calm && (self.phase != Phase::Dashboard || self.show.busy())
     }
 
     pub fn live_for(&self) -> u64 {
@@ -316,32 +250,11 @@ impl App {
     }
 
     pub fn toast(&mut self, title: impl Into<String>, body: impl Into<String>, gold: bool) {
-        self.toasts.push(Toast {
-            title: title.into(),
-            body: body.into(),
-            born: self.now,
-            gold,
-        });
+        self.show.toast(self.now, title.into(), body.into(), gold);
     }
 
     fn unlock(&mut self, key: &str) {
-        let achievement = art::achievement(key);
-        if self.unlocked.iter().any(|a| a.key == key) {
-            return;
-        }
-        self.unlocked.push(achievement);
-        self.toast(format!("★ {}", achievement.name), achievement.blurb, true);
-        if !self.theme.calm {
-            let area = self.area();
-            let (x, y) = (area.width as f32 / 3.0, area.height as f32 - 4.0);
-            self.particles.fireworks(&mut self.rng, x, y);
-        }
-    }
-
-    pub fn area(&self) -> Rect {
-        ratatui::crossterm::terminal::size()
-            .map(|(w, h)| Rect::new(0, 0, w, h))
-            .unwrap_or(Rect::new(0, 0, 80, 24))
+        self.show.unlock(self.now, key);
     }
 
     fn on_event(&mut self, event: Event, now: Instant) {
@@ -362,7 +275,7 @@ impl App {
             Event::Request(hit) => self.on_hit(hit),
             Event::Presence(presence) => {
                 if self.audience.presence(presence, now) {
-                    self.shaders.arrival();
+                    self.show.shaders.arrival();
                 }
             }
             Event::Feedback(note) => {
@@ -378,9 +291,7 @@ impl App {
             Event::Reacted(reaction) => {
                 let (title, label) = self.audience.reacted(&reaction);
                 self.toast(title, label, false);
-                if !self.theme.calm && self.particles.0.len() < MAX_PARTICLES {
-                    self.celebrate(reaction.kind);
-                }
+                self.show.celebrate(now, reaction.kind);
             }
             Event::Replayed { n, status, ms } => {
                 if let Some((title, body)) = self.traffic.replayed(n, status, ms) {
@@ -420,24 +331,9 @@ impl App {
     fn on_hit(&mut self, hit: Hit) {
         self.boot.hit(hit.port);
         if hit.status >= 500 {
-            self.shaders.crash();
+            self.show.shaders.crash();
         }
-        if !self.theme.calm && self.sprites.len() < 80 {
-            let (glyph, color) = match (hit.upgrade, traffic::class(hit.status)) {
-                (true, 0) => ('≈', fx::PURPLE),
-                (_, 0) => ('●', fx::GREEN),
-                (_, 1) => ('◆', fx::CYAN),
-                (_, 2) => ('▲', fx::YELLOW),
-                _ => ('✖', fx::RED),
-            };
-            let lane = self.rng.below(3) as u16;
-            self.sprites.push(Sprite {
-                born: self.now,
-                lane,
-                glyph,
-                color,
-            });
-        }
+        self.show.sprite(self.now, &hit);
         for key in self.traffic.record(hit, self.now) {
             self.unlock(key);
         }
@@ -485,22 +381,7 @@ impl App {
 
         self.boot.tick(self.dt);
         self.traffic.tick(now);
-        self.particles.step(self.dt);
-        self.sprites
-            .retain(|s| (now - s.born).as_secs_f32() < LANE_TRIP);
-        self.toasts
-            .retain(|toast| (now - toast.born).as_secs_f32() < TOAST_LIFE);
-        let dt = self.dt;
-        for runner in &mut self.runners {
-            runner.x -= runner.speed * dt;
-        }
-        self.runners.retain(|runner| runner.x > -12.0);
-        if self.carrots_until.is_some_and(|until| now >= until) {
-            self.carrots_until = None;
-        }
-        if self.worried_until.is_some_and(|until| now >= until) {
-            self.worried_until = None;
-        }
+        self.show.tick(now, self.dt);
     }
 
     fn on_key(&mut self, key: KeyEvent, stop: &watch::Sender<bool>) {
@@ -529,7 +410,7 @@ impl App {
                 self.traffic.details = None;
                 let _ = stop.send(true);
                 let leaving = if self.phase == Phase::Dashboard && !self.theme.calm {
-                    self.shaders.dissolve();
+                    self.show.shaders.dissolve();
                     Phase::Dissolve
                 } else {
                     Phase::Goodbye
@@ -547,8 +428,8 @@ impl App {
             self.keys.pop_front();
         }
         if self.keys.iter().eq(KONAMI.iter()) {
-            self.disco = !self.disco && !self.theme.calm;
-            self.shaders.disco(self.disco);
+            self.show.disco = !self.show.disco && !self.theme.calm;
+            self.show.shaders.disco(self.show.disco);
             self.keys.clear();
             self.unlock("disco");
         }
@@ -558,7 +439,7 @@ impl App {
                 self.typed.remove(0);
             }
             if self.typed.ends_with(CARROT_WORD) {
-                self.carrots_until = Some(self.now + Duration::from_secs(5));
+                self.show.carrots_until = Some(self.now + Duration::from_secs(5));
                 self.typed.clear();
                 self.unlock("carrot");
             }
@@ -641,12 +522,12 @@ impl App {
             KeyCode::Char('?') => self.help = !self.help,
             // The code already on screen flashes instead of opening twice.
             KeyCode::Char('r') if self.boot.qr_code.is_some() => {
-                if self.qr || self.spots.qr.is_none() {
+                if self.qr || self.show.spots.qr.is_none() {
                     self.qr = !self.qr;
                 } else if self.theme.calm {
                     self.toast("The code is on the right", "Scan it with a phone.", false);
                 } else {
-                    self.shaders.flash_qr();
+                    self.show.shaders.flash_qr();
                 }
             }
             KeyCode::Char('c') => {
@@ -672,14 +553,7 @@ impl App {
                 }
             }
             KeyCode::Char('f') if !self.theme.calm => {
-                let area = self.area();
-                let x = self.rng.range(8.0, area.width.saturating_sub(8) as f32);
-                let y = self
-                    .rng
-                    .range(3.0, area.height.saturating_sub(4).max(4) as f32);
-                self.particles.fireworks(&mut self.rng, x, y);
-                self.fireworks += 1;
-                if self.fireworks == PYRO {
+                if self.show.firework() {
                     self.unlock("pyro");
                 }
             }
@@ -694,7 +568,7 @@ impl App {
                 }
                 if self.b_presses.len() >= STAMPEDE_PRESSES {
                     self.b_presses.clear();
-                    self.stampede();
+                    self.show.stampede();
                     self.unlock("stampede");
                 }
             }
@@ -821,44 +695,14 @@ impl App {
         }
     }
 
-    /// Each reaction gets its own show.
-    fn celebrate(&mut self, kind: usize) {
-        let area = self.area();
-        let x = self
-            .rng
-            .range(10.0, area.width.saturating_sub(10).max(11) as f32);
-        let y = area.height as f32 * 0.4;
-        match kind {
-            0 => self.particles.confetti(&mut self.rng, x, y, 60),
-            1 => self.particles.fireworks(&mut self.rng, x, y),
-            2 => {
-                let bottom = area.height.saturating_sub(4) as f32;
-                self.particles.hearts(&mut self.rng, x, bottom);
-            }
-            _ => self.worried_until = Some(self.now + WORRY_FOR),
-        }
-    }
-
     fn sent(&mut self, title: &str, reached: usize) {
         let body = self.audience.reached(reached);
         self.toast(title, body, false);
     }
 
-    fn stampede(&mut self) {
-        let area = self.area();
-        for _ in 0..10 {
-            let x = area.width as f32 + self.rng.range(0.0, 40.0);
-            let y = self
-                .rng
-                .range(1.0, area.height.saturating_sub(4).max(2) as f32);
-            let speed = self.rng.range(25.0, 55.0);
-            self.runners.push(Runner { x, y, speed });
-        }
-    }
-
     fn render(&mut self, frame: &mut Frame) {
-        self.keep_clear = None;
-        self.spots = shaders::Spots::default();
+        self.show.keep_clear = None;
+        self.show.spots = shaders::Spots::default();
         match self.phase {
             Phase::Boot => scenes::boot(self, frame),
             Phase::Preflight => scenes::preflight(self, frame),
@@ -869,12 +713,14 @@ impl App {
             Phase::Failed => scenes::failed(self, frame),
         }
         let area = frame.area();
-        self.shaders
-            .render(frame.buffer_mut(), area, &self.spots, self.dt);
+        self.show
+            .shaders
+            .render(frame.buffer_mut(), area, &self.show.spots, self.dt);
         if !self.theme.calm {
             scenes::fun(self, frame);
-            self.particles
-                .draw(frame.buffer_mut(), &self.theme, self.keep_clear);
+            self.show
+                .particles
+                .draw(frame.buffer_mut(), &self.theme, self.show.keep_clear);
         }
         dashboard::overlays(self, frame);
     }
@@ -901,6 +747,7 @@ impl App {
             }
         };
         let badges: Vec<String> = self
+            .show
             .unlocked
             .iter()
             .map(|a| format!("★ {}", a.name))

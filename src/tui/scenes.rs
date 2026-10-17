@@ -97,8 +97,11 @@ pub fn boot(app: &mut App, frame: &mut Frame) {
         if !app.theme.calm {
             let fuel = (t * 1.6).min(0.95);
             let width = (logo_width + 12) as usize;
-            app.fire.step(&mut app.rng, width, FIRE_ROWS, fuel, 7);
-            app.fire
+            app.show
+                .fire
+                .step(&mut app.show.rng, width, FIRE_ROWS, fuel, 7);
+            app.show
+                .fire
                 .draw(buf, &app.theme, x0 - 6, top + 6 - FIRE_ROWS as i32);
         }
         big_text(
@@ -111,7 +114,7 @@ pub fn boot(app: &mut App, frame: &mut Frame) {
             t * 120.0,
             fx::blaze,
         );
-        app.keep_clear = Some(Rect::new(
+        app.show.keep_clear = Some(Rect::new(
             (x0 - 1).max(0) as u16,
             top.max(0) as u16,
             logo_width as u16 + 2,
@@ -120,12 +123,15 @@ pub fn boot(app: &mut App, frame: &mut Frame) {
         let col = if reveal < logo_width {
             reveal
         } else {
-            app.rng.below(logo_width as usize) as i32
+            app.show.rng.below(logo_width as usize) as i32
         };
-        app.particles
-            .flare(&mut app.rng, (x0 + col) as f32, top as f32 - 1.0);
-        let spark = x0 + app.rng.below(logo_width as usize) as i32;
-        app.particles.flare(&mut app.rng, spark as f32, top as f32);
+        app.show
+            .particles
+            .flare(&mut app.show.rng, (x0 + col) as f32, top as f32 - 1.0);
+        let spark = x0 + app.show.rng.below(logo_width as usize) as i32;
+        app.show
+            .particles
+            .flare(&mut app.show.rng, spark as f32, top as f32);
     } else {
         centered(
             buf,
@@ -162,8 +168,9 @@ pub fn boot(app: &mut App, frame: &mut Frame) {
     cast::draw(buf, (x_pose, top + 8 - hop), pose, false, |_| fg);
     if !app.theme.calm {
         for _ in 0..2 {
-            app.particles
-                .flare(&mut app.rng, (x - 1) as f32, (top + 11) as f32);
+            app.show
+                .particles
+                .flare(&mut app.show.rng, (x - 1) as f32, (top + 11) as f32);
         }
     }
     hint(buf, area, &app.theme, "any key to skip");
@@ -224,7 +231,7 @@ pub fn digging(app: &mut App, frame: &mut Frame) {
     let room = (area.height as i32 - DIGGING_ROWS).clamp(0, ZIGZAG_ROWS);
     let top = area.y as i32 + (area.height as i32 - DIGGING_ROWS - room).max(0) / 2;
     // Sparks and steam stay off the title and the jokes.
-    app.keep_clear = Some(Rect::new(area.x, top.max(0) as u16, area.width, 2));
+    app.show.keep_clear = Some(Rect::new(area.x, top.max(0) as u16, area.width, 2));
     let theme = &app.theme;
 
     centered(
@@ -323,16 +330,19 @@ pub fn launch(app: &mut App, frame: &mut Frame) {
     let area = frame.area();
     let (t, e) = (app.t(), app.elapsed());
     let (cx, cy) = (area.width as f32 / 2.0, area.height as f32 / 2.0);
-    if app.launch_bursts == 0 {
-        app.particles.confetti(&mut app.rng, cx, cy, 160);
-        app.launch_bursts = 1;
+    if app.show.launch_bursts == 0 {
+        app.show.particles.confetti(&mut app.show.rng, cx, cy, 160);
+        app.show.launch_bursts = 1;
     }
-    let next = app.launch_bursts as usize - 1;
+    let next = app.show.launch_bursts as usize - 1;
     if next < LAUNCH_BURSTS.len() && t >= LAUNCH_BURSTS[next] {
-        let x = app.rng.range(10.0, (area.width as f32 - 10.0).max(11.0));
-        let y = app.rng.range(3.0, (cy - 2.0).max(4.0));
-        app.particles.fireworks(&mut app.rng, x, y);
-        app.launch_bursts += 1;
+        let x = app
+            .show
+            .rng
+            .range(10.0, (area.width as f32 - 10.0).max(11.0));
+        let y = app.show.rng.range(3.0, (cy - 2.0).max(4.0));
+        app.show.particles.fireworks(&mut app.show.rng, x, y);
+        app.show.launch_bursts += 1;
     }
 
     let buf = frame.buffer_mut();
@@ -370,7 +380,7 @@ pub fn launch(app: &mut App, frame: &mut Frame) {
     let x = spectacle::delivered(t, rest, area.right() as i32);
     let y = cy as i32 + 3;
     let border = theme.fg(fx::rainbow(e * 200.0));
-    app.keep_clear = Some(Rect::new(
+    app.show.keep_clear = Some(Rect::new(
         x.max(0) as u16,
         y.max(0) as u16,
         (inner + 2) as u16,
@@ -500,13 +510,17 @@ pub fn wrap(text: &str, width: usize) -> Vec<String> {
 /// Screen-wide mischief: carrot rain and the stampede.
 pub fn fun(app: &mut App, frame: &mut Frame) {
     let area = frame.area();
-    if app.carrots_until.is_some() && app.rng.range(0.0, 1.0) < 0.7 {
-        app.particles.carrot(&mut app.rng, area);
+    if app.show.carrots_until.is_some() && app.show.rng.range(0.0, 1.0) < 0.7 {
+        app.show.particles.carrot(&mut app.show.rng, area);
     }
     let buf = frame.buffer_mut();
-    for runner in &app.runners {
+    for runner in &app.show.runners {
         let body = Rect::new(runner.x.max(0.0) as u16, runner.y.max(0.0) as u16, 9, 3);
-        if app.keep_clear.is_some_and(|clear| clear.intersects(body)) {
+        if app
+            .show
+            .keep_clear
+            .is_some_and(|clear| clear.intersects(body))
+        {
             continue;
         }
         let pose = if (runner.x / 3.0) as i32 % 2 == 0 {
@@ -514,7 +528,7 @@ pub fn fun(app: &mut App, frame: &mut Frame) {
         } else {
             &art::RUN_B
         };
-        let color = if app.disco {
+        let color = if app.show.disco {
             fx::rainbow(runner.x * 6.0)
         } else {
             fx::FG
