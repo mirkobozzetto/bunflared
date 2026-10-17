@@ -12,6 +12,7 @@ mod share;
 mod state;
 mod tui;
 mod tunnel;
+mod visitors;
 mod widget;
 
 use std::io::{IsTerminal, Write};

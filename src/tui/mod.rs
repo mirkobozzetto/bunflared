@@ -27,7 +27,8 @@ use crate::live::{self, Command, Hub, Pointer, REACTIONS};
 use crate::proxy::{Replayer, mount};
 use crate::share::{Event, Failure, Hit};
 use crate::state::Record;
-use crate::widget::{self, Presence};
+use crate::visitors::Roster;
+use crate::widget;
 
 const BOOT: f32 = 2.2;
 const LAUNCH: f32 = 4.0;
@@ -157,14 +158,6 @@ pub struct Runner {
     pub speed: f32,
 }
 
-/// A browser tab reporting through the widget.
-pub struct Session {
-    pub presence: Presence,
-    pub seen: Instant,
-    pub first: Instant,
-    pub pointer: Option<(Pointer, Instant)>,
-}
-
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum Focus {
     Visitors,
@@ -242,7 +235,9 @@ pub struct App {
     pub last_error: Option<Instant>,
     pub failure: Option<Failure>,
     pub unlocked: Vec<&'static art::Achievement>,
-    pub sessions: HashMap<String, Session>,
+    pub roster: Roster,
+    /// The followed visitors' pointers, and when they last moved.
+    pub pointers: HashMap<String, (Pointer, Instant)>,
     pub feedback: u32,
     pub hub: Arc<Hub>,
     pub focus: Option<Focus>,
@@ -362,7 +357,8 @@ impl App {
             last_error: None,
             failure: None,
             unlocked: Vec::new(),
-            sessions: HashMap::new(),
+            roster: Roster::default(),
+            pointers: HashMap::new(),
             feedback: 0,
             hub,
             focus: None,
@@ -510,20 +506,9 @@ impl App {
             Event::Request(hit) => self.on_hit(hit),
             Event::Presence(presence) => {
                 self.remember(&presence.page);
-                if !presence.gone && !self.sessions.contains_key(&presence.sid) {
+                if self.roster.update(presence, now) {
                     self.shaders.arrival();
                 }
-                let (first, pointer) = self
-                    .sessions
-                    .remove(&presence.sid)
-                    .map_or((now, None), |s| (s.first, s.pointer));
-                let session = Session {
-                    presence,
-                    seen: now,
-                    first,
-                    pointer,
-                };
-                self.sessions.insert(session.presence.sid.clone(), session);
             }
             Event::Feedback(note) => {
                 self.feedback += 1;
@@ -568,8 +553,8 @@ impl App {
                 });
             }
             Event::Pointer(pointer) => {
-                if let Some(session) = self.sessions.get_mut(&pointer.sid) {
-                    session.pointer = Some((pointer, now));
+                if self.roster.get(&pointer.sid).is_some() {
+                    self.pointers.insert(pointer.sid.clone(), (pointer, now));
                 }
             }
             Event::Reacted(reaction) => {
@@ -955,7 +940,7 @@ impl App {
             Focus::Visitors => {
                 let sids: Vec<String> = dashboard::roster(self)
                     .iter()
-                    .map(|s| s.presence.sid.clone())
+                    .map(|v| v.presence.sid.clone())
                     .collect();
                 let next = stepped(&sids, self.selected.as_ref(), down);
                 self.select(next);
@@ -1155,8 +1140,8 @@ impl App {
     pub fn target(&self) -> String {
         self.selected
             .as_ref()
-            .and_then(|sid| self.sessions.get(sid))
-            .map_or_else(|| "everyone".into(), |s| s.presence.device.clone())
+            .and_then(|sid| self.roster.get(sid))
+            .map_or_else(|| "everyone".into(), |v| v.presence.device.clone())
     }
 
     fn sent(&mut self, title: &str, reached: usize) {

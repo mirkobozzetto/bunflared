@@ -8,9 +8,10 @@ use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 use super::art::{self, Frame3};
 use super::fx::{self, put};
 use super::scenes::wrap;
-use super::{App, Ask, Focus, LANE_TRIP, Qr, Replay, Row, Session, Theme, plural};
+use super::{App, Ask, Focus, LANE_TRIP, Qr, Replay, Row, Theme, plural};
 use crate::live::REACTIONS;
 use crate::proxy::{CAPTURE, Capture};
+use crate::visitors::Visitor;
 
 const MIN_WIDTH: u16 = 64;
 const MIN_HEIGHT: u16 = 20;
@@ -520,9 +521,9 @@ fn draw_stats(app: &App, frame: &mut Frame, area: Rect) {
 }
 
 /// "active", "tab hidden", "idle 45s" or "left", with its color.
-fn presence(app: &App, session: &Session) -> (&'static str, String, Color) {
-    let away = app.now.saturating_duration_since(session.seen);
-    let status = session.presence.status(away);
+fn presence(app: &App, visitor: &Visitor) -> (&'static str, String, Color) {
+    let away = app.now.saturating_duration_since(visitor.seen);
+    let status = visitor.presence.status(away);
     let (glyph, color) = match status.as_str() {
         "left" => ("○", fx::DIM),
         "active" => ("●", fx::GREEN),
@@ -532,16 +533,17 @@ fn presence(app: &App, session: &Session) -> (&'static str, String, Color) {
 }
 
 /// The visitors in the order they are listed: by arrival, those who left last.
-pub fn roster(app: &App) -> Vec<&Session> {
-    let mut sessions: Vec<&Session> = app.sessions.values().collect();
-    sessions.sort_by_key(|s| (presence(app, s).1 == "left", s.first));
-    sessions
+pub fn roster(app: &App) -> Vec<&Visitor> {
+    let mut visitors = app.roster.by_arrival();
+    visitors.sort_by_key(|v| presence(app, v).1 == "left");
+    visitors
 }
 
 pub fn here(app: &App) -> usize {
-    app.sessions
-        .values()
-        .filter(|s| presence(app, s).1 != "left")
+    app.roster
+        .by_arrival()
+        .into_iter()
+        .filter(|v| presence(app, v).1 != "left")
         .count()
 }
 
@@ -554,22 +556,22 @@ fn draw_visitors(app: &App, frame: &mut Frame, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let theme = &app.theme;
-    if app.sessions.is_empty() {
+    if app.roster.is_empty() {
         let line = Line::from(Span::styled("Nobody on the page yet.", theme.fg(fx::DIM)));
         frame.render_widget(Paragraph::new(line), inner);
         return;
     }
-    let sessions = roster(app);
-    let at = sessions
+    let visitors = roster(app);
+    let at = visitors
         .iter()
-        .position(|s| app.selected.as_ref() == Some(&s.presence.sid));
-    let lines: Vec<Line> = sessions
+        .position(|v| app.selected.as_ref() == Some(&v.presence.sid));
+    let lines: Vec<Line> = visitors
         .into_iter()
         .skip(scroll(at, inner.height as usize))
         .take(inner.height as usize)
-        .map(|session| {
-            let (dot, state, color) = presence(app, session);
-            let p = &session.presence;
+        .map(|visitor| {
+            let (dot, state, color) = presence(app, visitor);
+            let p = &visitor.presence;
             let selected = app.selected.as_ref() == Some(&p.sid);
             let line = Line::from(vec![
                 Span::styled(format!("{dot} "), theme.fg(color)),
@@ -679,13 +681,14 @@ fn draw_side(app: &App, frame: &mut Frame, area: Rect) {
 
 /// The selected visitor's viewport, scaled, with their pointer in it.
 fn draw_radar(app: &App, frame: &mut Frame, area: Rect) {
-    let session = app.selected.as_ref().and_then(|sid| app.sessions.get(sid));
-    let device = session.map_or("nobody", |s| s.presence.device.as_str());
+    let visitor = app.selected.as_ref().and_then(|sid| app.roster.get(sid));
+    let device = visitor.map_or("nobody", |v| v.presence.device.as_str());
     let block = panel(app, &format!("radar · {device}"));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let theme = &app.theme;
-    let Some((pointer, at)) = session.and_then(|s| s.pointer.as_ref()) else {
+    let pointer = visitor.and_then(|v| app.pointers.get(&v.presence.sid));
+    let Some((pointer, at)) = pointer else {
         let line = Line::from(Span::styled(
             "Their pointer shows here once it moves.",
             theme.fg(fx::DIM),

@@ -9,7 +9,7 @@ use tokio::sync::watch;
 use tokio::time::{sleep, timeout};
 
 use crate::live::{Hub, Pointer, Reacted, Said};
-use crate::{clipboard, cloudflared, os, proxy, state, tunnel, widget};
+use crate::{clipboard, cloudflared, os, proxy, state, tunnel, visitors, widget};
 
 pub const EXIT_TUNNEL_CLOSED: i32 = 1;
 pub const EXIT_NO_CLOUDFLARED: i32 = 3;
@@ -83,7 +83,7 @@ pub enum Event {
         copied: bool,
     },
     Request(Hit),
-    Presence(widget::Presence),
+    Presence(visitors::Presence),
     Feedback(widget::Feedback),
     Chat(Said),
     Pointer(Pointer),

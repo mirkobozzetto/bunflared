@@ -1,7 +1,7 @@
 //! The shares a `bunflared mcp` process runs for its agent, and what happened
 //! on them since the agent last looked.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
@@ -18,16 +18,11 @@ use crate::live::{self, Command, Hub, REACTIONS};
 use crate::proxy::{self, Capture};
 use crate::share::{self, Event, Hit, Spec};
 use crate::state::{self, Record};
-use crate::widget::{Feedback, Presence};
+use crate::visitors::{Presence, Roster};
+use crate::widget::Feedback;
 
 const KEEP_EVENTS: usize = 1000;
 const KEEP_REQUESTS: usize = 200;
-/// Pings are open to anyone with the link: past this many visitors, new ones
-/// are not tracked, so a flood cannot push the notes out of the event log.
-const MAX_VISITORS: usize = 200;
-/// A page that said goodbye and sent no new ping since has left; a visitor
-/// moving to another page says goodbye too, then pings right away.
-const GONE_GRACE: Duration = Duration::from_secs(3);
 const STOP_GRACE: Duration = Duration::from_secs(1);
 const TICK: Duration = Duration::from_millis(500);
 const REPLAY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -67,15 +62,9 @@ pub struct Share {
 
 #[derive(Default)]
 struct Seen {
-    visitors: HashMap<String, Visitor>,
+    visitors: Roster,
     requests: VecDeque<Row>,
     total: u32,
-}
-
-struct Visitor {
-    presence: Presence,
-    seen: Instant,
-    first: Instant,
 }
 
 struct Row {
@@ -318,7 +307,7 @@ impl Host {
                 let _ = self.close(id);
                 continue;
             }
-            let left = share.seen.lock().unwrap().departures();
+            let left = share.seen.lock().unwrap().visitors.departures();
             for presence in left {
                 self.log(id, "left", visitor(&presence));
             }
@@ -331,7 +320,13 @@ impl Host {
             match event {
                 Event::Request(hit) => share.seen.lock().unwrap().request(hit),
                 Event::Presence(presence) => {
-                    if share.seen.lock().unwrap().presence(presence.clone()) {
+                    let arrived = share
+                        .seen
+                        .lock()
+                        .unwrap()
+                        .visitors
+                        .update(presence.clone(), Instant::now());
+                    if arrived {
                         self.log(id, "arrived", visitor(&presence));
                     }
                 }
@@ -448,9 +443,9 @@ impl Share {
 
     pub fn visitors(&self) -> Value {
         let seen = self.seen.lock().unwrap();
-        let mut here: Vec<&Visitor> = seen.visitors.values().collect();
-        here.sort_by_key(|v| v.first);
-        let here = here
+        let here = seen
+            .visitors
+            .by_arrival()
             .into_iter()
             .map(|v| {
                 let mut entry = visitor(&v.presence);
@@ -583,43 +578,6 @@ impl Seen {
         let (n, at) = (self.total, clock());
         self.requests.push_front(Row { n, hit, at });
         self.requests.truncate(KEEP_REQUESTS);
-    }
-
-    /// Keeps the visitor's last ping; true when they just arrived.
-    fn presence(&mut self, presence: Presence) -> bool {
-        let now = Instant::now();
-        let known = self.visitors.get(&presence.sid);
-        let full = self.visitors.len() >= MAX_VISITORS;
-        if known.is_none() && (presence.gone || full) {
-            return false;
-        }
-        let arrived = known.is_none();
-        let first = known.map_or(now, |v| v.first);
-        let sid = presence.sid.clone();
-        let visitor = Visitor {
-            presence,
-            seen: now,
-            first,
-        };
-        self.visitors.insert(sid, visitor);
-        arrived
-    }
-
-    /// Forgets the visitors who left, and returns them.
-    fn departures(&mut self) -> Vec<Presence> {
-        let gone: Vec<String> = self
-            .visitors
-            .iter()
-            .filter(|(_, v)| {
-                let away = v.seen.elapsed();
-                (v.presence.gone && away >= GONE_GRACE) || v.presence.status(away) == "left"
-            })
-            .map(|(sid, _)| sid.clone())
-            .collect();
-        gone.iter()
-            .filter_map(|sid| self.visitors.remove(sid))
-            .map(|v| v.presence)
-            .collect()
     }
 }
 

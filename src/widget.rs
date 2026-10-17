@@ -5,7 +5,6 @@
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
 
 use bytes::Bytes;
 use http_body_util::{BodyExt, Limited};
@@ -18,6 +17,7 @@ use crate::clock::stamp;
 use crate::http::{Body, full, json, status};
 use crate::live::{self, Hub};
 use crate::share::{Event, Tx};
+use crate::visitors::{Presence, device};
 
 mod note;
 
@@ -56,44 +56,6 @@ const TAG: &str = r#"<script src="/_bunflared/widget.js" defer></script>"#;
 const MAX_PING: usize = 4 * 1024;
 const MAX_NOTE: usize = 64 * 1024;
 const MAX_SHOT: usize = 12 * 1024 * 1024;
-const LEFT_AFTER: Duration = Duration::from_secs(20);
-// A hidden tab's timers wake up once a minute in Chrome, every 40 s in
-// Safari: its pings slow down without it leaving.
-const HIDDEN_LEFT_AFTER: Duration = Duration::from_secs(90);
-const IDLE_AFTER: u64 = 30;
-
-#[derive(Debug, Clone)]
-pub struct Presence {
-    pub sid: String,
-    pub device: String,
-    pub page: String,
-    pub visible: bool,
-    pub idle: u32,
-    pub clicks: u32,
-    pub gone: bool,
-}
-
-impl Presence {
-    /// "active", "tab hidden", "idle 45s" or "left", `away` after its last ping.
-    pub fn status(&self, away: Duration) -> String {
-        let idle = u64::from(self.idle) + away.as_secs();
-        let patience = if self.visible {
-            LEFT_AFTER
-        } else {
-            HIDDEN_LEFT_AFTER
-        };
-        if self.gone || away > patience {
-            "left".into()
-        } else if !self.visible {
-            "tab hidden".into()
-        } else if idle >= IDLE_AFTER {
-            format!("idle {idle}s")
-        } else {
-            "active".into()
-        }
-    }
-}
-
 #[derive(Deserialize)]
 struct Ping {
     sid: String,
@@ -232,40 +194,6 @@ fn save_shot(folder: &Path, image: &[u8]) -> std::io::Result<String> {
     let name = format!("{}.{extension}", stamp());
     fs::write(folder.join(&name), image)?;
     Ok(name)
-}
-
-/// "iPhone · Safari", from the User-Agent and the `Sec-CH-UA` client hint.
-pub fn device(agent: &str, hints: &str) -> String {
-    let system = [
-        ("iPhone", "iPhone"),
-        ("iPad", "iPad"),
-        ("Android", "Android"),
-        ("Macintosh", "Mac"),
-        ("Windows", "Windows"),
-        ("Linux", "Linux"),
-    ]
-    .into_iter()
-    .find(|(needle, _)| agent.contains(needle))
-    .map_or("Unknown", |(_, name)| name);
-    // Brave reads as Safari on iOS and as Chrome elsewhere, but names itself
-    // at the end of the iOS agent and in the client hint.
-    let brave = agent.contains("Brave") || hints.contains("\"Brave\"");
-    let browser = [
-        ("Edg/", "Edge"),
-        ("EdgiOS/", "Edge"),
-        ("OPR/", "Opera"),
-        ("OPT/", "Opera"),
-        ("Firefox/", "Firefox"),
-        ("FxiOS/", "Firefox"),
-        ("CriOS/", "Chrome"),
-        ("Chrome/", "Chrome"),
-        ("Safari/", "Safari"),
-    ]
-    .into_iter()
-    .find(|(needle, _)| agent.contains(needle))
-    .map_or("browser", |(_, name)| name);
-    let browser = if brave { "Brave" } else { browser };
-    format!("{system} · {browser}")
 }
 
 fn script() -> Response<Body> {
