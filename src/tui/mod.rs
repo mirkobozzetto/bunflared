@@ -1191,14 +1191,6 @@ impl App {
             scenes::fun(self, frame);
             self.particles
                 .draw(frame.buffer_mut(), &self.theme, self.keep_clear);
-            if self.spectacle.shaking(self.now) {
-                let dx = if (self.elapsed() * 30.0) as i32 % 2 == 0 {
-                    1
-                } else {
-                    -1
-                };
-                fx::shake(frame.buffer_mut(), dx);
-            }
         }
         dashboard::overlays(self, frame);
     }

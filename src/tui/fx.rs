@@ -178,23 +178,6 @@ fn flame(heat: u8) -> (&'static str, Color) {
     (ch, hsv(t * 50.0, 1.0 - t * t * 0.35, 0.6 + t * 0.4))
 }
 
-/// Moves the whole frame `dx` cells sideways, for a jolt.
-pub fn shake(buf: &mut Buffer, dx: i32) {
-    let area = *buf.area();
-    for y in area.top()..area.bottom() {
-        let row: Vec<_> = (area.left()..area.right())
-            .map(|x| buf[(x, y)].clone())
-            .collect();
-        for (i, x) in (area.left()..area.right()).enumerate() {
-            let from = i as i32 - dx;
-            buf[(x, y)] = usize::try_from(from)
-                .ok()
-                .and_then(|from| row.get(from).cloned())
-                .unwrap_or_default();
-        }
-    }
-}
-
 /// Writes `text` at (x, y), clipped to the buffer; never panics off-screen.
 pub fn put(buf: &mut Buffer, x: i32, y: i32, text: &str, style: Style) {
     let area = *buf.area();
@@ -329,39 +312,6 @@ impl Particles {
                 leaf: false,
             });
         }
-    }
-
-    /// A meteor hitting the fire.
-    pub fn blast(&mut self, rng: &mut Rng, x: f32, y: f32) {
-        for _ in 0..56 {
-            let angle = rng.range(std::f32::consts::PI, std::f32::consts::TAU);
-            let speed = rng.range(6.0, 16.0);
-            self.0.push(Particle {
-                x,
-                y,
-                vx: angle.cos() * speed * 2.2,
-                vy: angle.sin() * speed,
-                gravity: 14.0,
-                life: rng.range(0.5, 1.3),
-                ch: rng.pick("*+•·▪"),
-                color: hsv(rng.range(0.0, 55.0), 0.9, 1.0),
-                leaf: false,
-            });
-        }
-    }
-
-    pub fn water(&mut self, rng: &mut Rng, x: f32, y: f32) {
-        self.0.push(Particle {
-            x,
-            y,
-            vx: rng.range(12.0, 30.0),
-            vy: rng.range(-9.0, -2.0),
-            gravity: 26.0,
-            life: rng.range(0.6, 1.1),
-            ch: rng.pick("·°,'~"),
-            color: hsv(rng.range(190.0, 215.0), 0.6, 1.0),
-            leaf: false,
-        });
     }
 
     pub fn steam(&mut self, rng: &mut Rng, x: f32, y: f32) {

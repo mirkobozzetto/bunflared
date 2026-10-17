@@ -1,182 +1,176 @@
-//! The show around the fire while the link loads: meteors crashing into it,
-//! a firefighter bunny who tries his best, and the phoenix that brings the
-//! link once it is ready.
-
-use std::time::{Duration, Instant};
+//! The show over the rabbit hole while the link loads: a dragon flies to and
+//! fro above the burrow, spitting fire on it, and a firefighter bunny puts
+//! out every flame with his water cannon. Then the phoenix brings the link.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Modifier;
+use ratatui::style::{Color, Modifier};
 
 use super::App;
-use super::art::{self, Frame3};
-use super::fx::{self, put};
+use super::art;
+use super::cast;
+use super::fx::{self, Particle, put};
 
-const METEOR_EVERY: (f32, f32) = (0.6, 1.3);
-const SHAKE_FOR: Duration = Duration::from_millis(280);
-const FIREFIGHTER_FIRST: f32 = 1.0;
-const FIREFIGHTER_EVERY: f32 = 7.0;
-// Running in, throwing water, running away, in seconds.
-const RUN_IN: f32 = 0.6;
-const THROW: f32 = 1.4;
-const RUN_OFF: f32 = 0.6;
-// After the water, the fire comes back taller for a while.
-const FLARE_UP: f32 = 1.5;
+const DRAGON: Color = Color::Rgb(215, 50, 60);
+const STEEL: Color = Color::Rgb(175, 190, 205);
+// The dragon's band: eleven lines, then the row of the labels.
+const SKY: i32 = 12;
+const FLY_SPEED: f32 = 11.0;
+const FLAP: f32 = 0.22;
+const SPIT_EVERY: f32 = 1.3;
+const SPIT_FLIGHT: f32 = 0.4;
+const MAX_FLAMES: usize = 3;
+const FLAME_WIDTH: usize = 4;
+const FLAME_ROWS: usize = 3;
+// Seconds of water a flame takes to go out, the trip included.
+const DOUSE: f32 = 0.9;
+const JET_FLIGHT: f32 = 0.45;
+const JET_GRAVITY: f32 = 26.0;
 const RISE: f32 = 1.1;
 
-struct Meteor {
-    x: f32,
-    y: f32,
-    vx: f32,
-    vy: f32,
+struct Spit {
+    from: (f32, f32),
+    to: (f32, f32),
+    at: f32,
+}
+
+struct Flame {
+    x: i32,
+    fire: fx::Fire,
+    wet: f32,
 }
 
 #[derive(Default)]
 pub struct Spectacle {
-    meteors: Vec<Meteor>,
-    next_meteor: f32,
-    shake_until: Option<Instant>,
-    /// When the firefighter's current visit started, in seconds since launch.
-    firefighter: Option<f32>,
+    /// The dragon's column and heading, 1 to the right, -1 to the left.
+    dragon: Option<(f32, f32)>,
+    next_spit: f32,
+    spits: Vec<Spit>,
+    flames: Vec<Flame>,
 }
 
-impl Spectacle {
-    /// How the fire burns at `at` seconds since launch: nearly out while
-    /// the water lands, then taller than before. Fuel, and reach.
-    pub fn flames(&self, at: f32) -> (f32, f32) {
-        let Some(start) = self.firefighter else {
-            return (0.9, 0.75);
-        };
-        let since = at - start - RUN_IN;
-        if (0.0..THROW).contains(&since) {
-            (0.12, 0.5)
-        } else if (THROW..THROW + FLARE_UP).contains(&since) {
-            (1.0, 1.05)
-        } else {
-            (0.9, 0.75)
-        }
-    }
-
-    pub fn shaking(&self, now: Instant) -> bool {
-        self.shake_until.is_some_and(|until| now < until)
-    }
-}
-
-/// Meteors and the firefighter, over a fire whose top is at `fire_top`.
-pub fn loading(app: &mut App, buf: &mut Buffer, area: Rect, fire_top: i32) {
+/// The dragon and the firefighter over a burrow `width` long from `x0`,
+/// whose grass is on row `surface`.
+pub fn burrow(app: &mut App, buf: &mut Buffer, area: Rect, (x0, width): (i32, i32), surface: i32) {
     if app.theme.calm {
         return;
     }
-    let (now, e, dt) = (app.now, app.elapsed(), app.dt);
-    if e >= app.spectacle.next_meteor {
-        let (low, high) = METEOR_EVERY;
-        app.spectacle.next_meteor = e + app.rng.range(low, high);
-        let x = app
-            .rng
-            .range(area.width as f32 * 0.25, area.width as f32 + 12.0);
-        app.spectacle.meteors.push(Meteor {
-            x,
-            y: area.y as f32 - 2.0,
-            vx: -app.rng.range(14.0, 26.0),
-            vy: app.rng.range(14.0, 22.0),
+    let (e, dt) = (app.elapsed(), app.dt);
+    let fighter = (x0 + 2, surface - 5);
+    let reach = fighter.0 + cast::width(cast::FIREFIGHTER);
+    let wide = cast::width(cast::DRAGON_UP);
+    let (low, high) = (reach + 2, (x0 + width + 4).min(area.right() as i32) - wide);
+    let land = ((reach + 3) as f32, (x0 + width - 6) as f32);
+    let sky = surface - SKY;
+    let show = &mut app.spectacle;
+
+    let (mut x, mut heading) = show.dragon.unwrap_or((high as f32, -1.0));
+    x = (x + heading * FLY_SPEED * dt).clamp(low as f32, high.max(low) as f32);
+    if x <= low as f32 {
+        heading = 1.0;
+    } else if x >= high as f32 {
+        heading = -1.0;
+    }
+    show.dragon = Some((x, heading));
+    let (grid, mouth) = if (e / FLAP) as i32 % 2 == 0 {
+        (cast::DRAGON_UP, cast::DRAGON_UP_MOUTH)
+    } else {
+        (cast::DRAGON_DOWN, cast::DRAGON_DOWN_MOUTH)
+    };
+    let (flip, left) = (heading < 0.0, x.round() as i32);
+    let mouth = (
+        if flip {
+            left + wide - 1 - mouth.0
+        } else {
+            left + mouth.0
+        } as f32,
+        (sky + mouth.1) as f32,
+    );
+
+    if e >= show.next_spit && show.flames.len() + show.spits.len() < MAX_FLAMES {
+        show.next_spit = e + SPIT_EVERY;
+        let ahead = app.rng.range(3.0, 10.0) * heading;
+        let to = (
+            (mouth.0 + ahead).clamp(land.0, land.1),
+            (surface - 1) as f32,
+        );
+        show.spits.push(Spit {
+            from: mouth,
+            to,
+            at: e,
         });
     }
-    let impact = fire_top as f32 + 2.0;
-    let mut crashed = Vec::new();
-    app.spectacle.meteors.retain_mut(|meteor| {
-        meteor.x += meteor.vx * dt;
-        meteor.y += meteor.vy * dt;
-        let landed = meteor.y >= impact;
-        if landed {
-            crashed.push((meteor.x, meteor.y));
+    let mut landed = Vec::new();
+    show.spits.retain(|spit| {
+        let done = e - spit.at >= SPIT_FLIGHT;
+        if done {
+            landed.push(spit.to.0.round() as i32);
         }
-        !landed && meteor.x > -10.0
+        !done
     });
-    for (x, y) in crashed {
-        app.particles.blast(&mut app.rng, x, y);
-        app.spectacle.shake_until = Some(now + SHAKE_FOR);
-    }
-    for meteor in &app.spectacle.meteors {
-        draw_meteor(buf, app, meteor);
-    }
-    firefighter(app, buf, area, fire_top, e);
-}
+    show.flames.extend(landed.into_iter().map(|x| Flame {
+        x,
+        fire: fx::Fire::default(),
+        wet: 0.0,
+    }));
 
-fn draw_meteor(buf: &mut Buffer, app: &App, meteor: &Meteor) {
-    const TAIL: [&str; 6] = ["▓", "▓", "▒", "▒", "░", "·"];
-    let speed = (meteor.vx.powi(2) + meteor.vy.powi(2)).sqrt().max(1.0);
-    let (ux, uy) = (-meteor.vx / speed, -meteor.vy / speed);
-    for (i, ch) in TAIL.iter().enumerate().rev() {
-        let step = (i + 1) as f32 * 1.3;
-        let color = fx::hsv(48.0 - i as f32 * 9.0, 1.0, 1.0 - i as f32 * 0.08);
-        put(
-            buf,
-            (meteor.x + ux * step * 2.0).round() as i32,
-            (meteor.y + uy * step).round() as i32,
-            ch,
-            app.theme.fg(color),
+    // The firefighter always aims at the oldest flame.
+    let nozzle = (reach as f32, (surface - 2) as f32);
+    if let Some(flame) = show.flames.first_mut() {
+        flame.wet += dt;
+        for _ in 0..2 {
+            let flight = JET_FLIGHT + app.rng.range(-0.05, 0.05);
+            let (dx, dy) = (flame.x as f32 - nozzle.0, (surface - 1) as f32 - nozzle.1);
+            app.particles.0.push(Particle {
+                x: nozzle.0,
+                y: nozzle.1,
+                vx: dx / flight + app.rng.range(-1.5, 1.5),
+                vy: dy / flight - JET_GRAVITY * flight / 2.0,
+                gravity: JET_GRAVITY,
+                life: flight,
+                ch: app.rng.pick("·°,'~"),
+                color: fx::hsv(app.rng.range(190.0, 215.0), 0.6, 1.0),
+                leaf: false,
+            });
+        }
+    }
+    if show.flames.first().is_some_and(|flame| flame.wet >= DOUSE) {
+        let out = show.flames.remove(0);
+        for _ in 0..10 {
+            let x = out.x as f32 + app.rng.range(-1.5, 1.5);
+            app.particles.steam(&mut app.rng, x, (surface - 1) as f32);
+        }
+    }
+
+    let theme = &app.theme;
+    for flame in &mut show.flames {
+        let fuel = 0.95 * (1.0 - flame.wet / DOUSE);
+        flame
+            .fire
+            .step(&mut app.rng, FLAME_WIDTH, FLAME_ROWS, fuel, 14);
+        let at = flame.x - FLAME_WIDTH as i32 / 2;
+        flame
+            .fire
+            .draw(buf, theme, at, surface + 1 - FLAME_ROWS as i32);
+    }
+    let red = theme.fg(DRAGON);
+    cast::draw(buf, (left, sky), grid, flip, |_| red);
+    cast::draw(buf, fighter, cast::FIREFIGHTER, false, |ink| match ink {
+        b'r' => theme.fg(fx::RED),
+        b's' => theme.fg(STEEL),
+        _ => theme.fg(fx::FG),
+    });
+    let ball = theme
+        .fg(fx::hsv(30.0, 0.9, 1.0))
+        .add_modifier(Modifier::BOLD);
+    for spit in &show.spits {
+        let k = (e - spit.at) / SPIT_FLIGHT;
+        let (x, y) = (
+            spit.from.0 + (spit.to.0 - spit.from.0) * k,
+            spit.from.1 + (spit.to.1 - spit.from.1) * k,
         );
-    }
-    put(
-        buf,
-        meteor.x.round() as i32,
-        meteor.y.round() as i32,
-        "●",
-        app.theme
-            .fg(fx::hsv(55.0, 0.2, 1.0))
-            .add_modifier(Modifier::BOLD),
-    );
-}
-
-/// Runs in with a bucket, throws the water on the fire, runs off before it
-/// flares up again.
-fn firefighter(app: &mut App, buf: &mut Buffer, area: Rect, fire_top: i32, t: f32) {
-    let start = match app.spectacle.firefighter {
-        Some(start) if t - start < RUN_IN + THROW + RUN_OFF + FLARE_UP => start,
-        _ => {
-            let due = app
-                .spectacle
-                .firefighter
-                .map_or(FIREFIGHTER_FIRST, |start| start + FIREFIGHTER_EVERY);
-            if t < due {
-                return;
-            }
-            app.spectacle.firefighter = Some(t);
-            t
-        }
-    };
-    let since = t - start;
-    let spot = area.width as f32 * 0.18;
-    let (x, pose, throwing): (f32, &Frame3, bool) = if since < RUN_IN {
-        (-10.0 + (spot + 10.0) * since / RUN_IN, run_pose(t), false)
-    } else if since < RUN_IN + THROW {
-        (spot, &art::FIREFIGHTER_THROW, true)
-    } else if since < RUN_IN + THROW + RUN_OFF {
-        let away = (since - RUN_IN - THROW) / RUN_OFF;
-        (spot - (spot + 12.0) * away, run_pose(t), false)
-    } else {
-        return;
-    };
-    let (x, y) = (x.round() as i32, fire_top - 3);
-    fx::art(buf, x, y, pose, app.theme.fg(fx::FG));
-    let bucket = if throwing { "\\_/" } else { "[_]" };
-    put(buf, x + 7, y + 1, bucket, app.theme.fg(fx::RED));
-    if throwing {
-        for _ in 0..4 {
-            app.particles
-                .water(&mut app.rng, (x + 10) as f32, (y + 1) as f32);
-        }
-        let reach = app.rng.range(8.0, 40.0);
-        app.particles
-            .steam(&mut app.rng, x as f32 + 10.0 + reach, fire_top as f32);
-    }
-}
-
-fn run_pose(t: f32) -> &'static Frame3 {
-    if (t * 14.0) as i32 % 2 == 0 {
-        &art::RUN_A
-    } else {
-        &art::RUN_B
+        put(buf, x.round() as i32, y.round() as i32, "●", ball);
+        app.particles.flare(&mut app.rng, x, y);
     }
 }
 

@@ -14,7 +14,6 @@ pub const WAVE_A: Frame3 = [r" (\(\  ", r" ( ^.^)/", r#" o_(")(")"#];
 pub const WAVE_B: Frame3 = [r" (\(\  ", r" ( ^.^)_", r#" o_(")(")"#];
 pub const DANCE_A: Frame3 = [r"  (\(\", r#"\( ^o^)"#, r#"  (")(")/"#];
 pub const DANCE_B: Frame3 = [r" /)/)", r" (^o^ )/", r#"\(")(")"#];
-pub const FIREFIGHTER_THROW: Frame3 = [r" (\(\ ", r" (>.<)", r#" o_(")(")"#];
 pub const PHOENIX_UP: [&str; 5] = [
     r"\\\\         ////",
     r" \\\\   ^   //// ",
