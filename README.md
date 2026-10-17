@@ -92,6 +92,8 @@ it as `"password"`. Visitors get a small page that asks for it, then a
 cookie lets their browser through; anything else without the cookie,
 `curl` included, gets a 401. A `--local` share has no use for it.
 
+<img src="https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/password.png" alt="On a phone, the shared page asks for the password before showing the app" width="320">
+
 `--for` takes `90s`, `30m`, `2h` or `1h30m`. The dashboard shows the time
 left, visitors hear a minute before that the link closes, and the share then
 stops as if you had pressed Ctrl+C.
@@ -133,6 +135,8 @@ small bunny page that retries by itself.
 
 ## Testing webhooks
 
+![The inspector: a payment fails with a 500, / keeps only the POST, Enter opens its headers and JSON body, p replays it, c copies it as curl, and the curl pasted in a terminal gets the same 500](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/inspect.gif)
+
 Give Stripe, GitHub or Slack the public link as the webhook URL, then send a
 test event. In the dashboard, `/` then `POST` or the webhook's path keeps
 only its requests. `Tab` and `Enter` open one: its headers and JSON body as
@@ -144,6 +148,8 @@ An agent gets the same command in the `curl` field of the MCP `request` tool.
 A request whose body is over 32 KiB, or is not text, has no curl.
 
 ## Feedback from the people you share with
+
+![A note with three numbered points on a shop's home page, each with its own comment, and under it the source file and line each point came with](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/note.png)
 
 Every shared page gets a small tab on its edge. It tucks half away while the
 page scrolls, your client can drag it up, down or to the other edge, or push it
@@ -173,7 +179,7 @@ Background #e5e7eb -> #1f6548`. **Adjust** on a point opens it again. The
 selector is the element's before any move. Your agent makes the change in the
 code and reloads the page: the real render replaces the preview.
 
-![A note pinned on the pay button: the element's selector, and a screenshot of the page to send with it](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/note.png)
+![Edit mode: a pricing card is dragged before the two others, its background and padding change on the page, and the agent receives each change with the file to make it in](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/edit.gif)
 
 That folder ignores itself
 in git, so client notes never end up in a commit. Hand it to your coding
@@ -207,8 +213,6 @@ page, a reaction.
   and the start of its bodies, `p` replays it to your local server and shows
   the new status next to the old one.
 
-![The inspector: a 500 makes the log glitch, Enter opens its headers and bodies, p replays it](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/inspect.gif)
-
 The chat, the reactions and a link to every note are kept in one
 `session_<date>.md` next to the notes, so the whole conversation is there for
 you or your coding agent afterwards. On a phone the panel opens as a sheet
@@ -236,6 +240,8 @@ notes on your app while your agent works, and it reads them in
 `bunflared-feedback/`.
 
 ### Your agent in the live session
+
+![An agent connected over MCP: a note on a pay button that says NaN arrives with src/App.tsx:24, the agent takes a screenshot of the page, then a JavaScript error reaches it with its line](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/agent.gif)
 
 `bunflared mcp` is an MCP server on stdio. Your agent opens its own shares
 and does what the dashboard does: talk to the visitors, send them to a page,
