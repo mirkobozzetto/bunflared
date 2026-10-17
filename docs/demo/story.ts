@@ -139,14 +139,16 @@ async function record(browser: Browser, work: string): Promise<Story> {
   try {
     // 1. The link, and a first visitor to talk to.
     const boot = await waitScreen(term, /any key to skip/);
-    await sleep(2500);
-    shot("dashboard", "term", boot.at, boot.at + 2500, "bunf 5174 3000 digs a tunnel to your apps");
+    await sleep(2000);
+    shot("dashboard", "term", boot.at, boot.at + 2000, "bunf 5174 3000 digs a tunnel to your apps");
     const live = await waitScreen(term, /any key for the dashboard/, 150_000);
     const share = shares().find((share) => !before.has(String(share.id)));
     if (!share) throw new Error("no new share");
     const local = localEnd(String(share.id));
-    await sleep(500);
-    shot("dashboard", "term", live.at - 2000, live.at + 500, "The link is live, anyone can open it");
+    // Under LAUNCH, so the key still finds the launch screen.
+    await sleep(3400);
+    shot("dashboard", "term", live.at - 4500, live.at, "A dragon sets the burrow on fire, a firefighter bunny hoses it");
+    shot("dashboard", "term", live.at, live.at + 3400, "The link is live, and a carrot calms the dragon down");
     await press("Space");
 
     (async () => {

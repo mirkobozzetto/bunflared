@@ -1,6 +1,6 @@
 # bunflared
 
-![bunflared: the tunnel dug in flames, a client opens the link, a chat both ways and a reaction, cut between the browser and the terminal](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/dashboard.gif)
+![bunflared: a dragon and a firefighter bunny while the tunnel opens, a client opens the link, a chat both ways and a reaction, cut between the browser and the terminal](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/dashboard.gif)
 
 `bunflared 5173 3000` puts your local app on a temporary
 `https://<words>.trycloudflare.com` link, through a Cloudflare quick tunnel.
@@ -18,11 +18,12 @@ and `http://localhost:<port>` inside your pages and scripts is rewritten to
 match. WebSockets pass through, so hot reload keeps working for the person on
 the other end.
 
-And it is a show. The screen catches fire while the tunnel opens, meteors
-crash into the flames, a firefighter bunny tries his best, and a phoenix rises
-out of the fire carrying your link. Then every request flies across a traffic
-lane, the bunny naps when nobody visits and panics on a 5xx. There are
-achievements. There are secrets.
+And it is a show. While the tunnel opens, a dragon spits fire on the rabbit
+hole, and a firefighter bunny puts out every flame with his water cannon, then
+hoses the dragon until it flees. It comes back carrying your link, and a carrot
+from the bunny calms it down. Then every request flies across a traffic lane,
+the bunny naps when nobody visits and panics on a 5xx. There are achievements.
+There are secrets.
 
 And it is a live session with the people on the link: chat with them, send
 them to the page you just fixed, see where their pointer is, get their
