@@ -307,11 +307,13 @@ impl Host {
         let element = note
             .points
             .first()
-            .map(|e| json!({ "selector": e.selector, "text": e.text }));
+            .map(|e| json!({ "selector": e.selector, "text": e.text, "source": e.source }));
         let points: Vec<Value> = note
             .points
             .iter()
-            .map(|e| json!({ "selector": e.selector, "text": e.text, "comment": e.comment }))
+            .map(|e| {
+                json!({ "selector": e.selector, "text": e.text, "comment": e.comment, "source": e.source })
+            })
             .collect();
         self.log(
             id,
@@ -340,6 +342,9 @@ impl Host {
         }
         if let Some(element) = note.points.first() {
             meta["element"] = json!(element.selector);
+            if let Some(source) = &element.source {
+                meta["source"] = json!(source.at());
+            }
         }
         self.channel(&note.text(), meta);
     }

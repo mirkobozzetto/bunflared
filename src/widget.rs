@@ -32,6 +32,7 @@ const SCRIPT: &str = concat!(
     include_str!("widget/tab.js"),
     include_str!("widget/drag.js"),
     include_str!("widget/panel.js"),
+    include_str!("widget/source.js"),
     include_str!("widget/points.js"),
     include_str!("widget/flags.js"),
     include_str!("widget/pointing.js"),

@@ -26,7 +26,7 @@ function addPoint(node, info = describe(node), edit = null) {
     ${edit ? `<ul class="changes"></ul>` : ""}
     <textarea class="comment" rows="2" placeholder="${edit ? "Anything else about it?" : "What about it?"}"></textarea>`;
   const [num, name, field, cross] = ["b", "span", "textarea", ".unpin"].map((tag) => row.querySelector(tag));
-  const point = { node, info, row, num, field, cross, edit };
+  const point = { node, info, row, num, field, cross, edit, source: locate(node) };
   row.querySelector(".adjust")?.addEventListener("click", () => adjustPoint(point));
   for (const change of edit?.changes ?? []) {
     row.querySelector(".changes").append(Object.assign(document.createElement("li"), { textContent: change }));
