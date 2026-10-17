@@ -165,6 +165,12 @@ of it leaves as one note, one file and one screenshot where every element
 carries its number. A note with one element and no comment under it is
 written exactly as before.
 
+When the app runs from its development build, each point also says where the
+element comes from in the code, in the note's file and for your agent:
+`src/App.tsx:24 in Summary`. React gives the file, the line and the
+component, Svelte the file, the line and the column, Vue the file alone.
+A production build, or another framework, sends the note without it.
+
 **Edit** shows a change instead of describing it. Click an element, then drag
 it among its neighbours, or out of its block into another one (**Move
 earlier**, **Move later** and Alt with an arrow move it a place). Its settings
@@ -262,11 +268,23 @@ agent works in.
 
 | Tool | Does |
 | --- | --- |
-| `open`, `list`, `close` | start a share (local, or `public`), list them, stop one |
+| `open`, `list`, `close` | start a share (local, or `public`, and with `for` it closes by itself), list them, stop one |
 | `visitors` | who is on a share: device, page, active or idle |
-| `say`, `go`, `reload` | a chat bubble, a page to go to, a reload: for one visitor or everyone |
-| `events` | messages, notes, reactions, arrivals and departures since a cursor; it can wait for the next one |
-| `requests`, `request`, `replay` | the latest requests, one in full, sent again |
+| `say`, `go`, `reload` | a chat bubble, a page to go to, a reload: for one visitor or everyone. `reload` with a `selector` waits for the page and returns a screenshot of that element |
+| `screenshot` | what a visitor sees now, as an image the agent sees, with the page's title, path, screen size and visible text |
+| `events` | messages, notes, reactions, arrivals, departures and the page's JavaScript errors since a cursor; it can wait for the next one |
+| `requests`, `request`, `replay` | the latest requests, one in full with a `curl` command that sends it again, sent again |
+
+A page's errors reach `events` within a second: an error never caught, a
+promise rejected with nothing to handle it, or a `console.error`, each with
+the file and line it came from. The same error over and over comes once in a
+while, with how many times it happened.
+
+On a public link, the visitor decides first: the first screenshot asked shows
+a bar on their page, "The developer's assistant asks to see this page and its
+errors", with **Allow** and **No**. Their answer holds for the visit, and
+their page's errors go to the agent only after **Allow**. On your own
+computer nothing is asked.
 
 Claude Code's channels (a research preview) bring each message and note into
 the session by itself, without the agent asking. bunflared is not on
