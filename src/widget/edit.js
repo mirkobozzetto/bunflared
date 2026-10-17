@@ -54,14 +54,21 @@ const editKey = (event) => {
   else cancelEdit();
 };
 
-// Above or below the element, whichever leaves it in view.
+// Above or below the element, whichever leaves it in view: across the middle
+// of the window first, the other side when the page cannot scroll that far.
 function placeBar() {
   const box = editing.node.getBoundingClientRect();
-  const top = box.top + box.height / 2 > innerHeight / 2;
-  bar.classList.toggle("top", top);
-  const cover = bar.getBoundingClientRect();
-  const gap = top ? box.top - cover.bottom : cover.top - box.bottom;
-  if (gap < 0) scrollBy(0, top ? gap - 12 : 12 - gap);
+  const first = box.top + box.height / 2 > innerHeight / 2;
+  for (const top of [first, !first]) {
+    bar.classList.toggle("top", top);
+    const gap = () => {
+      const [box, cover] = [editing.node.getBoundingClientRect(), bar.getBoundingClientRect()];
+      return top ? box.top - cover.bottom : cover.top - box.bottom;
+    };
+    const room = gap();
+    if (room < 0) scrollBy(0, top ? room - 12 : 12 - room);
+    if (gap() >= 0) return;
+  }
 }
 
 // Its place in the block, said aloud after a move. A move button that can go
