@@ -314,10 +314,10 @@ fn draw_lane(app: &mut App, frame: &mut Frame, area: Rect) {
     ))
     .right_aligned();
     let mut block = panel(app, "traffic").title_bottom(caption);
-    if app.reactions.iter().any(|&n| n > 0) {
+    if app.audience.reactions.iter().any(|&n| n > 0) {
         let counts: Vec<String> = REACTIONS
             .iter()
-            .zip(app.reactions)
+            .zip(app.audience.reactions)
             .map(|((emoji, _), n)| format!("{emoji} {n}"))
             .collect();
         block = block.title_bottom(Span::styled(
@@ -492,7 +492,7 @@ fn draw_stats(app: &App, frame: &mut Frame, area: Rect) {
             label("  carrots eaten "),
             strong(app.traffic.classes[0].to_string(), fx::CARROT),
             label("  feedback "),
-            strong(app.feedback.to_string(), fx::PINK),
+            strong(app.audience.feedback.to_string(), fx::PINK),
         ]),
     ];
     let width = inner.width as usize;
@@ -538,13 +538,14 @@ fn presence(app: &App, visitor: &Visitor) -> (&'static str, String, Color) {
 
 /// The visitors in the order they are listed: by arrival, those who left last.
 pub fn roster(app: &App) -> Vec<&Visitor> {
-    let mut visitors = app.roster.by_arrival();
+    let mut visitors = app.audience.roster.by_arrival();
     visitors.sort_by_key(|v| presence(app, v).1 == "left");
     visitors
 }
 
 pub fn here(app: &App) -> usize {
-    app.roster
+    app.audience
+        .roster
         .by_arrival()
         .into_iter()
         .filter(|v| presence(app, v).1 != "left")
@@ -560,7 +561,7 @@ fn draw_visitors(app: &App, frame: &mut Frame, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let theme = &app.theme;
-    if app.roster.is_empty() {
+    if app.audience.roster.is_empty() {
         let line = Line::from(Span::styled("Nobody on the page yet.", theme.fg(fx::DIM)));
         frame.render_widget(Paragraph::new(line), inner);
         return;
@@ -568,7 +569,7 @@ fn draw_visitors(app: &App, frame: &mut Frame, area: Rect) {
     let visitors = roster(app);
     let at = visitors
         .iter()
-        .position(|v| app.selected.as_ref() == Some(&v.presence.sid));
+        .position(|v| app.audience.selected.as_ref() == Some(&v.presence.sid));
     let lines: Vec<Line> = visitors
         .into_iter()
         .skip(scroll(at, inner.height as usize))
@@ -576,7 +577,7 @@ fn draw_visitors(app: &App, frame: &mut Frame, area: Rect) {
         .map(|visitor| {
             let (dot, state, color) = presence(app, visitor);
             let p = &visitor.presence;
-            let selected = app.selected.as_ref() == Some(&p.sid);
+            let selected = app.audience.selected.as_ref() == Some(&p.sid);
             let line = Line::from(vec![
                 Span::styled(format!("{dot} "), theme.fg(color)),
                 Span::styled(format!("{}  ", p.device), theme.fg(fx::FG)),
@@ -667,7 +668,7 @@ fn draw_log(app: &App, frame: &mut Frame, area: Rect) {
 /// The radar of the selected visitor and the chat, once someone has talked,
 /// take the right of the request log.
 fn split_side(app: &App, log: Rect) -> (Rect, Option<Rect>) {
-    if app.chat.is_empty() && app.selected.is_none() {
+    if app.audience.chat.is_empty() && app.audience.selected.is_none() {
         return (log, None);
     }
     let [log, side] =
@@ -676,7 +677,10 @@ fn split_side(app: &App, log: Rect) -> (Rect, Option<Rect>) {
 }
 
 fn draw_side(app: &App, frame: &mut Frame, area: Rect) {
-    match (app.selected.is_some(), app.chat.is_empty()) {
+    match (
+        app.audience.selected.is_some(),
+        app.audience.chat.is_empty(),
+    ) {
         (true, false) => {
             let [radar, chat] =
                 Layout::vertical([Constraint::Percentage(50), Constraint::Min(0)]).areas(area);
@@ -690,13 +694,17 @@ fn draw_side(app: &App, frame: &mut Frame, area: Rect) {
 
 /// The selected visitor's viewport, scaled, with their pointer in it.
 fn draw_radar(app: &App, frame: &mut Frame, area: Rect) {
-    let visitor = app.selected.as_ref().and_then(|sid| app.roster.get(sid));
+    let visitor = app
+        .audience
+        .selected
+        .as_ref()
+        .and_then(|sid| app.audience.roster.get(sid));
     let device = visitor.map_or("nobody", |v| v.presence.device.as_str());
     let block = panel(app, &format!("radar · {device}"));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let theme = &app.theme;
-    let pointer = visitor.and_then(|v| app.pointers.get(&v.presence.sid));
+    let pointer = visitor.and_then(|v| app.audience.pointers.get(&v.presence.sid));
     let Some((pointer, at)) = pointer else {
         let line = Line::from(Span::styled(
             "Their pointer shows here once it moves.",
@@ -753,7 +761,7 @@ fn draw_chat(app: &App, frame: &mut Frame, area: Rect) {
     let theme = &app.theme;
     let width = inner.width.saturating_sub(2).max(8) as usize;
     let mut lines = Vec::new();
-    for message in &app.chat {
+    for message in &app.audience.chat {
         let (who, color) = if message.mine {
             (format!("you → {}", message.who), fx::PINK)
         } else {
@@ -813,7 +821,11 @@ fn compact(app: &App, frame: &mut Frame, area: Rect) {
             theme.fg(fx::CYAN).add_modifier(Modifier::BOLD),
         )),
         Line::from(Span::styled(
-            format!("{} here now · {} feedback", here(app), app.feedback),
+            format!(
+                "{} here now · {} feedback",
+                here(app),
+                app.audience.feedback
+            ),
             theme.fg(fx::FG),
         )),
         Line::from(Span::styled(
@@ -1000,18 +1012,18 @@ fn draw_prompt(app: &App, frame: &mut Frame, area: Rect) {
     let Some(prompt) = &app.prompt else {
         return;
     };
-    let suggestions = app.suggestions(prompt);
+    let suggestions = app.audience.suggestions(prompt);
     let (title, hint) = match prompt.ask {
         Ask::Go => (
-            format!("send {} to", app.target()),
+            format!("send {} to", app.audience.target()),
             " enter send · tab pick · esc cancel ",
         ),
         Ask::Chat => (
-            format!("message to {}", app.target()),
+            format!("message to {}", app.audience.target()),
             " enter send · esc close ",
         ),
         Ask::React => (
-            format!("react to {}", app.target()),
+            format!("react to {}", app.audience.target()),
             " 1-4 or tab, enter send · esc cancel ",
         ),
     };

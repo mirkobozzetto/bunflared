@@ -1,4 +1,5 @@
 mod art;
+mod audience;
 mod boot;
 mod cast;
 mod dashboard;
@@ -10,7 +11,7 @@ mod shaders;
 mod spectacle;
 mod traffic;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
@@ -24,12 +25,12 @@ use ratatui::style::{Color, Style};
 use tokio::sync::watch;
 
 use crate::clipboard;
-use crate::clock::{self, uptime};
-use crate::event::{Event, Hit, Pointer};
+use crate::clock::uptime;
+use crate::event::{Event, Hit};
 use crate::live::{self, Command, Hub, REACTIONS};
 use crate::notes;
 use crate::proxy::Replayer;
-use crate::visitors::Roster;
+use audience::Audience;
 use boot::Boot;
 use traffic::Traffic;
 
@@ -44,9 +45,6 @@ const MARATHON: f32 = 3600.0;
 const STAMPEDE_PRESSES: usize = 5;
 const STAMPEDE_WINDOW: Duration = Duration::from_millis(1500);
 const PYRO: u32 = 10;
-const PAGES_KEEP: usize = 20;
-const SUGGESTIONS: usize = 5;
-const CHAT_KEEP: usize = 60;
 const WORRY_FOR: Duration = Duration::from_secs(3);
 // Past this, a reaction still counts and toasts, without more confetti.
 const MAX_PARTICLES: usize = 800;
@@ -150,16 +148,6 @@ pub enum Ask {
     React,
 }
 
-/// A line of the chat panel, sent or received.
-pub struct Message {
-    pub mine: bool,
-    /// The visitor's device, or who a message of ours went to.
-    pub who: String,
-    pub page: String,
-    pub text: String,
-    pub clock: String,
-}
-
 /// A text box open over the dashboard: while it is, keys are text.
 pub struct Prompt {
     pub ask: Ask,
@@ -187,22 +175,12 @@ pub struct App {
 
     pub boot: Boot,
     pub traffic: Traffic,
+    pub audience: Audience,
     /// Particles skip this area: the QR code, the freshly announced link.
     pub keep_clear: Option<Rect>,
     pub unlocked: Vec<&'static art::Achievement>,
-    pub roster: Roster,
-    /// The followed visitors' pointers, and when they last moved.
-    pub pointers: HashMap<String, (Pointer, Instant)>,
-    pub feedback: u32,
-    pub hub: Arc<Hub>,
     pub focus: Option<Focus>,
-    /// The visitor that commands go to; everyone when `None`.
-    pub selected: Option<String>,
     pub prompt: Option<Prompt>,
-    /// Pages the visitors were on, the most recent first.
-    pub pages: Vec<String>,
-    pub chat: VecDeque<Message>,
-    pub reactions: [u32; REACTIONS.len()],
     pub worried_until: Option<Instant>,
 
     pub disco: bool,
@@ -275,18 +253,11 @@ impl App {
             launch_bursts: 0,
             boot: Boot::new(ports),
             traffic: Traffic::new(replayer, now),
+            audience: Audience::new(hub),
             keep_clear: None,
             unlocked: Vec::new(),
-            roster: Roster::default(),
-            pointers: HashMap::new(),
-            feedback: 0,
-            hub,
             focus: None,
-            selected: None,
             prompt: None,
-            pages: Vec::new(),
-            chat: VecDeque::new(),
-            reactions: [0; REACTIONS.len()],
             worried_until: None,
             disco: false,
             qr: false,
@@ -390,62 +361,23 @@ impl App {
             }
             Event::Request(hit) => self.on_hit(hit),
             Event::Presence(presence) => {
-                self.remember(&presence.page);
-                if self.roster.update(presence, now) {
+                if self.audience.presence(presence, now) {
                     self.shaders.arrival();
                 }
             }
             Event::Feedback(note) => {
-                self.feedback += 1;
-                let excerpt: String = note.text().replace('\n', " · ").chars().take(40).collect();
-                self.toast(
-                    format!("✎ {} on {}", note.device, note.page),
-                    excerpt,
-                    false,
-                );
-                // A visitor often answers in the note field: it joins the chat
-                // too, a line per element it points at, and whether a
-                // screenshot came.
-                let mut text = format!("✎ {}", note.message).trim_end().to_string();
-                for (index, point) in note.points.iter().enumerate() {
-                    text.push_str(&format!("\n📍 {}", point.line(index + 1)));
-                }
-                if note.shot.is_some() {
-                    text.push_str("\n📷 screenshot");
-                }
-                self.remember_message(Message {
-                    mine: false,
-                    who: note.device,
-                    page: note.page,
-                    text,
-                    clock: clock::clock(),
-                });
+                let (title, excerpt) = self.audience.note(note);
+                self.toast(title, excerpt, false);
                 self.unlock("critic");
             }
             Event::Chat(said) => {
-                let excerpt: String = said.text.chars().take(40).collect();
-                self.toast(
-                    format!("✉ {} on {}", said.device, said.page),
-                    excerpt,
-                    false,
-                );
-                self.remember_message(Message {
-                    mine: false,
-                    who: said.device,
-                    page: said.page,
-                    text: said.text,
-                    clock: clock::clock(),
-                });
+                let (title, excerpt) = self.audience.said(said);
+                self.toast(title, excerpt, false);
             }
-            Event::Pointer(pointer) => {
-                if self.roster.get(&pointer.sid).is_some() {
-                    self.pointers.insert(pointer.sid.clone(), (pointer, now));
-                }
-            }
+            Event::Pointer(pointer) => self.audience.pointer(pointer, now),
             Event::Reacted(reaction) => {
-                self.reactions[reaction.kind] += 1;
-                let (emoji, label) = REACTIONS[reaction.kind];
-                self.toast(format!("{emoji} from {}", reaction.device), label, false);
+                let (title, label) = self.audience.reacted(&reaction);
+                self.toast(title, label, false);
                 if !self.theme.calm && self.particles.0.len() < MAX_PARTICLES {
                     self.celebrate(reaction.kind);
                 }
@@ -660,7 +592,7 @@ impl App {
             }
             KeyCode::Esc => {
                 self.focus = None;
-                self.select(None);
+                self.audience.select(None);
                 self.traffic.picked = None;
             }
             KeyCode::Tab if dashboard => {
@@ -701,9 +633,9 @@ impl App {
                     pick: Some(0),
                 });
             }
-            KeyCode::Char('x') if dashboard => self.chat.clear(),
+            KeyCode::Char('x') if dashboard => self.audience.chat.clear(),
             KeyCode::Char('R') if dashboard => {
-                let reached = self.hub.send(self.selected.as_deref(), &Command::Reload);
+                let reached = self.audience.send(&Command::Reload);
                 self.sent("↻ Reload", reached);
             }
             KeyCode::Char('?') => self.help = !self.help,
@@ -778,8 +710,8 @@ impl App {
                     .iter()
                     .map(|v| v.presence.sid.clone())
                     .collect();
-                let next = stepped(&sids, self.selected.as_ref(), down);
-                self.select(next);
+                let next = stepped(&sids, self.audience.selected.as_ref(), down);
+                self.audience.select(next);
             }
             Focus::Log => {
                 let ranks: Vec<u32> = self.traffic.rows.iter().map(|row| row.n).collect();
@@ -788,17 +720,11 @@ impl App {
         }
     }
 
-    /// The selected visitor is the one whose pointer the radar follows.
-    fn select(&mut self, sid: Option<String>) {
-        self.hub.follow(sid.as_deref());
-        self.selected = sid;
-    }
-
     fn on_prompt_key(&mut self, key: KeyEvent) {
         let count = self
             .prompt
             .as_ref()
-            .map_or(0, |prompt| self.suggestions(prompt).len());
+            .map_or(0, |prompt| self.audience.suggestions(prompt).len());
         let Some(prompt) = self.prompt.as_mut() else {
             return;
         };
@@ -849,31 +775,26 @@ impl App {
             Ask::Go => {
                 let path = prompt
                     .pick
-                    .and_then(|i| self.suggestions(&prompt).into_iter().nth(i))
+                    .and_then(|i| self.audience.suggestions(&prompt).into_iter().nth(i))
                     .unwrap_or_else(|| prompt.text.trim().to_string());
                 if path.is_empty() {
                     return;
                 }
                 let path = live::absolute(&path);
-                let command = Command::Go { path: path.clone() };
-                let reached = self.hub.send(self.selected.as_deref(), &command);
+                let reached = self.audience.send(&Command::Go { path: path.clone() });
                 self.sent(&format!("→ {path}"), reached);
             }
             Ask::React => {
                 let kind = prompt.pick.unwrap_or(0);
-                let emoji = REACTIONS[kind].0.to_string();
-                let reached = self
-                    .hub
-                    .react(self.selected.as_deref(), &self.target(), &emoji);
-                self.sent(&format!("{emoji} sent"), reached);
+                let reached = self.audience.react(kind);
+                self.sent(&format!("{} sent", REACTIONS[kind].0), reached);
             }
             Ask::Chat => {
                 let text = prompt.text.trim().to_string();
-                let to = self.target();
                 let reached = if text.is_empty() {
                     0
                 } else {
-                    self.hub.say(self.selected.as_deref(), &to, &text)
+                    self.audience.say(&text)
                 };
                 // The box stays open for the next line; a message nobody got stays typed.
                 let kept = if reached == 0 {
@@ -886,20 +807,9 @@ impl App {
                     text: kept,
                     pick: None,
                 });
-                if text.is_empty() {
-                    return;
-                }
-                if reached == 0 {
+                if !text.is_empty() && reached == 0 {
                     self.sent("✉ Not sent", 0);
-                    return;
                 }
-                self.remember_message(Message {
-                    mine: true,
-                    who: to,
-                    page: String::new(),
-                    text,
-                    clock: clock::clock(),
-                });
             }
         }
     }
@@ -929,55 +839,8 @@ impl App {
         }
     }
 
-    fn remember_message(&mut self, message: Message) {
-        self.chat.push_back(message);
-        if self.chat.len() > CHAT_KEEP {
-            self.chat.pop_front();
-        }
-    }
-
-    /// The pages offered under the go box, filtered by what is typed, or
-    /// the reactions to pick from.
-    pub fn suggestions(&self, prompt: &Prompt) -> Vec<String> {
-        match prompt.ask {
-            Ask::Chat => return Vec::new(),
-            Ask::React => {
-                return REACTIONS
-                    .iter()
-                    .enumerate()
-                    .map(|(i, (emoji, label))| format!("{}  {emoji}  {label}", i + 1))
-                    .collect();
-            }
-            Ask::Go => {}
-        }
-        let text = prompt.text.trim();
-        self.pages
-            .iter()
-            .filter(|page| page.contains(text))
-            .take(SUGGESTIONS)
-            .cloned()
-            .collect()
-    }
-
-    fn remember(&mut self, page: &str) {
-        self.pages.retain(|seen| seen != page);
-        self.pages.insert(0, page.to_string());
-        self.pages.truncate(PAGES_KEEP);
-    }
-
-    /// Who commands go to, for titles and toasts.
-    pub fn target(&self) -> String {
-        self.selected
-            .as_ref()
-            .and_then(|sid| self.roster.get(sid))
-            .map_or_else(|| "everyone".into(), |v| v.presence.device.clone())
-    }
-
     fn sent(&mut self, title: &str, reached: usize) {
-        let body = match reached {
-            0 => "No page is connected live.".to_string(),
-            n => format!("{}, {}.", self.target(), plural(n, "page")),
-        };
+        let body = self.audience.reached(reached);
         self.toast(title, body, false);
     }
 
@@ -1065,10 +928,10 @@ impl App {
         if !badges.is_empty() {
             println!("               {}", paint("33", &badges.join("  ")));
         }
-        if self.feedback > 0 {
+        if self.audience.feedback > 0 {
             let note = format!(
                 "✎ {} saved in {}/",
-                plural(self.feedback as usize, "feedback note"),
+                plural(self.audience.feedback as usize, "feedback note"),
                 notes::FOLDER
             );
             println!("               {}", paint("36", &note));
