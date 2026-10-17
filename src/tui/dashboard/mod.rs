@@ -7,6 +7,8 @@ mod requests;
 mod stats;
 mod visitors;
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -18,6 +20,7 @@ use super::boot::Qr;
 use super::fx::{self, put};
 use super::keys::Focus;
 use super::{App, Theme, plural};
+use crate::clock::uptime;
 use chat::{draw_side, split_side};
 use lane::draw_lane;
 use ports::draw_ports;
@@ -45,6 +48,17 @@ const KEYS: [(&str, &str); 8] = [
 
 fn hms(secs: u64) -> String {
     format!("{:02}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60)
+}
+
+/// " · 12m 04s left" while `--for` runs, nothing otherwise.
+fn left(app: &App) -> String {
+    let Some(at) = app.boot.record.as_ref().and_then(|r| r.expires_at) else {
+        return String::new();
+    };
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    format!(" · {} left", uptime(at.saturating_sub(now)))
 }
 
 /// A panel whose border shows it has the keyboard focus.
@@ -181,7 +195,7 @@ fn draw_header(app: &App, frame: &mut Frame, area: Rect) {
     let live = Line::from(vec![
         Span::styled(" ●", app.theme.fg(dot)),
         Span::styled(
-            format!(" LIVE {} ", hms(app.live_for())),
+            format!(" LIVE {}{} ", hms(app.live_for()), left(app)),
             app.theme.fg(fx::FG).add_modifier(Modifier::BOLD),
         ),
     ])
@@ -241,7 +255,7 @@ fn draw_footer(app: &App, frame: &mut Frame, area: Rect) {
 fn compact(app: &App, frame: &mut Frame, area: Rect) {
     let theme = &app.theme;
     let status = if app.boot.ready_at.is_some() {
-        format!("● LIVE {}", hms(app.live_for()))
+        format!("● LIVE {}{}", hms(app.live_for()), left(app))
     } else {
         "digging...".into()
     };
