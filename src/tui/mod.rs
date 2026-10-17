@@ -1,69 +1,44 @@
 mod art;
+mod audience;
+mod boot;
 mod cast;
 mod dashboard;
 mod fx;
 pub mod home;
 mod hose;
+mod keys;
 mod scenes;
 mod shaders;
+mod show;
 mod spectacle;
+mod traffic;
 
-use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use ratatui::Frame;
-use ratatui::crossterm::event::{
-    self, Event as Term, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
-};
-use ratatui::layout::Rect;
+use ratatui::crossterm::event::{self, Event as Term, KeyEventKind};
 use ratatui::style::{Color, Style};
 use tokio::sync::watch;
 
-use crate::clipboard;
-use crate::live::{self, Command, Hub, Pointer, REACTIONS};
-use crate::proxy::{Replayer, mount};
-use crate::share::{Event, Failure, Hit};
-use crate::state::{Record, uptime};
-use crate::widget::{self, Presence};
+use crate::event::{Event, Hit};
+use crate::live::Hub;
+use crate::proxy::Replayer;
+use audience::Audience;
+use boot::Boot;
+use keys::Keys;
+use show::Show;
+use traffic::Traffic;
 
 const BOOT: f32 = 2.2;
 const LAUNCH: f32 = 4.0;
 const GOODBYE: f32 = 1.6;
 const SNIFF: f32 = 0.35;
-pub const LANE_TRIP: f32 = 1.4;
-const TOAST_LIFE: f32 = 3.5;
-const LOG_KEEP: usize = 200;
-const SPARK_KEEP: usize = 120;
 pub const SLEEP_AFTER: f32 = 60.0;
 const MARATHON: f32 = 3600.0;
-const STAMPEDE_PRESSES: usize = 5;
-const STAMPEDE_WINDOW: Duration = Duration::from_millis(1500);
-const PYRO: u32 = 10;
-const PAGES_KEEP: usize = 20;
-const SUGGESTIONS: usize = 5;
-const CHAT_KEEP: usize = 60;
-const WORRY_FOR: Duration = Duration::from_secs(3);
-// Past this, a reaction still counts and toasts, without more confetti.
-const MAX_PARTICLES: usize = 800;
-// No command key in it, or typing it would copy, open or quit.
-const CARROT_WORD: &str = "yum";
 const FAST_FRAME: Duration = Duration::from_millis(33);
 const SLOW_FRAME: Duration = Duration::from_millis(100);
-const KONAMI: [KeyCode; 10] = [
-    KeyCode::Up,
-    KeyCode::Up,
-    KeyCode::Down,
-    KeyCode::Down,
-    KeyCode::Left,
-    KeyCode::Right,
-    KeyCode::Left,
-    KeyCode::Right,
-    KeyCode::Char('b'),
-    KeyCode::Char('a'),
-];
-
 pub struct Theme {
     pub calm: bool,
     pub color: bool,
@@ -114,91 +89,6 @@ pub enum Phase {
     Failed,
 }
 
-pub struct PortState {
-    pub port: u16,
-    pub route: String,
-    pub checked: Option<bool>,
-    pub up: bool,
-    pub hits: u32,
-}
-
-pub struct Row {
-    pub hit: Hit,
-    pub clock: String,
-    /// Its rank since the start, a key that survives new rows.
-    pub n: u32,
-    pub replayed: Option<Replay>,
-}
-
-pub enum Replay {
-    Pending,
-    Done { status: u16, ms: u32 },
-    Failed,
-}
-
-pub struct Sprite {
-    pub born: Instant,
-    pub lane: u16,
-    pub glyph: char,
-    pub color: Color,
-}
-
-pub struct Toast {
-    pub title: String,
-    pub body: String,
-    pub born: Instant,
-    pub gold: bool,
-}
-
-pub struct Runner {
-    pub x: f32,
-    pub y: f32,
-    pub speed: f32,
-}
-
-/// A browser tab reporting through the widget.
-pub struct Session {
-    pub presence: Presence,
-    pub seen: Instant,
-    pub first: Instant,
-    pub pointer: Option<(Pointer, Instant)>,
-}
-
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub enum Focus {
-    Visitors,
-    Log,
-}
-
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub enum Ask {
-    Go,
-    Chat,
-    React,
-}
-
-/// A line of the chat panel, sent or received.
-pub struct Message {
-    pub mine: bool,
-    /// The visitor's device, or who a message of ours went to.
-    pub who: String,
-    pub page: String,
-    pub text: String,
-    pub clock: String,
-}
-
-/// A text box open over the dashboard: while it is, keys are text.
-pub struct Prompt {
-    pub ask: Ask,
-    pub text: String,
-    pub pick: Option<usize>,
-}
-
-pub struct Qr {
-    pub size: usize,
-    pub dark: Vec<bool>,
-}
-
 pub struct App {
     pub theme: Theme,
     pub phase: Phase,
@@ -206,68 +96,11 @@ pub struct App {
     started: Instant,
     pub now: Instant,
     pub dt: f32,
-    pub rng: fx::Rng,
-    pub particles: fx::Particles,
-    pub fire: fx::Fire,
-    pub spectacle: spectacle::Spectacle,
-    shaders: shaders::Shaders,
-    pub spots: shaders::Spots,
-    pub sprites: Vec<Sprite>,
-    pub toasts: Vec<Toast>,
-    pub runners: Vec<Runner>,
-    pub launch_bursts: u8,
-
-    pub ports: Vec<PortState>,
-    pub url: Option<String>,
-    pub record: Option<Record>,
-    pub qr_code: Option<Qr>,
-    /// Particles skip this area: the QR code, the freshly announced link.
-    pub keep_clear: Option<Rect>,
-    pub resolved: bool,
-    pub copied: bool,
-    pub progress: f32,
-    target: f32,
-    pub stage: String,
-    pub ready_at: Option<Instant>,
-    pub rows: VecDeque<Row>,
-    pub total: u32,
-    pub classes: [u32; 4],
-    pub visitors: HashSet<String>,
-    pub sockets: u32,
-    pub ms_sum: u64,
-    pub per_second: VecDeque<u64>,
-    bucket_at: Instant,
-    pub last_hit: Option<Instant>,
-    pub last_error: Option<Instant>,
-    pub failure: Option<Failure>,
-    pub unlocked: Vec<&'static art::Achievement>,
-    pub sessions: HashMap<String, Session>,
-    pub feedback: u32,
-    pub hub: Arc<Hub>,
-    pub focus: Option<Focus>,
-    /// The visitor that commands go to; everyone when `None`.
-    pub selected: Option<String>,
-    pub picked: Option<u32>,
-    pub prompt: Option<Prompt>,
-    /// Pages the visitors were on, the most recent first.
-    pub pages: Vec<String>,
-    pub chat: VecDeque<Message>,
-    pub reactions: [u32; REACTIONS.len()],
-    pub worried_until: Option<Instant>,
-    replayer: Replayer,
-    /// The request whose details are open, by rank.
-    pub details: Option<u32>,
-    pub details_scroll: u16,
-
-    pub disco: bool,
-    pub qr: bool,
-    pub help: bool,
-    keys: VecDeque<KeyCode>,
-    typed: String,
-    b_presses: VecDeque<Instant>,
-    fireworks: u32,
-    pub carrots_until: Option<Instant>,
-    pub quitting: Option<Instant>,
+    pub boot: Boot,
+    pub traffic: Traffic,
+    pub audience: Audience,
+    pub show: Show,
+    pub keys: Keys,
     exit: Option<i32>,
 }
 
@@ -302,7 +135,7 @@ pub fn run(
         }
     };
     ratatui::restore();
-    app.farewell();
+    scenes::recap(&app);
     code
 }
 
@@ -310,17 +143,6 @@ impl App {
     fn new(ports: &[u16], theme: Theme, hub: Arc<Hub>, replayer: Replayer) -> Self {
         let calm = theme.calm;
         let now = Instant::now();
-        let ports = ports
-            .iter()
-            .enumerate()
-            .map(|(i, &port)| PortState {
-                port,
-                route: if i == 0 { "/".into() } else { mount(port) },
-                checked: None,
-                up: true,
-                hits: 0,
-            })
-            .collect();
         Self {
             theme,
             phase: Phase::Boot,
@@ -328,62 +150,11 @@ impl App {
             started: now,
             now,
             dt: 0.0,
-            rng: fx::Rng::seeded(),
-            particles: fx::Particles::default(),
-            fire: fx::Fire::default(),
-            spectacle: spectacle::Spectacle::default(),
-            shaders: shaders::Shaders::new(calm),
-            spots: shaders::Spots::default(),
-            sprites: Vec::new(),
-            toasts: Vec::new(),
-            runners: Vec::new(),
-            launch_bursts: 0,
-            ports,
-            url: None,
-            record: None,
-            qr_code: None,
-            keep_clear: None,
-            resolved: false,
-            copied: false,
-            progress: 0.0,
-            target: 0.05,
-            stage: "Sniffing around".into(),
-            ready_at: None,
-            rows: VecDeque::new(),
-            total: 0,
-            classes: [0; 4],
-            visitors: HashSet::new(),
-            sockets: 0,
-            ms_sum: 0,
-            per_second: VecDeque::from(vec![0; SPARK_KEEP]),
-            bucket_at: now,
-            last_hit: None,
-            last_error: None,
-            failure: None,
-            unlocked: Vec::new(),
-            sessions: HashMap::new(),
-            feedback: 0,
-            hub,
-            focus: None,
-            selected: None,
-            picked: None,
-            prompt: None,
-            pages: Vec::new(),
-            chat: VecDeque::new(),
-            reactions: [0; REACTIONS.len()],
-            worried_until: None,
-            replayer,
-            details: None,
-            details_scroll: 0,
-            disco: false,
-            qr: false,
-            help: false,
-            keys: VecDeque::new(),
-            typed: String::new(),
-            b_presses: VecDeque::new(),
-            fireworks: 0,
-            carrots_until: None,
-            quitting: None,
+            boot: Boot::new(ports),
+            traffic: Traffic::new(replayer, now),
+            audience: Audience::new(hub),
+            show: Show::new(calm),
+            keys: Keys::default(),
             exit: None,
         }
     }
@@ -401,205 +172,79 @@ impl App {
         self.phase = phase;
         self.phase_at = self.now;
         if phase == Phase::Dashboard {
-            self.shaders.entry();
+            self.show.shaders.entry();
         }
     }
 
     /// Animations need 30 fps; a quiet dashboard is fine at 10.
     fn busy(&self) -> bool {
-        !self.theme.calm
-            && (self.phase != Phase::Dashboard
-                || !self.particles.is_empty()
-                || !self.sprites.is_empty()
-                || !self.toasts.is_empty()
-                || !self.runners.is_empty()
-                || self.disco
-                || self.carrots_until.is_some()
-                || self.shaders.busy())
+        !self.theme.calm && (self.phase != Phase::Dashboard || self.show.busy())
     }
 
     pub fn live_for(&self) -> u64 {
-        self.ready_at.map_or(0, |at| (self.now - at).as_secs())
+        self.boot.ready_at.map_or(0, |at| (self.now - at).as_secs())
     }
 
     pub fn sleeping(&self) -> bool {
         let since = self
+            .traffic
             .last_hit
-            .or(self.ready_at)
+            .or(self.boot.ready_at)
             .map_or(0.0, |at| (self.now - at).as_secs_f32());
         since > SLEEP_AFTER
     }
 
     pub fn toast(&mut self, title: impl Into<String>, body: impl Into<String>, gold: bool) {
-        self.toasts.push(Toast {
-            title: title.into(),
-            body: body.into(),
-            born: self.now,
-            gold,
-        });
+        self.show.toast(self.now, title.into(), body.into(), gold);
     }
 
     fn unlock(&mut self, key: &str) {
-        let achievement = art::achievement(key);
-        if self.unlocked.iter().any(|a| a.key == key) {
-            return;
-        }
-        self.unlocked.push(achievement);
-        self.toast(format!("★ {}", achievement.name), achievement.blurb, true);
-        if !self.theme.calm {
-            let area = self.area();
-            let (x, y) = (area.width as f32 / 3.0, area.height as f32 - 4.0);
-            self.particles.fireworks(&mut self.rng, x, y);
-        }
-    }
-
-    pub fn area(&self) -> Rect {
-        ratatui::crossterm::terminal::size()
-            .map(|(w, h)| Rect::new(0, 0, w, h))
-            .unwrap_or(Rect::new(0, 0, 80, 24))
+        self.show.unlock(self.now, key);
     }
 
     fn on_event(&mut self, event: Event, now: Instant) {
         self.now = now;
         match event {
-            Event::PortChecked { port, ok } => {
-                if let Some(state) = self.ports.iter_mut().find(|p| p.port == port) {
-                    state.checked = Some(ok);
-                    state.up = ok;
-                }
-            }
-            Event::FetchingCloudflared => {
-                self.target = self.target.max(0.08);
-                self.stage = "Fetching cloudflared, first run only".into();
-            }
-            Event::TunnelStarting => {
-                self.target = self.target.max(0.12);
-                self.stage = "Waking up cloudflared".into();
-            }
-            Event::TunnelUrl(url) => {
-                self.url = Some(url);
-                self.target = self.target.max(0.35);
-                self.stage = "Plugging into Cloudflare's edge".into();
-            }
-            Event::TunnelRegistered => {
-                self.target = self.target.max(0.5);
-                self.stage = "Waiting for DNS to notice".into();
-            }
-            Event::DnsAttempt(attempt) => {
-                let dns = 0.5 + 0.45 * (1.0 - 0.85f32.powi(attempt as i32));
-                self.target = self.target.max(dns);
-                self.stage = format!("Waiting for DNS to notice, attempt {attempt}");
-            }
-            Event::Ready {
-                record,
-                resolved,
-                copied,
-            } => {
-                self.url = Some(record.url.clone());
-                self.qr_code = qr(&record.url);
-                self.record = Some(record);
-                self.resolved = resolved;
-                self.copied = copied;
-                self.ready_at = Some(now);
-                self.target = 1.0;
+            Event::PortChecked { .. }
+            | Event::FetchingCloudflared
+            | Event::TunnelStarting
+            | Event::TunnelUrl(_)
+            | Event::TunnelRegistered
+            | Event::DnsAttempt(_) => self.boot.on(event, now),
+            Event::Ready { .. } => {
+                self.boot.on(event, now);
                 if local_hour() < 5 {
                     self.unlock("owl");
                 }
             }
             Event::Request(hit) => self.on_hit(hit),
             Event::Presence(presence) => {
-                self.remember(&presence.page);
-                if !presence.gone && !self.sessions.contains_key(&presence.sid) {
-                    self.shaders.arrival();
+                if self.audience.presence(presence, now) {
+                    self.show.shaders.arrival();
                 }
-                let (first, pointer) = self
-                    .sessions
-                    .remove(&presence.sid)
-                    .map_or((now, None), |s| (s.first, s.pointer));
-                let session = Session {
-                    presence,
-                    seen: now,
-                    first,
-                    pointer,
-                };
-                self.sessions.insert(session.presence.sid.clone(), session);
             }
             Event::Feedback(note) => {
-                self.feedback += 1;
-                let excerpt: String = note.text().replace('\n', " · ").chars().take(40).collect();
-                self.toast(
-                    format!("✎ {} on {}", note.device, note.page),
-                    excerpt,
-                    false,
-                );
-                // A visitor often answers in the note field: it joins the chat
-                // too, a line per element it points at, and whether a
-                // screenshot came.
-                let mut text = format!("✎ {}", note.message).trim_end().to_string();
-                for (index, point) in note.points.iter().enumerate() {
-                    text.push_str(&format!("\n📍 {}", point.line(index + 1)));
-                }
-                if note.shot.is_some() {
-                    text.push_str("\n📷 screenshot");
-                }
-                self.remember_message(Message {
-                    mine: false,
-                    who: note.device,
-                    page: note.page,
-                    text,
-                    clock: widget::clock(),
-                });
+                let (title, excerpt) = self.audience.note(note);
+                self.toast(title, excerpt, false);
                 self.unlock("critic");
             }
             Event::Chat(said) => {
-                let excerpt: String = said.text.chars().take(40).collect();
-                self.toast(
-                    format!("✉ {} on {}", said.device, said.page),
-                    excerpt,
-                    false,
-                );
-                self.remember_message(Message {
-                    mine: false,
-                    who: said.device,
-                    page: said.page,
-                    text: said.text,
-                    clock: widget::clock(),
-                });
+                let (title, excerpt) = self.audience.said(said);
+                self.toast(title, excerpt, false);
             }
-            Event::Pointer(pointer) => {
-                if let Some(session) = self.sessions.get_mut(&pointer.sid) {
-                    session.pointer = Some((pointer, now));
-                }
-            }
+            Event::Pointer(pointer) => self.audience.pointer(pointer, now),
             Event::Reacted(reaction) => {
-                self.reactions[reaction.kind] += 1;
-                let (emoji, label) = REACTIONS[reaction.kind];
-                self.toast(format!("{emoji} from {}", reaction.device), label, false);
-                if !self.theme.calm && self.particles.0.len() < MAX_PARTICLES {
-                    self.celebrate(reaction.kind);
-                }
+                let (title, label) = self.audience.reacted(&reaction);
+                self.toast(title, label, false);
+                self.show.celebrate(now, reaction.kind);
             }
             Event::Replayed { n, status, ms } => {
-                let Some(row) = self.rows.iter_mut().find(|row| row.n == n) else {
-                    return;
-                };
-                let title = format!("↻ {} {}", row.hit.method, row.hit.path);
-                let body = match status {
-                    Ok(status) => {
-                        row.replayed = Some(Replay::Done { status, ms });
-                        format!("{} before, {status} now, in {ms} ms.", row.hit.status)
-                    }
-                    Err(err) => {
-                        row.replayed = Some(Replay::Failed);
-                        format!("Failed: {err}")
-                    }
-                };
-                self.toast(title, body, false);
+                if let Some((title, body)) = self.traffic.replayed(n, status, ms) {
+                    self.toast(title, body, false);
+                }
             }
             Event::PortHealth { port, ok } => {
-                if let Some(state) = self.ports.iter_mut().find(|p| p.port == port) {
-                    state.up = ok;
-                }
+                self.boot.health(port, ok);
                 if ok {
                     self.toast(
                         format!("♥ port {port} is back"),
@@ -615,13 +260,13 @@ impl App {
                 }
             }
             Event::Done(Ok(())) => {
-                if self.quitting.is_none() {
+                if self.keys.quitting.is_none() {
                     self.exit = Some(0);
                 }
             }
             Event::Done(Err(failure)) => {
-                if self.quitting.is_none() {
-                    self.failure = Some(failure);
+                if self.keys.quitting.is_none() {
+                    self.boot.failure = Some(failure);
                     self.go(Phase::Failed);
                 }
             }
@@ -629,69 +274,14 @@ impl App {
     }
 
     fn on_hit(&mut self, hit: Hit) {
-        self.total += 1;
-        let class = match hit.status {
-            0..300 => 0,
-            300..400 => 1,
-            400..500 => 2,
-            _ => 3,
-        };
-        self.classes[class] += 1;
-        self.ms_sum += hit.ms as u64;
-        if let Some(back) = self.per_second.back_mut() {
-            *back += 1;
-        }
-        if let Some(state) = self.ports.iter_mut().find(|p| p.port == hit.port) {
-            state.hits += 1;
-        }
-        if self.visitors.insert(hit.visitor.clone()) {
-            match self.visitors.len() {
-                1 => self.unlock("first"),
-                5 => self.unlock("party"),
-                _ => {}
-            }
-        }
-        match self.total {
-            100 => self.unlock("centurion"),
-            1000 => self.unlock("thousand"),
-            _ => {}
-        }
-        if hit.ms < 10 {
-            self.unlock("speed");
-        }
-        if hit.upgrade && hit.status == 101 {
-            self.sockets += 1;
-            self.unlock("tube");
-        }
+        self.boot.hit(hit.port);
         if hit.status >= 500 {
-            self.last_error = Some(self.now);
-            self.shaders.crash();
-            self.unlock("survivor");
+            self.show.shaders.crash();
         }
-        self.last_hit = Some(self.now);
-        if !self.theme.calm && self.sprites.len() < 80 {
-            let (glyph, color) = match (hit.upgrade, class) {
-                (true, 0) => ('≈', fx::PURPLE),
-                (_, 0) => ('●', fx::GREEN),
-                (_, 1) => ('◆', fx::CYAN),
-                (_, 2) => ('▲', fx::YELLOW),
-                _ => ('✖', fx::RED),
-            };
-            let lane = self.rng.below(3) as u16;
-            self.sprites.push(Sprite {
-                born: self.now,
-                lane,
-                glyph,
-                color,
-            });
+        self.show.sprite(self.now, &hit);
+        for key in self.traffic.record(hit, self.now) {
+            self.unlock(key);
         }
-        self.rows.push_front(Row {
-            hit,
-            clock: widget::clock(),
-            n: self.total,
-            replayed: None,
-        });
-        self.rows.truncate(LOG_KEEP);
     }
 
     fn tick(&mut self, now: Instant) {
@@ -702,8 +292,8 @@ impl App {
         match self.phase {
             Phase::Boot if calm || t >= BOOT => self.go(Phase::Preflight),
             Phase::Preflight => {
-                let checked = self.ports.iter().all(|p| p.checked.is_some());
-                let shown = calm || t >= 0.3 + SNIFF * self.ports.len() as f32 + 0.4;
+                let checked = self.boot.ports.iter().all(|p| p.checked.is_some());
+                let shown = calm || t >= 0.3 + SNIFF * self.boot.ports.len() as f32 + 0.4;
                 if checked && shown {
                     self.go(Phase::Digging);
                 }
@@ -711,6 +301,7 @@ impl App {
             // The dragon flees before LIVE!.
             Phase::Digging
                 if self
+                    .boot
                     .ready_at
                     .is_some_and(|at| calm || (now - at).as_secs_f32() >= spectacle::FLEE) =>
             {
@@ -726,461 +317,21 @@ impl App {
             _ => {}
         }
         if self
+            .boot
             .ready_at
             .is_some_and(|at| (now - at).as_secs_f32() >= MARATHON)
         {
             self.unlock("marathon");
         }
 
-        if self.ready_at.is_none() {
-            // Creep between milestones so the bar never looks stuck.
-            self.target = (self.target + self.dt * 0.01).min(0.97);
-        }
-        self.progress += (self.target - self.progress) * (self.dt * 3.0).min(1.0);
-        while now.duration_since(self.bucket_at) >= Duration::from_secs(1) {
-            self.bucket_at += Duration::from_secs(1);
-            self.per_second.push_back(0);
-            if self.per_second.len() > SPARK_KEEP {
-                self.per_second.pop_front();
-            }
-        }
-        self.particles.step(self.dt);
-        self.sprites
-            .retain(|s| (now - s.born).as_secs_f32() < LANE_TRIP);
-        self.toasts
-            .retain(|toast| (now - toast.born).as_secs_f32() < TOAST_LIFE);
-        let dt = self.dt;
-        for runner in &mut self.runners {
-            runner.x -= runner.speed * dt;
-        }
-        self.runners.retain(|runner| runner.x > -12.0);
-        if self.carrots_until.is_some_and(|until| now >= until) {
-            self.carrots_until = None;
-        }
-        if self.worried_until.is_some_and(|until| now >= until) {
-            self.worried_until = None;
-        }
-    }
-
-    fn on_key(&mut self, key: KeyEvent, stop: &watch::Sender<bool>) {
-        let ctrl_c =
-            key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL);
-        if self.prompt.is_some() && self.phase == Phase::Dashboard && !ctrl_c {
-            return self.on_prompt_key(key);
-        }
-        let quit = ctrl_c || key.code == KeyCode::Char('q');
-        match self.phase {
-            Phase::Goodbye | Phase::Dissolve => {
-                if quit {
-                    self.exit = Some(0);
-                }
-                return;
-            }
-            Phase::Failed => {
-                self.exit = Some(self.failure.as_ref().map_or(1, |f| f.code));
-                return;
-            }
-            _ if quit => {
-                self.quitting = Some(self.now);
-                self.help = false;
-                self.qr = false;
-                self.prompt = None;
-                self.details = None;
-                let _ = stop.send(true);
-                let leaving = if self.phase == Phase::Dashboard && !self.theme.calm {
-                    self.shaders.dissolve();
-                    Phase::Dissolve
-                } else {
-                    Phase::Goodbye
-                };
-                self.go(leaving);
-                return;
-            }
-            Phase::Boot => return self.go(Phase::Preflight),
-            Phase::Launch => return self.go(Phase::Dashboard),
-            _ => {}
-        }
-
-        self.keys.push_back(key.code);
-        if self.keys.len() > KONAMI.len() {
-            self.keys.pop_front();
-        }
-        if self.keys.iter().eq(KONAMI.iter()) {
-            self.disco = !self.disco && !self.theme.calm;
-            self.shaders.disco(self.disco);
-            self.keys.clear();
-            self.unlock("disco");
-        }
-        if let KeyCode::Char(ch) = key.code {
-            self.typed.push(ch);
-            if self.typed.len() > 16 {
-                self.typed.remove(0);
-            }
-            if self.typed.ends_with(CARROT_WORD) {
-                self.carrots_until = Some(self.now + Duration::from_secs(5));
-                self.typed.clear();
-                self.unlock("carrot");
-            }
-        }
-
-        let dashboard = self.phase == Phase::Dashboard;
-        if let (Some(n), true) = (self.details, dashboard) {
-            match key.code {
-                KeyCode::Esc | KeyCode::Enter => self.details = None,
-                KeyCode::Up => self.details_scroll = self.details_scroll.saturating_sub(1),
-                KeyCode::Down => self.details_scroll = self.details_scroll.saturating_add(1),
-                KeyCode::PageUp => self.details_scroll = self.details_scroll.saturating_sub(10),
-                KeyCode::PageDown => self.details_scroll = self.details_scroll.saturating_add(10),
-                KeyCode::Char('p') => self.replay(n),
-                _ => {}
-            }
-            return;
-        }
-        match key.code {
-            KeyCode::Esc if self.help || self.qr => {
-                self.help = false;
-                self.qr = false;
-            }
-            KeyCode::Esc => {
-                self.focus = None;
-                self.select(None);
-                self.picked = None;
-            }
-            KeyCode::Tab if dashboard => {
-                self.focus = Some(match self.focus {
-                    Some(Focus::Visitors) => Focus::Log,
-                    _ => Focus::Visitors,
-                });
-            }
-            KeyCode::Up | KeyCode::Down if dashboard => self.step(key.code == KeyCode::Down),
-            KeyCode::Char('g') if dashboard => {
-                self.prompt = Some(Prompt {
-                    ask: Ask::Go,
-                    text: String::new(),
-                    pick: None,
-                });
-            }
-            KeyCode::Char('m') if dashboard => {
-                self.prompt = Some(Prompt {
-                    ask: Ask::Chat,
-                    text: String::new(),
-                    pick: None,
-                });
-            }
-            KeyCode::Enter if dashboard && self.focus == Some(Focus::Log) => {
-                if self.picked.is_some() {
-                    self.details = self.picked;
-                    self.details_scroll = 0;
-                }
-            }
-            KeyCode::Char('p') if dashboard => match self.picked {
-                Some(n) => self.replay(n),
-                None => self.toast("Pick a request first", "Tab, then ↑ ↓.", false),
-            },
-            KeyCode::Char('e') if dashboard => {
-                self.prompt = Some(Prompt {
-                    ask: Ask::React,
-                    text: String::new(),
-                    pick: Some(0),
-                });
-            }
-            KeyCode::Char('x') if dashboard => self.chat.clear(),
-            KeyCode::Char('R') if dashboard => {
-                let reached = self.hub.send(self.selected.as_deref(), &Command::Reload);
-                self.sent("↻ Reload", reached);
-            }
-            KeyCode::Char('?') => self.help = !self.help,
-            // The code already on screen flashes instead of opening twice.
-            KeyCode::Char('r') if self.qr_code.is_some() => {
-                if self.qr || self.spots.qr.is_none() {
-                    self.qr = !self.qr;
-                } else if self.theme.calm {
-                    self.toast("The code is on the right", "Scan it with a phone.", false);
-                } else {
-                    self.shaders.flash_qr();
-                }
-            }
-            KeyCode::Char('c') => {
-                if let Some(url) = &self.url {
-                    self.copied = clipboard::copy(url);
-                    let body = if self.copied {
-                        "Paste it anywhere."
-                    } else {
-                        "No clipboard tool found."
-                    };
-                    self.toast("Link copied", body, false);
-                }
-            }
-            KeyCode::Char('o') => {
-                if let Some(url) = self.url.clone().filter(|_| self.ready_at.is_some()) {
-                    clipboard::open(&url);
-                    self.toast("Opening your browser", "Say hi to the bunny.", false);
-                }
-            }
-            KeyCode::Char('f') if !self.theme.calm => {
-                let area = self.area();
-                let x = self.rng.range(8.0, area.width.saturating_sub(8) as f32);
-                let y = self
-                    .rng
-                    .range(3.0, area.height.saturating_sub(4).max(4) as f32);
-                self.particles.fireworks(&mut self.rng, x, y);
-                self.fireworks += 1;
-                if self.fireworks == PYRO {
-                    self.unlock("pyro");
-                }
-            }
-            KeyCode::Char('b') if !self.theme.calm => {
-                self.b_presses.push_back(self.now);
-                while self
-                    .b_presses
-                    .front()
-                    .is_some_and(|at| self.now - *at > STAMPEDE_WINDOW)
-                {
-                    self.b_presses.pop_front();
-                }
-                if self.b_presses.len() >= STAMPEDE_PRESSES {
-                    self.b_presses.clear();
-                    self.stampede();
-                    self.unlock("stampede");
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// Moves the selection in the focused panel, the visitors by default.
-    fn step(&mut self, down: bool) {
-        match *self.focus.get_or_insert(Focus::Visitors) {
-            Focus::Visitors => {
-                let sids: Vec<String> = dashboard::roster(self)
-                    .iter()
-                    .map(|s| s.presence.sid.clone())
-                    .collect();
-                let next = stepped(&sids, self.selected.as_ref(), down);
-                self.select(next);
-            }
-            Focus::Log => {
-                let ranks: Vec<u32> = self.rows.iter().map(|row| row.n).collect();
-                self.picked = stepped(&ranks, self.picked.as_ref(), down);
-            }
-        }
-    }
-
-    /// The selected visitor is the one whose pointer the radar follows.
-    fn select(&mut self, sid: Option<String>) {
-        self.hub.follow(sid.as_deref());
-        self.selected = sid;
-    }
-
-    fn on_prompt_key(&mut self, key: KeyEvent) {
-        let count = self
-            .prompt
-            .as_ref()
-            .map_or(0, |prompt| self.suggestions(prompt).len());
-        let Some(prompt) = self.prompt.as_mut() else {
-            return;
-        };
-        let digit = match key.code {
-            KeyCode::Char(ch) => ch.to_digit(10).map(|d| d as usize),
-            _ => None,
-        };
-        if prompt.ask == Ask::React {
-            if let Some(n) = digit.filter(|n| (1..=REACTIONS.len()).contains(n)) {
-                prompt.pick = Some(n - 1);
-                if let Some(prompt) = self.prompt.take() {
-                    self.submit(prompt);
-                }
-            } else if let KeyCode::Char(_) = key.code {
-                return;
-            }
-        }
-        let Some(prompt) = self.prompt.as_mut() else {
-            return;
-        };
-        match key.code {
-            KeyCode::Esc => self.prompt = None,
-            KeyCode::Enter => {
-                if let Some(prompt) = self.prompt.take() {
-                    self.submit(prompt);
-                }
-            }
-            KeyCode::Backspace => {
-                prompt.text.pop();
-                prompt.pick = None;
-            }
-            KeyCode::Tab | KeyCode::Down if count > 0 => {
-                prompt.pick = Some(prompt.pick.map_or(0, |i| (i + 1) % count));
-            }
-            KeyCode::BackTab | KeyCode::Up if count > 0 => {
-                prompt.pick = Some(prompt.pick.map_or(count - 1, |i| (i + count - 1) % count));
-            }
-            KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                prompt.text.push(ch);
-                prompt.pick = None;
-            }
-            _ => {}
-        }
-    }
-
-    fn submit(&mut self, prompt: Prompt) {
-        match prompt.ask {
-            Ask::Go => {
-                let path = prompt
-                    .pick
-                    .and_then(|i| self.suggestions(&prompt).into_iter().nth(i))
-                    .unwrap_or_else(|| prompt.text.trim().to_string());
-                if path.is_empty() {
-                    return;
-                }
-                let path = live::absolute(&path);
-                let command = Command::Go { path: path.clone() };
-                let reached = self.hub.send(self.selected.as_deref(), &command);
-                self.sent(&format!("→ {path}"), reached);
-            }
-            Ask::React => {
-                let kind = prompt.pick.unwrap_or(0);
-                let emoji = REACTIONS[kind].0.to_string();
-                let reached = self
-                    .hub
-                    .react(self.selected.as_deref(), &self.target(), &emoji);
-                self.sent(&format!("{emoji} sent"), reached);
-            }
-            Ask::Chat => {
-                let text = prompt.text.trim().to_string();
-                let to = self.target();
-                let reached = if text.is_empty() {
-                    0
-                } else {
-                    self.hub.say(self.selected.as_deref(), &to, &text)
-                };
-                // The box stays open for the next line; a message nobody got stays typed.
-                let kept = if reached == 0 {
-                    prompt.text
-                } else {
-                    String::new()
-                };
-                self.prompt = Some(Prompt {
-                    ask: Ask::Chat,
-                    text: kept,
-                    pick: None,
-                });
-                if text.is_empty() {
-                    return;
-                }
-                if reached == 0 {
-                    self.sent("✉ Not sent", 0);
-                    return;
-                }
-                self.remember_message(Message {
-                    mine: true,
-                    who: to,
-                    page: String::new(),
-                    text,
-                    clock: widget::clock(),
-                });
-            }
-        }
-    }
-
-    /// Sends a request of the log again, unless it cannot be sent as it was.
-    fn replay(&mut self, n: u32) {
-        let Some(row) = self.rows.iter().find(|row| row.n == n) else {
-            return;
-        };
-        if let Some(reason) = row.hit.unreplayable() {
-            return self.toast("✖ Not replayable", reason, false);
-        }
-        self.replayer.replay(n, &row.hit);
-        if let Some(row) = self.rows.iter_mut().find(|row| row.n == n) {
-            row.replayed = Some(Replay::Pending);
-        }
-    }
-
-    /// Each reaction gets its own show.
-    fn celebrate(&mut self, kind: usize) {
-        let area = self.area();
-        let x = self
-            .rng
-            .range(10.0, area.width.saturating_sub(10).max(11) as f32);
-        let y = area.height as f32 * 0.4;
-        match kind {
-            0 => self.particles.confetti(&mut self.rng, x, y, 60),
-            1 => self.particles.fireworks(&mut self.rng, x, y),
-            2 => {
-                let bottom = area.height.saturating_sub(4) as f32;
-                self.particles.hearts(&mut self.rng, x, bottom);
-            }
-            _ => self.worried_until = Some(self.now + WORRY_FOR),
-        }
-    }
-
-    fn remember_message(&mut self, message: Message) {
-        self.chat.push_back(message);
-        if self.chat.len() > CHAT_KEEP {
-            self.chat.pop_front();
-        }
-    }
-
-    /// The pages offered under the go box, filtered by what is typed, or
-    /// the reactions to pick from.
-    pub fn suggestions(&self, prompt: &Prompt) -> Vec<String> {
-        match prompt.ask {
-            Ask::Chat => return Vec::new(),
-            Ask::React => {
-                return REACTIONS
-                    .iter()
-                    .enumerate()
-                    .map(|(i, (emoji, label))| format!("{}  {emoji}  {label}", i + 1))
-                    .collect();
-            }
-            Ask::Go => {}
-        }
-        let text = prompt.text.trim();
-        self.pages
-            .iter()
-            .filter(|page| page.contains(text))
-            .take(SUGGESTIONS)
-            .cloned()
-            .collect()
-    }
-
-    fn remember(&mut self, page: &str) {
-        self.pages.retain(|seen| seen != page);
-        self.pages.insert(0, page.to_string());
-        self.pages.truncate(PAGES_KEEP);
-    }
-
-    /// Who commands go to, for titles and toasts.
-    pub fn target(&self) -> String {
-        self.selected
-            .as_ref()
-            .and_then(|sid| self.sessions.get(sid))
-            .map_or_else(|| "everyone".into(), |s| s.presence.device.clone())
-    }
-
-    fn sent(&mut self, title: &str, reached: usize) {
-        let body = match reached {
-            0 => "No page is connected live.".to_string(),
-            n => format!("{}, {}.", self.target(), plural(n, "page")),
-        };
-        self.toast(title, body, false);
-    }
-
-    fn stampede(&mut self) {
-        let area = self.area();
-        for _ in 0..10 {
-            let x = area.width as f32 + self.rng.range(0.0, 40.0);
-            let y = self
-                .rng
-                .range(1.0, area.height.saturating_sub(4).max(2) as f32);
-            let speed = self.rng.range(25.0, 55.0);
-            self.runners.push(Runner { x, y, speed });
-        }
+        self.boot.tick(self.dt);
+        self.traffic.tick(now);
+        self.show.tick(now, self.dt);
     }
 
     fn render(&mut self, frame: &mut Frame) {
-        self.keep_clear = None;
-        self.spots = shaders::Spots::default();
+        self.show.keep_clear = None;
+        self.show.spots = shaders::Spots::default();
         match self.phase {
             Phase::Boot => scenes::boot(self, frame),
             Phase::Preflight => scenes::preflight(self, frame),
@@ -1191,69 +342,16 @@ impl App {
             Phase::Failed => scenes::failed(self, frame),
         }
         let area = frame.area();
-        self.shaders
-            .render(frame.buffer_mut(), area, &self.spots, self.dt);
+        self.show
+            .shaders
+            .render(frame.buffer_mut(), area, &self.show.spots, self.dt);
         if !self.theme.calm {
             scenes::fun(self, frame);
-            self.particles
-                .draw(frame.buffer_mut(), &self.theme, self.keep_clear);
+            self.show
+                .particles
+                .draw(frame.buffer_mut(), &self.theme, self.show.keep_clear);
         }
         dashboard::overlays(self, frame);
-    }
-
-    /// What stays in the scrollback once the terminal is restored.
-    fn farewell(&self) {
-        if let Some(failure) = &self.failure {
-            eprintln!("bunflared: {}", failure.message);
-            return;
-        }
-        let Some(url) = &self.url.as_ref().filter(|_| self.ready_at.is_some()) else {
-            return;
-        };
-        let paint = |code: &str, text: &str| {
-            if self.theme.color {
-                format!("\x1b[{code}m{text}\x1b[0m")
-            } else {
-                text.to_string()
-            }
-        };
-        let badges: Vec<String> = self
-            .unlocked
-            .iter()
-            .map(|a| format!("★ {}", a.name))
-            .collect();
-        println!();
-        println!(
-            "  {}      {}",
-            paint("35", r" (\(\ "),
-            paint("1", "bunflared · session recap")
-        );
-        println!(
-            "  {}     {}  {}",
-            paint("35", r" ( ^.^)/"),
-            paint("36", url),
-            paint("2", "(closed)")
-        );
-        println!(
-            "  {}    {} live · {} · {} · {}",
-            paint("35", r#" o_(")(")"#),
-            uptime(self.live_for()),
-            plural(self.total as usize, "request"),
-            plural(self.visitors.len(), "visitor"),
-            plural(self.classes[3] as usize, "error"),
-        );
-        if !badges.is_empty() {
-            println!("               {}", paint("33", &badges.join("  ")));
-        }
-        if self.feedback > 0 {
-            let note = format!(
-                "✎ {} saved in {}/",
-                plural(self.feedback as usize, "feedback note"),
-                widget::FOLDER
-            );
-            println!("               {}", paint("36", &note));
-        }
-        println!();
     }
 }
 
@@ -1272,21 +370,6 @@ fn stepped<T: PartialEq + Clone>(items: &[T], current: Option<&T>, down: bool) -
         (Some(i), false) => i.saturating_sub(1),
     };
     Some(items[next].clone())
-}
-
-fn qr(url: &str) -> Option<Qr> {
-    const QUIET: usize = 2;
-    let code = qrcode::QrCode::with_error_correction_level(url, qrcode::EcLevel::L).ok()?;
-    let width = code.width();
-    let colors = code.to_colors();
-    let size = width + QUIET * 2;
-    let mut dark = vec![false; size * size];
-    for y in 0..width {
-        for x in 0..width {
-            dark[(y + QUIET) * size + x + QUIET] = colors[y * width + x] == qrcode::Color::Dark;
-        }
-    }
-    Some(Qr { size, dark })
 }
 
 fn local_hour() -> u32 {

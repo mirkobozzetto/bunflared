@@ -1,8 +1,13 @@
 mod agents;
 mod clipboard;
+mod clock;
 mod cloudflared;
+mod commands;
+mod event;
+mod http;
 mod live;
 mod mcp;
+mod notes;
 mod os;
 mod ports;
 mod proxy;
@@ -10,6 +15,7 @@ mod share;
 mod state;
 mod tui;
 mod tunnel;
+mod visitors;
 mod widget;
 
 use std::io::{IsTerminal, Write};
@@ -19,7 +25,7 @@ use std::time::Duration;
 use clap::{CommandFactory, Parser, Subcommand};
 use tokio::sync::watch;
 
-use share::Event;
+use event::Event;
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const EXIT_USAGE: i32 = 2;
@@ -161,11 +167,11 @@ fn main() {
         usage(err);
     }
     let code = match cli.command {
-        Some(Command::Ls { json }) => state::list(json),
-        Some(Command::Down { id, all }) => state::down(id, all),
+        Some(Command::Ls { json }) => commands::list(json),
+        Some(Command::Down { id, all }) => commands::down(id, all),
         Some(Command::Agents { print, remove }) => agents::run(print, remove),
         Some(Command::Mcp) => mcp::run(),
-        None if cli.detach => state::detach(&cli.ports, cli.no_widget, cli.local),
+        None if cli.detach => commands::detach(&cli.ports, cli.no_widget, cli.local),
         None => {
             let no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
             let interactive = !cli.json && std::io::stdout().is_terminal();
@@ -202,7 +208,7 @@ fn main() {
             let feedback = (!cli.no_widget)
                 .then(|| std::env::current_dir().ok())
                 .flatten()
-                .map(|dir| dir.join(widget::FOLDER));
+                .map(|dir| dir.join(notes::FOLDER));
             let spec = share::Spec {
                 ports: cli.ports,
                 local: cli.local,
@@ -277,7 +283,7 @@ async fn leave_on_signal() {
     if !hung_up {
         ratatui::restore();
     }
-    std::process::exit(if hung_up { share::EXIT_HANGUP } else { 0 });
+    std::process::exit(if hung_up { event::EXIT_HANGUP } else { 0 });
 }
 
 // Writes ignore errors: a detached share outlives the pipe it was started with.

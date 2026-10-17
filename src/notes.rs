@@ -1,13 +1,16 @@
-//! A visitor's note: a remark, the elements it points at with a comment each,
-//! and the Markdown file it is saved as.
+//! What visitors leave in the feedback folder: notes with the elements they
+//! point at, screenshots, and the session log of the live channel.
 
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use serde::Deserialize;
 
-use super::{folder_ready, stamp};
+use crate::clock::stamp;
 
+pub const FOLDER: &str = "bunflared-feedback";
 const MAX_PINNED: usize = 300;
 
 #[derive(Debug, Clone)]
@@ -45,7 +48,7 @@ impl Feedback {
 }
 
 #[derive(Deserialize)]
-pub(super) struct Note {
+pub struct Note {
     pub sid: String,
     pub page: String,
     pub message: String,
@@ -136,8 +139,80 @@ fn quote(text: &str) -> String {
         .join("\n")
 }
 
+/// The feedback folder, created with a `.gitignore` of its own so no project
+/// ever commits a client's notes by accident.
+pub fn folder_ready(folder: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(folder)?;
+    let ignore = folder.join(".gitignore");
+    if !ignore.exists() {
+        fs::write(ignore, "# Client feedback collected by bunflared.\n*\n")?;
+    }
+    Ok(())
+}
+
+pub fn save_shot(folder: &Path, image: &[u8]) -> std::io::Result<String> {
+    let extension = match image {
+        [0x89, b'P', b'N', b'G', ..] => "png",
+        [0xFF, 0xD8, 0xFF, ..] => "jpg",
+        [
+            b'R',
+            b'I',
+            b'F',
+            b'F',
+            _,
+            _,
+            _,
+            _,
+            b'W',
+            b'E',
+            b'B',
+            b'P',
+            ..,
+        ] => "webp",
+        _ => return Err(std::io::ErrorKind::InvalidData.into()),
+    };
+    folder_ready(folder)?;
+    let name = format!("{}.{extension}", stamp());
+    fs::write(folder.join(&name), image)?;
+    Ok(name)
+}
+
+/// A share's session log, `session_<date>.md` next to the notes, opened on
+/// its first line.
+pub struct Transcript {
+    folder: PathBuf,
+    path: Mutex<Option<PathBuf>>,
+}
+
+impl Transcript {
+    pub fn new(folder: PathBuf) -> Self {
+        Self {
+            folder,
+            path: Mutex::default(),
+        }
+    }
+
+    pub fn keep(&self, line: &str) {
+        let mut opened = self.path.lock().unwrap();
+        let path =
+            opened.get_or_insert_with(|| self.folder.join(format!("session_{}.md", stamp())));
+        let fresh = !path.exists();
+        if folder_ready(&self.folder).is_err() {
+            return;
+        }
+        let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) else {
+            return;
+        };
+        let now = chrono::Local::now();
+        if fresh {
+            let _ = writeln!(file, "# Live session, {}\n", now.format("%Y-%m-%d %H:%M"));
+        }
+        let _ = writeln!(file, "- {} {line}", now.format("%H:%M:%S"));
+    }
+}
+
 /// Returns the note's file name, and its screenshot's.
-pub(super) fn save_note(
+pub fn save_note(
     folder: &Path,
     note: &Note,
     device: &str,

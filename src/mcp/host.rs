@@ -1,35 +1,26 @@
 //! The shares a `bunflared mcp` process runs for its agent, and what happened
 //! on them since the agent last looked.
 
-use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
-use std::sync::{Arc, Condvar, Mutex};
-use std::thread::JoinHandle;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
-use hyper::HeaderMap;
 use serde_json::{Value, json};
 use tokio::sync::watch;
 
-use crate::live::{self, Command, Hub, REACTIONS};
-use crate::proxy::{self, Capture};
-use crate::share::{self, Event, Hit, Spec};
-use crate::state::{self, Record};
-use crate::widget::{Feedback, Presence, clock};
+use crate::event::Event;
+use crate::live::{Hub, REACTIONS};
+use crate::notes::Feedback;
+use crate::share::{self, Spec};
+use crate::state;
 
-const KEEP_EVENTS: usize = 1000;
-const KEEP_REQUESTS: usize = 200;
-/// Pings are open to anyone with the link: past this many visitors, new ones
-/// are not tracked, so a flood cannot push the notes out of the event log.
-const MAX_VISITORS: usize = 200;
-/// A page that said goodbye and sent no new ping since has left; a visitor
-/// moving to another page says goodbye too, then pings right away.
-const GONE_GRACE: Duration = Duration::from_secs(3);
+use super::journal::Journal;
+use super::share::{Share, visitor};
+
 const STOP_GRACE: Duration = Duration::from_secs(1);
 const TICK: Duration = Duration::from_millis(500);
-const REPLAY_TIMEOUT: Duration = Duration::from_secs(30);
 const ENDING_GRACE: Duration = Duration::from_secs(3);
 
 pub struct Host {
@@ -42,45 +33,7 @@ pub struct Host {
     /// Held for the whole of `close_all`: stdin closing and a signal can both
     /// call it, and neither may exit while the other still stops shares.
     closing: Mutex<()>,
-    log: Mutex<Log>,
-    logged: Condvar,
-}
-
-#[derive(Default)]
-struct Log {
-    last: u64,
-    events: VecDeque<Value>,
-}
-
-pub struct Share {
-    record: Record,
-    local: bool,
-    hub: Arc<Hub>,
-    runtime: tokio::runtime::Handle,
-    stop: watch::Sender<bool>,
-    thread: Mutex<Option<JoinHandle<()>>>,
-    /// Whether `bunflared down` can reach it by removing its record.
-    recorded: bool,
-    seen: Mutex<Seen>,
-}
-
-#[derive(Default)]
-struct Seen {
-    visitors: HashMap<String, Visitor>,
-    requests: VecDeque<Row>,
-    total: u32,
-}
-
-struct Visitor {
-    presence: Presence,
-    seen: Instant,
-    first: Instant,
-}
-
-struct Row {
-    n: u32,
-    hit: Hit,
-    at: String,
+    journal: Journal,
 }
 
 impl Host {
@@ -92,8 +45,7 @@ impl Host {
             opening: AtomicUsize::new(0),
             ending: AtomicBool::new(false),
             closing: Mutex::default(),
-            log: Mutex::default(),
-            logged: Condvar::new(),
+            journal: Journal::default(),
         });
         let ticking = host.clone();
         std::thread::spawn(move || {
@@ -253,45 +205,12 @@ impl Host {
         }
     }
 
-    /// What happened after `since`, waiting up to `wait` for something when
-    /// nothing did yet.
     pub fn events(&self, since: u64, wait: Duration, share: Option<&str>) -> Value {
-        let deadline = Instant::now() + wait;
-        let mut log = self.log.lock().unwrap();
-        // A cursor from before a restart of this server starts over.
-        let since = if since > log.last { 0 } else { since };
-        loop {
-            let found: Vec<Value> = log
-                .events
-                .iter()
-                .filter(|event| event["seq"].as_u64() > Some(since))
-                .filter(|event| share.is_none_or(|id| event["share"] == id))
-                .cloned()
-                .collect();
-            let left = deadline.saturating_duration_since(Instant::now());
-            if !found.is_empty() || left.is_zero() {
-                let cursor = found
-                    .last()
-                    .and_then(|event| event["seq"].as_u64())
-                    .unwrap_or(since);
-                return json!({ "events": found, "cursor": cursor });
-            }
-            log = self.logged.wait_timeout(log, left).unwrap().0;
-        }
+        self.journal.events(since, wait, share)
     }
 
-    fn log(&self, share: &str, kind: &str, mut event: Value) {
-        let mut log = self.log.lock().unwrap();
-        log.last += 1;
-        event["seq"] = json!(log.last);
-        event["share"] = json!(share);
-        event["kind"] = json!(kind);
-        event["at"] = json!(clock());
-        log.events.push_back(event);
-        if log.events.len() > KEEP_EVENTS {
-            log.events.pop_front();
-        }
-        self.logged.notify_all();
+    fn log(&self, share: &str, kind: &str, event: Value) {
+        self.journal.log(share, kind, event);
     }
 
     /// Sends what a visitor wrote into the agent's session, for clients
@@ -317,7 +236,7 @@ impl Host {
                 let _ = self.close(id);
                 continue;
             }
-            let left = share.seen.lock().unwrap().departures();
+            let left = share.seen.lock().unwrap().visitors.departures();
             for presence in left {
                 self.log(id, "left", visitor(&presence));
             }
@@ -330,7 +249,13 @@ impl Host {
             match event {
                 Event::Request(hit) => share.seen.lock().unwrap().request(hit),
                 Event::Presence(presence) => {
-                    if share.seen.lock().unwrap().presence(presence.clone()) {
+                    let arrived = share
+                        .seen
+                        .lock()
+                        .unwrap()
+                        .visitors
+                        .update(presence.clone(), Instant::now());
+                    if arrived {
                         self.log(id, "arrived", visitor(&presence));
                     }
                 }
@@ -418,243 +343,4 @@ impl Host {
         }
         self.channel(&note.text(), meta);
     }
-}
-
-impl Share {
-    fn halt(&self) {
-        let _ = self.stop.send(true);
-        if let Some(thread) = self.thread.lock().unwrap().take() {
-            let _ = thread.join();
-        }
-    }
-
-    fn summary(&self) -> Value {
-        let seen = self.seen.lock().unwrap();
-        let here = seen.visitors.len();
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
-        json!({
-            "id": self.record.id,
-            "url": self.record.url,
-            "routes": self.record.routes,
-            "local": self.local,
-            "visitors": here,
-            "requests": seen.total,
-            "uptime": state::uptime(now.saturating_sub(self.record.started_at)),
-        })
-    }
-
-    pub fn visitors(&self) -> Value {
-        let seen = self.seen.lock().unwrap();
-        let mut here: Vec<&Visitor> = seen.visitors.values().collect();
-        here.sort_by_key(|v| v.first);
-        let here = here
-            .into_iter()
-            .map(|v| {
-                let mut entry = visitor(&v.presence);
-                entry["status"] = json!(v.presence.status(v.seen.elapsed()));
-                entry["here_for"] = json!(state::uptime(v.first.elapsed().as_secs()));
-                entry
-            })
-            .collect();
-        Value::Array(here)
-    }
-
-    pub fn say(&self, to: Option<&str>, text: &str) -> Result<Value, String> {
-        let text = text.trim();
-        if text.is_empty() {
-            return Err("Nothing to say: pass the text.".into());
-        }
-        let name = to.map_or_else(|| "everyone".into(), |sid| self.device(sid));
-        reached(self.hub.say(to, &name, text))
-    }
-
-    pub fn go(&self, to: Option<&str>, path: &str) -> Result<Value, String> {
-        let path = path.trim();
-        if path.is_empty() {
-            return Err("Pass the path to send them to.".into());
-        }
-        let path = live::absolute(path);
-        reached(self.hub.send(to, &Command::Go { path }))
-    }
-
-    pub fn reload(&self, to: Option<&str>) -> Result<Value, String> {
-        reached(self.hub.send(to, &Command::Reload))
-    }
-
-    pub fn requests(&self, limit: usize) -> Value {
-        let seen = self.seen.lock().unwrap();
-        let rows = seen
-            .requests
-            .iter()
-            .take(limit)
-            .map(|row| {
-                json!({
-                    "n": row.n,
-                    "method": row.hit.method,
-                    "path": row.hit.path,
-                    "status": row.hit.status,
-                    "ms": row.hit.ms,
-                    "visitor": row.hit.visitor,
-                    "at": row.at,
-                })
-            })
-            .collect();
-        Value::Array(rows)
-    }
-
-    pub fn request(&self, n: u32) -> Result<Value, String> {
-        let (hit, at) = self.row(n)?;
-        let exchange = &hit.exchange;
-        let replay = match hit.unreplayable() {
-            Some(reason) => json!(reason),
-            None => json!(true),
-        };
-        let request = exchange.request_body.lock().unwrap();
-        let response = exchange.response_body.lock().unwrap();
-        Ok(json!({
-            "n": n,
-            "method": hit.method,
-            "path": hit.path,
-            "status": hit.status,
-            "ms": hit.ms,
-            "port": hit.port,
-            "visitor": hit.visitor,
-            "at": at,
-            "replayable": replay,
-            "request": {
-                "headers": headers(&exchange.request_headers),
-                "body": body(&exchange.request_headers, &request),
-            },
-            "response": {
-                "headers": headers(&exchange.response_headers),
-                "body": body(&exchange.response_headers, &response),
-            },
-        }))
-    }
-
-    pub fn replay(&self, n: u32) -> Result<Value, String> {
-        let (hit, _) = self.row(n)?;
-        if let Some(reason) = hit.unreplayable() {
-            return Err(format!("Not replayed. {reason}"));
-        }
-        let started = Instant::now();
-        let status = self
-            .runtime
-            .block_on(async {
-                tokio::time::timeout(
-                    REPLAY_TIMEOUT,
-                    proxy::replay(&hit.method, &hit.path, hit.port, &hit.exchange),
-                )
-                .await
-            })
-            .map_err(|_| "The local server did not answer in time.".to_string())?
-            .map_err(|err| format!("The replay failed: {err}"))?;
-        Ok(json!({
-            "n": n,
-            "before": hit.status,
-            "status": status,
-            "ms": started.elapsed().as_millis(),
-        }))
-    }
-
-    fn row(&self, n: u32) -> Result<(Hit, String), String> {
-        let seen = self.seen.lock().unwrap();
-        seen.requests
-            .iter()
-            .find(|row| row.n == n)
-            .map(|row| (row.hit.clone(), row.at.clone()))
-            .ok_or_else(|| format!("No request {n} in the last {KEEP_REQUESTS}."))
-    }
-
-    fn device(&self, sid: &str) -> String {
-        let seen = self.seen.lock().unwrap();
-        seen.visitors
-            .get(sid)
-            .map_or_else(|| sid.to_string(), |v| v.presence.device.clone())
-    }
-}
-
-impl Seen {
-    fn request(&mut self, hit: Hit) {
-        self.total += 1;
-        let (n, at) = (self.total, clock());
-        self.requests.push_front(Row { n, hit, at });
-        self.requests.truncate(KEEP_REQUESTS);
-    }
-
-    /// Keeps the visitor's last ping; true when they just arrived.
-    fn presence(&mut self, presence: Presence) -> bool {
-        let now = Instant::now();
-        let known = self.visitors.get(&presence.sid);
-        let full = self.visitors.len() >= MAX_VISITORS;
-        if known.is_none() && (presence.gone || full) {
-            return false;
-        }
-        let arrived = known.is_none();
-        let first = known.map_or(now, |v| v.first);
-        let sid = presence.sid.clone();
-        let visitor = Visitor {
-            presence,
-            seen: now,
-            first,
-        };
-        self.visitors.insert(sid, visitor);
-        arrived
-    }
-
-    /// Forgets the visitors who left, and returns them.
-    fn departures(&mut self) -> Vec<Presence> {
-        let gone: Vec<String> = self
-            .visitors
-            .iter()
-            .filter(|(_, v)| {
-                let away = v.seen.elapsed();
-                (v.presence.gone && away >= GONE_GRACE) || v.presence.status(away) == "left"
-            })
-            .map(|(sid, _)| sid.clone())
-            .collect();
-        gone.iter()
-            .filter_map(|sid| self.visitors.remove(sid))
-            .map(|v| v.presence)
-            .collect()
-    }
-}
-
-fn visitor(presence: &Presence) -> Value {
-    json!({
-        "visitor": presence.sid,
-        "device": presence.device,
-        "page": presence.page,
-    })
-}
-
-fn reached(pages: usize) -> Result<Value, String> {
-    match pages {
-        0 => Err("No page is connected live: nobody got it.".into()),
-        n => Ok(json!({ "pages": n })),
-    }
-}
-
-fn headers(headers: &HeaderMap) -> Vec<String> {
-    headers
-        .iter()
-        .map(|(name, value)| format!("{name}: {}", String::from_utf8_lossy(value.as_bytes())))
-        .collect()
-}
-
-/// A body as the dashboard shows it: the kept start when it is text.
-fn body(headers: &HeaderMap, capture: &Capture) -> Value {
-    if capture.total == 0 {
-        return json!({ "size": 0 });
-    }
-    if !capture.readable(headers) {
-        return json!({ "size": capture.total, "text": null, "note": "not text, not shown" });
-    }
-    json!({
-        "size": capture.total,
-        "text": String::from_utf8_lossy(&capture.bytes),
-        "truncated": !capture.complete(),
-    })
 }

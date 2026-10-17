@@ -64,9 +64,9 @@ pub fn spray(app: &mut App, buf: &mut Buffer, (from, to): ((i32, i32), (i32, i32
     cast::draw(buf, (left / 2, top / 4), &grid.join("\n"), false, |_| water);
 
     let drop = |(x, y): (f32, f32), (vx, vy): (f32, f32), app: &mut App| {
-        let life = app.rng.range(0.3, 0.9);
-        let ch = app.rng.pick("·'°,");
-        app.particles.0.push(Particle {
+        let life = app.show.rng.range(0.3, 0.9);
+        let ch = app.show.rng.pick("·'°,");
+        app.show.particles.0.push(Particle {
             x: x / 2.0,
             y: y / 4.0,
             vx,
@@ -79,12 +79,18 @@ pub fn spray(app: &mut App, buf: &mut Buffer, (from, to): ((i32, i32), (i32, i32
         });
     };
     for _ in 0..DROPS {
-        let at = point(app.rng.range(0.15, 1.0));
-        let speed = (app.rng.range(-6.0, 6.0), app.rng.range(-6.0, -1.0));
+        let at = point(app.show.rng.range(0.15, 1.0));
+        let speed = (
+            app.show.rng.range(-6.0, 6.0),
+            app.show.rng.range(-6.0, -1.0),
+        );
         drop(at, speed, app);
     }
     for _ in 0..SPLASHES {
-        let speed = (app.rng.range(-10.0, 10.0), app.rng.range(-9.0, -3.0));
+        let speed = (
+            app.show.rng.range(-10.0, 10.0),
+            app.show.rng.range(-9.0, -3.0),
+        );
         drop(point(1.0), speed, app);
     }
 }

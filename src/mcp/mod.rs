@@ -3,6 +3,8 @@
 //! dashboard gives a person.
 
 mod host;
+mod journal;
+mod share;
 
 use std::io::{BufRead, Write};
 use std::sync::Arc;
@@ -10,7 +12,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use crate::{os, widget};
+use crate::{notes, os};
 use host::Host;
 
 /// Revisions with an `initialize` handshake, the newest first.
@@ -38,7 +40,7 @@ this session ends.";
 pub fn run() -> i32 {
     let folder = std::env::current_dir()
         .ok()
-        .map(|dir| dir.join(widget::FOLDER));
+        .map(|dir| dir.join(notes::FOLDER));
     let host = Host::new(folder);
     let signalled = host.clone();
     std::thread::spawn(move || {
