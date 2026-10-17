@@ -10,4 +10,4 @@ export const CODES: Record<string, { percent: number }> = {
 };
 
 export const euros = (amount: number) =>
-  amount.toLocaleString("en-GB", { style: "currency", currency: "EUR" });
+  amount.toLocaleString("fr-FR", { style: "currency", currency: "EUR" });

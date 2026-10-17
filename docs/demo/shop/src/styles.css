@@ -163,3 +163,12 @@ main { max-width: 1200px; margin: 0 auto; padding: 0 40px; }
   padding: 0 18px; border: 1px solid var(--forest); border-radius: 12px; background: transparent;
   color: var(--forest); font: 600 15px var(--body); cursor: pointer;
 }
+
+@media (max-width: 760px) {
+  .top, main { padding-left: 20px; padding-right: 20px; }
+  .top nav { display: none; }
+  .hero, .section-head, .offers, .week ol, .grower, .voices, .checkout { grid-template-columns: 1fr; gap: 28px; }
+  .hero h1 { font-size: 44px; }
+  .hero-image { height: 320px; }
+  .foot { margin: 0 -20px; flex-direction: column; gap: 8px; }
+}
