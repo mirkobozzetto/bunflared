@@ -9,24 +9,22 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
-use hyper::header::{self, HeaderMap, HeaderValue};
 use hyper::upgrade::Upgraded;
-use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio_tungstenite::WebSocketStream;
-use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
-use tokio_tungstenite::tungstenite::protocol::{Message, Role, WebSocketConfig};
+use tokio_tungstenite::tungstenite::protocol::Message;
 
-use crate::event::{Event, Pointer, Reacted, Said, Tx};
-use crate::http::{Body, status};
+use crate::event::{Event, PageError, Pointer, Reacted, Said, Tx};
 use crate::look::{Looked, Looks};
 use crate::notes::Transcript;
 
-const MAX_MESSAGE: usize = 16 * 1024;
+mod handshake;
+pub use handshake::{absolute, accept, valid_sid};
+
 const MAX_TEXT: usize = 2000;
-const MAX_SID: usize = 32;
+const ERROR_KINDS: [&str; 3] = ["error", "rejection", "console"];
 // A visitor holding a reaction button down must not flood the dashboard.
 const REACT_EVERY: Duration = Duration::from_millis(250);
 pub const REACTIONS: [(&str, &str); 4] = [
@@ -86,6 +84,18 @@ enum Incoming {
         page: String,
     },
     Shot(Looked),
+    Error {
+        kind: String,
+        message: String,
+        #[serde(default)]
+        source: String,
+        #[serde(default)]
+        stack: String,
+        #[serde(default)]
+        page: String,
+        #[serde(default)]
+        count: u32,
+    },
 }
 
 struct Socket {
@@ -210,11 +220,31 @@ impl Hub {
             }
             Ok(Incoming::Chat { text, page }) => self.chat(sid, device, text, page),
             Ok(Incoming::Shot(looked)) => self.looks.answer(looked),
+            Ok(Incoming::Error {
+                kind,
+                message,
+                source,
+                stack,
+                page,
+                count,
+            }) if ERROR_KINDS.contains(&kind.as_str()) => {
+                let cut = |text: String| text.chars().take(MAX_TEXT).collect();
+                let _ = self.tx.send(Event::PageError(PageError {
+                    sid: sid.to_string(),
+                    device: device.to_string(),
+                    page: cut(page),
+                    kind,
+                    message: cut(message),
+                    source: cut(source),
+                    stack: cut(stack),
+                    count: count.max(1),
+                }));
+            }
             Ok(Incoming::Pointer { x, y, w, h }) => {
                 let sid = sid.to_string();
                 let _ = self.tx.send(Event::Pointer(Pointer { sid, x, y, w, h }));
             }
-            Err(_) => {}
+            Ok(Incoming::Error { .. }) | Err(_) => {}
         }
     }
 
@@ -304,86 +334,5 @@ impl Hub {
             }
         }
         self.sockets.lock().unwrap().remove(&id);
-    }
-}
-
-/// Answers the WebSocket handshake of `/_bunflared/live?sid=...` and hands
-/// the connection to the hub.
-pub fn accept(
-    mut request: Request<hyper::body::Incoming>,
-    hub: Arc<Hub>,
-    device: String,
-) -> Response<Body> {
-    let headers = request.headers();
-    let upgrade = headers
-        .get(header::UPGRADE)
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| v.eq_ignore_ascii_case("websocket"));
-    let key = headers.get(header::SEC_WEBSOCKET_KEY).cloned();
-    let sid = request.uri().query().and_then(sid);
-    let (true, Some(key), Some(sid), true) = (upgrade, key, sid, same_origin(headers)) else {
-        return status(StatusCode::BAD_REQUEST);
-    };
-    let accept = derive_accept_key(key.as_bytes());
-    let upgraded = hyper::upgrade::on(&mut request);
-    tokio::spawn(async move {
-        let Ok(upgraded) = upgraded.await else {
-            return;
-        };
-        let config = WebSocketConfig::default()
-            .max_message_size(Some(MAX_MESSAGE))
-            .max_frame_size(Some(MAX_MESSAGE));
-        let socket =
-            WebSocketStream::from_raw_socket(TokioIo::new(upgraded), Role::Server, Some(config))
-                .await;
-        hub.serve(sid, device, socket).await;
-    });
-
-    let mut response = status(StatusCode::SWITCHING_PROTOCOLS);
-    let headers = response.headers_mut();
-    headers.insert(header::UPGRADE, HeaderValue::from_static("websocket"));
-    headers.insert(header::CONNECTION, HeaderValue::from_static("Upgrade"));
-    if let Ok(value) = HeaderValue::from_str(&accept) {
-        headers.insert(header::SEC_WEBSOCKET_ACCEPT, value);
-    }
-    response
-}
-
-fn sid(query: &str) -> Option<String> {
-    query
-        .split('&')
-        .find_map(|pair| pair.strip_prefix("sid="))
-        .filter(|sid| valid_sid(sid))
-        .map(str::to_string)
-}
-
-/// A page path as the widget's go expects it, from what was typed.
-pub fn absolute(path: &str) -> String {
-    let path = path.trim();
-    if path.starts_with('/') {
-        path.to_string()
-    } else {
-        format!("/{path}")
-    }
-}
-
-/// A visitor id as the widget makes them: short, letters and digits.
-pub fn valid_sid(sid: &str) -> bool {
-    !sid.is_empty() && sid.len() <= MAX_SID && sid.chars().all(|c| c.is_ascii_alphanumeric())
-}
-
-/// Another site's page must not listen in on the messages meant for visitors.
-fn same_origin(headers: &HeaderMap) -> bool {
-    let value = |name| {
-        headers
-            .get(name)
-            .and_then(|v: &HeaderValue| v.to_str().ok())
-    };
-    match (value(header::ORIGIN), value(header::HOST)) {
-        (Some(origin), Some(host)) => origin
-            .split_once("://")
-            .is_some_and(|(_, rest)| rest == host),
-        (None, _) => true,
-        _ => false,
     }
 }

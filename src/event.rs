@@ -138,6 +138,21 @@ pub struct Said {
     pub text: String,
 }
 
+/// An error a visitor's page ran into: thrown, a rejected promise, or a
+/// `console.error`, with how many times it came again.
+#[derive(Debug, Clone)]
+pub struct PageError {
+    pub sid: String,
+    pub device: String,
+    pub page: String,
+    pub kind: String,
+    pub message: String,
+    /// `file:line:column` where it was raised, when the browser says.
+    pub source: String,
+    pub stack: String,
+    pub count: u32,
+}
+
 #[derive(Debug)]
 pub enum Event {
     PortChecked {
@@ -160,6 +175,7 @@ pub enum Event {
     Chat(Said),
     Pointer(Pointer),
     Reacted(Reacted),
+    PageError(PageError),
     Replayed {
         n: u32,
         status: Result<u16, String>,

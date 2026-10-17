@@ -281,6 +281,31 @@ impl Host {
                     self.channel(&said.text, meta);
                 }
                 Event::Feedback(note) => self.noted(id, note),
+                Event::PageError(error) => {
+                    self.log(
+                        id,
+                        "error",
+                        json!({
+                            "visitor": error.sid,
+                            "device": error.device,
+                            "page": error.page,
+                            "type": error.kind,
+                            "message": error.message,
+                            "source": error.source,
+                            "stack": error.stack,
+                            "count": error.count,
+                        }),
+                    );
+                    let meta = json!({
+                        "kind": "error",
+                        "share": id,
+                        "visitor": error.sid,
+                        "page": error.page,
+                        "source": error.source,
+                        "count": error.count,
+                    });
+                    self.channel(&error.message, meta);
+                }
                 Event::Reacted(reaction) => {
                     let (emoji, label) = REACTIONS[reaction.kind];
                     let reacted =
