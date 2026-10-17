@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 
 const BINARY = resolve(process.argv[2] ?? "target/debug/bunflared");
 const PROTOCOL = "2025-06-18";
-const TOOLS = ["open", "list", "close", "visitors", "say", "go", "reload", "events", "requests", "request", "replay"];
+const TOOLS = ["open", "list", "close", "visitors", "say", "go", "reload", "screenshot", "events", "requests", "request", "replay"];
 const AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 const DEVICE = "Mac · Chrome";
@@ -19,6 +19,9 @@ const DEADLINE = 90_000;
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const ECHOED = '{"n":1}';
 const MISSING = 99999;
+const PNG_BASE64 = "iVBORw0KGgo=";
+const SOURCE = { component: "App", file: "src/App.tsx", line: 12, column: 5 };
+const AT = "src/App.tsx:12:5 in App";
 
 const app = Bun.serve({
   port: 0,
@@ -126,7 +129,7 @@ check("initialize names bunflared and keeps the asked revision",
 
 const listed = await rpc("tools/list");
 const names = listed.result.tools.map((t: any) => t.name);
-check("tools/list gives the 11 tools", JSON.stringify(names) === JSON.stringify(TOOLS), names);
+check("tools/list gives the 12 tools", JSON.stringify(names) === JSON.stringify(TOOLS), names);
 
 const early = await tool("visitors");
 check("a share tool before open says to open one", early.error && early.text === "No share is open: open one first.", early.text);
@@ -172,6 +175,19 @@ const frames: any[] = [];
 socket.onmessage = (message) => frames.push(JSON.parse(String(message.data)));
 await new Promise((open) => (socket.onopen = open));
 const frame = (type: string) => eventually(() => frames.find((f) => f.type === type));
+// The next frame of a kind, each taken once.
+const take = async (type: string) => {
+  const found = await frame(type);
+  if (found) frames.splice(frames.indexOf(found), 1);
+  return found;
+};
+// The page's side of a look: the screenshot saved, then the answer on the channel.
+async function answerLook(missing: boolean) {
+  const asked = await take("look");
+  const saved = await (await fetch(`${share.url}/_bunflared/shot`, { method: "POST", headers, body: PNG })).json();
+  socket.send(JSON.stringify({ type: "shot", id: asked?.id, shot: saved.shot, title: "smoke", page: "/", screen: "800x600", text: "Buy now", missing }));
+  return asked;
+}
 
 const said = await tool("say", { text: "hello from smoke", visitor: SID });
 const bubble = await frame("chat");
@@ -199,6 +215,29 @@ socket.send(JSON.stringify({ type: "react", emoji: "🔥", page: "/" }));
 const reaction = await event("reaction");
 check("a reaction is an event", reaction?.emoji === "🔥" && reaction.label === "on fire" && reaction.device === DEVICE, reaction);
 
+const looking = rpc("tools/call", { name: "screenshot", arguments: {} });
+const look = await answerLook(false);
+const seen = (await looking).result;
+const seenValue = JSON.parse(seen.content[0].text);
+check("screenshot asks the page and hands back its image and what it shows",
+  look?.reload === false && !seen.isError && seen.content[1]?.type === "image" && seen.content[1].data === PNG_BASE64 &&
+    seenValue.title === "smoke" && seenValue.text === "Buy now" && seenValue.visitor === SID && seenValue.screenshot.endsWith(".png"),
+  [look, seen]);
+
+const reloading = rpc("tools/call", { name: "reload", arguments: { selector: "#buy" } });
+const recheck = await answerLook(false);
+const rechecked = (await reloading).result;
+check("reload with a selector reloads and hands back the element's image",
+  recheck?.reload === true && recheck.selector === "#buy" && rechecked.content[1]?.type === "image" &&
+    JSON.parse(rechecked.content[0].text).found === true,
+  [recheck, rechecked]);
+
+socket.send(JSON.stringify({ type: "error", kind: "error", message: "Error: boom", source: "/src/App.tsx:3:9", stack: "Error: boom\n    at App", page: "/", count: 3 }));
+const thrown = await event("error");
+check("a page's error is an event", thrown?.message === "Error: boom" && thrown.type === "error" && thrown.count === 3 && thrown.source === "/src/App.tsx:3:9", thrown);
+const heardError = await eventually(() => channels.find((c) => c.meta.kind === "error"));
+check("the error arrives on the channel", heardError?.content === "Error: boom" && heardError.meta.count === 3, heardError);
+
 const shot = await (await fetch(`${share.url}/_bunflared/shot`, { method: "POST", headers, body: PNG })).json();
 check("a screenshot is saved", /^\d{4}-\d{2}-\d{2}_[\d.-]+\.png$/.test(shot.shot), shot);
 
@@ -212,23 +251,25 @@ const posted = await fetch(`${share.url}/_bunflared/feedback`, {
     message: "Looks good overall",
     screen: "1440×900",
     shot: shot.shot,
-    points: [point("#buy", "Buy now", "make it green"), point("h1", "Title", "bigger")],
+    points: [{ ...point("#buy", "Buy now", "make it green"), source: SOURCE }, point("h1", "Title", "bigger")],
   }),
 });
 const note = await event("note");
 check("a note is an event with its points and screenshot",
-  posted.status === 200 && note?.points.length === 2 && note.element.selector === "#buy" && note.screenshot.endsWith(shot.shot),
+  posted.status === 200 && note?.points.length === 2 && note.element.selector === "#buy" && note.screenshot.endsWith(shot.shot) &&
+    note.points[0].source.file === SOURCE.file && note.points[0].source.line === SOURCE.line && note.points[1].source === null,
   note);
 
 const markdown = note ? readFileSync(note.file, "utf8") : "";
 check("the note file has both points and the screenshot",
-  ["## Point 1", "## Point 2", "> make it green", "## Overall", `- Device: ${DEVICE}`,
+  ["## Point 1", "## Point 2", `- Source: \`${AT}\``, "> make it green", "## Overall", `- Device: ${DEVICE}`,
     `![Screenshot, the elements outlined and numbered](${shot.shot})`].every((part) => markdown.includes(part)),
   markdown);
 
 const noted = await eventually(() => channels.find((c) => c.meta.kind === "note"));
 check("the note arrives on the channel",
-  noted?.content.includes('1. #buy "Buy now": make it green') && noted.meta.element === "#buy", noted);
+  noted?.content.includes(`1. #buy "Buy now": make it green [${AT}]`) && noted.meta.element === "#buy" && noted.meta.source === AT,
+  noted);
 
 const feedback = join(folder, "bunflared-feedback");
 const sessions = readdirSync(feedback).filter((name) => /^session_.*\.md$/.test(name));
