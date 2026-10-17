@@ -18,6 +18,8 @@ const SIZE = { width: 1280, height: 760 };
 const BAND = 56;
 const GIF_WIDTH = 1200;
 const FPS = 15;
+// Edit's photos move on most frames: fewer of them keep it under 10 MB.
+const CLIP_FPS: Record<string, number> = { edit: 12 };
 const COLORS = 256;
 const LOSSY = 40;
 const PORTS = { term: 7681, shell: 7682, agent: 7683 };
@@ -650,6 +652,7 @@ async function password(browser: Browser) {
 async function cut(browser: Browser, work: string, { shots, starts, videos }: Story) {
   const bands = await browser.newPage({ viewport: { width: SIZE.width, height: BAND } });
   for (const clip of new Set(shots.map((s) => s.clip))) {
+    const fps = CLIP_FPS[clip] ?? FPS;
     const inputs: string[] = [];
     const filters: string[] = [];
     const own = shots.filter((s) => s.clip === clip);
@@ -667,19 +670,21 @@ async function cut(browser: Browser, work: string, { shots, starts, videos }: St
       inputs.push("-i", band);
       const [video, image] = [i * 2, i * 2 + 1];
       filters.push(
-        `[${video}:v]fps=${FPS},scale=${SIZE.width}:${SIZE.height},setsar=1,pad=${SIZE.width}:${SIZE.height + BAND}:0:${BAND}[p${i}]`,
+        `[${video}:v]fps=${fps},scale=${SIZE.width}:${SIZE.height},setsar=1,pad=${SIZE.width}:${SIZE.height + BAND}:0:${BAND}[p${i}]`,
         `[p${i}][${image}:v]overlay=0:0,scale=${GIF_WIDTH}:-2:flags=lanczos[s${i}]`,
       );
     }
     filters.push(
-      `${own.map((_, i) => `[s${i}]`).join("")}concat=n=${own.length}:v=1:a=0,split[a][b]`,
+      // A frame no different from the last only lengthens it: still moments
+      // weigh nothing.
+      `${own.map((_, i) => `[s${i}]`).join("")}concat=n=${own.length}:v=1:a=0,mpdecimate,split[a][b]`,
       `[a]palettegen=stats_mode=diff:max_colors=${COLORS}[palette]`,
       "[b][palette]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle",
     );
     const raw = join(work, `${clip}.gif`);
     const out = join(import.meta.dir, `${clip}.gif`);
     const steps: [string, string[]][] = [
-      ["ffmpeg", ["-y", "-loglevel", "error", ...inputs, "-filter_complex", filters.join(";"), raw]],
+      ["ffmpeg", ["-y", "-loglevel", "error", ...inputs, "-filter_complex", filters.join(";"), "-fps_mode", "vfr", raw]],
       ["gifsicle", ["-O3", `--lossy=${LOSSY}`, raw, "-o", out]],
     ];
     for (const [command, args] of steps) {
