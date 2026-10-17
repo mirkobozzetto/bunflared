@@ -76,7 +76,8 @@ root.innerHTML = `
       <span class="place"></span>
       <button class="chip later" type="button">Move later</button>
     </div>
-    <div class="knobs"></div>
+    <div class="tabs" role="tablist" aria-label="Settings"></div>
+    <div class="panes"></div>
     <div class="bar-end">
       <button class="ghost cancel-edit" type="button">Cancel</button>
       <button class="done" type="button">${ICON.check}Done</button>
