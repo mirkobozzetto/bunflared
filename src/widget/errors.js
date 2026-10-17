@@ -18,8 +18,6 @@ const asText = (value) => {
     return String(value);
   }
 };
-// A file of the app as the dev server serves it, without its origin and cache key.
-const ownFile = (url) => url.replace(location.origin, "").replace(/\?t=\d+/, "");
 
 const noteError = (kind, message, source = "", stack = "") => {
   const key = `${kind}|${message}|${source}`;
@@ -46,18 +44,22 @@ const flushErrors = () => {
 };
 setInterval(flushErrors, ERRORS_EVERY_MS);
 
+// Its place in the code the developer wrote, mapped back from the served one.
+const noteRaised = (kind, message, stack = "", served = "") =>
+  whereRaised(stack).then((place) => noteError(kind, message, place ?? served, stack));
+
 addEventListener("error", (event) => {
   if (!(event instanceof ErrorEvent)) return;
-  const where = event.filename ? `${ownFile(event.filename)}:${event.lineno}:${event.colno}` : "";
-  noteError("error", event.error ? asText(event.error) : event.message, where, event.error?.stack ?? "");
+  const served = event.filename ? `${servedPath(event.filename)}:${event.lineno}:${event.colno}` : "";
+  noteRaised("error", event.error ? asText(event.error) : event.message, event.error?.stack, served);
 });
 addEventListener("unhandledrejection", ({ reason }) => {
-  noteError("rejection", asText(reason), "", reason?.stack ?? "");
+  noteRaised("rejection", asText(reason), reason?.stack);
 });
 const consoleError = console.error;
 console.error = function (...args) {
   consoleError.apply(this, args);
   try {
-    noteError("console", args.map(asText).join(" "), "", args.find((arg) => arg instanceof Error)?.stack ?? "");
+    noteRaised("console", args.map(asText).join(" "), args.find((arg) => arg instanceof Error)?.stack);
   } catch {}
 };
