@@ -8,8 +8,9 @@ mod hose;
 mod scenes;
 mod shaders;
 mod spectacle;
+mod traffic;
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
@@ -30,6 +31,7 @@ use crate::notes;
 use crate::proxy::Replayer;
 use crate::visitors::Roster;
 use boot::Boot;
+use traffic::Traffic;
 
 const BOOT: f32 = 2.2;
 const LAUNCH: f32 = 4.0;
@@ -37,8 +39,6 @@ const GOODBYE: f32 = 1.6;
 const SNIFF: f32 = 0.35;
 pub const LANE_TRIP: f32 = 1.4;
 const TOAST_LIFE: f32 = 3.5;
-const LOG_KEEP: usize = 200;
-const SPARK_KEEP: usize = 120;
 pub const SLEEP_AFTER: f32 = 60.0;
 const MARATHON: f32 = 3600.0;
 const STAMPEDE_PRESSES: usize = 5;
@@ -117,20 +117,6 @@ pub enum Phase {
     Failed,
 }
 
-pub struct Row {
-    pub hit: Hit,
-    pub clock: String,
-    /// Its rank since the start, a key that survives new rows.
-    pub n: u32,
-    pub replayed: Option<Replay>,
-}
-
-pub enum Replay {
-    Pending,
-    Done { status: u16, ms: u32 },
-    Failed,
-}
-
 pub struct Sprite {
     pub born: Instant,
     pub lane: u16,
@@ -200,18 +186,9 @@ pub struct App {
     pub launch_bursts: u8,
 
     pub boot: Boot,
+    pub traffic: Traffic,
     /// Particles skip this area: the QR code, the freshly announced link.
     pub keep_clear: Option<Rect>,
-    pub rows: VecDeque<Row>,
-    pub total: u32,
-    pub classes: [u32; 4],
-    pub visitors: HashSet<String>,
-    pub sockets: u32,
-    pub ms_sum: u64,
-    pub per_second: VecDeque<u64>,
-    bucket_at: Instant,
-    pub last_hit: Option<Instant>,
-    pub last_error: Option<Instant>,
     pub unlocked: Vec<&'static art::Achievement>,
     pub roster: Roster,
     /// The followed visitors' pointers, and when they last moved.
@@ -221,17 +198,12 @@ pub struct App {
     pub focus: Option<Focus>,
     /// The visitor that commands go to; everyone when `None`.
     pub selected: Option<String>,
-    pub picked: Option<u32>,
     pub prompt: Option<Prompt>,
     /// Pages the visitors were on, the most recent first.
     pub pages: Vec<String>,
     pub chat: VecDeque<Message>,
     pub reactions: [u32; REACTIONS.len()],
     pub worried_until: Option<Instant>,
-    replayer: Replayer,
-    /// The request whose details are open, by rank.
-    pub details: Option<u32>,
-    pub details_scroll: u16,
 
     pub disco: bool,
     pub qr: bool,
@@ -302,17 +274,8 @@ impl App {
             runners: Vec::new(),
             launch_bursts: 0,
             boot: Boot::new(ports),
+            traffic: Traffic::new(replayer, now),
             keep_clear: None,
-            rows: VecDeque::new(),
-            total: 0,
-            classes: [0; 4],
-            visitors: HashSet::new(),
-            sockets: 0,
-            ms_sum: 0,
-            per_second: VecDeque::from(vec![0; SPARK_KEEP]),
-            bucket_at: now,
-            last_hit: None,
-            last_error: None,
             unlocked: Vec::new(),
             roster: Roster::default(),
             pointers: HashMap::new(),
@@ -320,15 +283,11 @@ impl App {
             hub,
             focus: None,
             selected: None,
-            picked: None,
             prompt: None,
             pages: Vec::new(),
             chat: VecDeque::new(),
             reactions: [0; REACTIONS.len()],
             worried_until: None,
-            replayer,
-            details: None,
-            details_scroll: 0,
             disco: false,
             qr: false,
             help: false,
@@ -378,6 +337,7 @@ impl App {
 
     pub fn sleeping(&self) -> bool {
         let since = self
+            .traffic
             .last_hit
             .or(self.boot.ready_at)
             .map_or(0.0, |at| (self.now - at).as_secs_f32());
@@ -491,21 +451,9 @@ impl App {
                 }
             }
             Event::Replayed { n, status, ms } => {
-                let Some(row) = self.rows.iter_mut().find(|row| row.n == n) else {
-                    return;
-                };
-                let title = format!("↻ {} {}", row.hit.method, row.hit.path);
-                let body = match status {
-                    Ok(status) => {
-                        row.replayed = Some(Replay::Done { status, ms });
-                        format!("{} before, {status} now, in {ms} ms.", row.hit.status)
-                    }
-                    Err(err) => {
-                        row.replayed = Some(Replay::Failed);
-                        format!("Failed: {err}")
-                    }
-                };
-                self.toast(title, body, false);
+                if let Some((title, body)) = self.traffic.replayed(n, status, ms) {
+                    self.toast(title, body, false);
+                }
             }
             Event::PortHealth { port, ok } => {
                 self.boot.health(port, ok);
@@ -538,46 +486,12 @@ impl App {
     }
 
     fn on_hit(&mut self, hit: Hit) {
-        self.total += 1;
-        let class = match hit.status {
-            0..300 => 0,
-            300..400 => 1,
-            400..500 => 2,
-            _ => 3,
-        };
-        self.classes[class] += 1;
-        self.ms_sum += hit.ms as u64;
-        if let Some(back) = self.per_second.back_mut() {
-            *back += 1;
-        }
         self.boot.hit(hit.port);
-        if self.visitors.insert(hit.visitor.clone()) {
-            match self.visitors.len() {
-                1 => self.unlock("first"),
-                5 => self.unlock("party"),
-                _ => {}
-            }
-        }
-        match self.total {
-            100 => self.unlock("centurion"),
-            1000 => self.unlock("thousand"),
-            _ => {}
-        }
-        if hit.ms < 10 {
-            self.unlock("speed");
-        }
-        if hit.upgrade && hit.status == 101 {
-            self.sockets += 1;
-            self.unlock("tube");
-        }
         if hit.status >= 500 {
-            self.last_error = Some(self.now);
             self.shaders.crash();
-            self.unlock("survivor");
         }
-        self.last_hit = Some(self.now);
         if !self.theme.calm && self.sprites.len() < 80 {
-            let (glyph, color) = match (hit.upgrade, class) {
+            let (glyph, color) = match (hit.upgrade, traffic::class(hit.status)) {
                 (true, 0) => ('≈', fx::PURPLE),
                 (_, 0) => ('●', fx::GREEN),
                 (_, 1) => ('◆', fx::CYAN),
@@ -592,13 +506,9 @@ impl App {
                 color,
             });
         }
-        self.rows.push_front(Row {
-            hit,
-            clock: clock::clock(),
-            n: self.total,
-            replayed: None,
-        });
-        self.rows.truncate(LOG_KEEP);
+        for key in self.traffic.record(hit, self.now) {
+            self.unlock(key);
+        }
     }
 
     fn tick(&mut self, now: Instant) {
@@ -642,13 +552,7 @@ impl App {
         }
 
         self.boot.tick(self.dt);
-        while now.duration_since(self.bucket_at) >= Duration::from_secs(1) {
-            self.bucket_at += Duration::from_secs(1);
-            self.per_second.push_back(0);
-            if self.per_second.len() > SPARK_KEEP {
-                self.per_second.pop_front();
-            }
-        }
+        self.traffic.tick(now);
         self.particles.step(self.dt);
         self.sprites
             .retain(|s| (now - s.born).as_secs_f32() < LANE_TRIP);
@@ -690,7 +594,7 @@ impl App {
                 self.help = false;
                 self.qr = false;
                 self.prompt = None;
-                self.details = None;
+                self.traffic.details = None;
                 let _ = stop.send(true);
                 let leaving = if self.phase == Phase::Dashboard && !self.theme.calm {
                     self.shaders.dissolve();
@@ -729,13 +633,21 @@ impl App {
         }
 
         let dashboard = self.phase == Phase::Dashboard;
-        if let (Some(n), true) = (self.details, dashboard) {
+        if let (Some(n), true) = (self.traffic.details, dashboard) {
             match key.code {
-                KeyCode::Esc | KeyCode::Enter => self.details = None,
-                KeyCode::Up => self.details_scroll = self.details_scroll.saturating_sub(1),
-                KeyCode::Down => self.details_scroll = self.details_scroll.saturating_add(1),
-                KeyCode::PageUp => self.details_scroll = self.details_scroll.saturating_sub(10),
-                KeyCode::PageDown => self.details_scroll = self.details_scroll.saturating_add(10),
+                KeyCode::Esc | KeyCode::Enter => self.traffic.details = None,
+                KeyCode::Up => {
+                    self.traffic.details_scroll = self.traffic.details_scroll.saturating_sub(1)
+                }
+                KeyCode::Down => {
+                    self.traffic.details_scroll = self.traffic.details_scroll.saturating_add(1)
+                }
+                KeyCode::PageUp => {
+                    self.traffic.details_scroll = self.traffic.details_scroll.saturating_sub(10)
+                }
+                KeyCode::PageDown => {
+                    self.traffic.details_scroll = self.traffic.details_scroll.saturating_add(10)
+                }
                 KeyCode::Char('p') => self.replay(n),
                 _ => {}
             }
@@ -749,7 +661,7 @@ impl App {
             KeyCode::Esc => {
                 self.focus = None;
                 self.select(None);
-                self.picked = None;
+                self.traffic.picked = None;
             }
             KeyCode::Tab if dashboard => {
                 self.focus = Some(match self.focus {
@@ -773,12 +685,12 @@ impl App {
                 });
             }
             KeyCode::Enter if dashboard && self.focus == Some(Focus::Log) => {
-                if self.picked.is_some() {
-                    self.details = self.picked;
-                    self.details_scroll = 0;
+                if self.traffic.picked.is_some() {
+                    self.traffic.details = self.traffic.picked;
+                    self.traffic.details_scroll = 0;
                 }
             }
-            KeyCode::Char('p') if dashboard => match self.picked {
+            KeyCode::Char('p') if dashboard => match self.traffic.picked {
                 Some(n) => self.replay(n),
                 None => self.toast("Pick a request first", "Tab, then ↑ ↓.", false),
             },
@@ -870,8 +782,8 @@ impl App {
                 self.select(next);
             }
             Focus::Log => {
-                let ranks: Vec<u32> = self.rows.iter().map(|row| row.n).collect();
-                self.picked = stepped(&ranks, self.picked.as_ref(), down);
+                let ranks: Vec<u32> = self.traffic.rows.iter().map(|row| row.n).collect();
+                self.traffic.picked = stepped(&ranks, self.traffic.picked.as_ref(), down);
             }
         }
     }
@@ -994,15 +906,8 @@ impl App {
 
     /// Sends a request of the log again, unless it cannot be sent as it was.
     fn replay(&mut self, n: u32) {
-        let Some(row) = self.rows.iter().find(|row| row.n == n) else {
-            return;
-        };
-        if let Some(reason) = row.hit.unreplayable() {
-            return self.toast("✖ Not replayable", reason, false);
-        }
-        self.replayer.replay(n, &row.hit);
-        if let Some(row) = self.rows.iter_mut().find(|row| row.n == n) {
-            row.replayed = Some(Replay::Pending);
+        if let Err(reason) = self.traffic.replay(n) {
+            self.toast("✖ Not replayable", reason, false);
         }
     }
 
@@ -1153,9 +1058,9 @@ impl App {
             "  {}    {} live · {} · {} · {}",
             paint("35", r#" o_(")(")"#),
             uptime(self.live_for()),
-            plural(self.total as usize, "request"),
-            plural(self.visitors.len(), "visitor"),
-            plural(self.classes[3] as usize, "error"),
+            plural(self.traffic.total as usize, "request"),
+            plural(self.traffic.visitors.len(), "visitor"),
+            plural(self.traffic.classes[3] as usize, "error"),
         );
         if !badges.is_empty() {
             println!("               {}", paint("33", &badges.join("  ")));

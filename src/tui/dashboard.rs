@@ -9,7 +9,8 @@ use super::art::{self, Frame3};
 use super::boot::Qr;
 use super::fx::{self, put};
 use super::scenes::wrap;
-use super::{App, Ask, Focus, LANE_TRIP, Replay, Row, Theme, plural};
+use super::traffic::{Replay, Row};
+use super::{App, Ask, Focus, LANE_TRIP, Theme, plural};
 use crate::event::{CAPTURE, Capture};
 use crate::live::REACTIONS;
 use crate::visitors::Visitor;
@@ -267,7 +268,7 @@ fn mood(app: &App) -> Mood {
             jitter: 0,
             color: fx::YELLOW,
         }
-    } else if recent(app.last_error, PANIC_FOR) {
+    } else if recent(app.traffic.last_error, PANIC_FOR) {
         let pose = if alt(7.0) {
             &art::PANIC_B
         } else {
@@ -279,7 +280,7 @@ fn mood(app: &App) -> Mood {
             jitter: if alt(11.0) { 1 } else { 0 },
             color: fx::RED,
         }
-    } else if recent(app.last_hit, HOP_FOR) {
+    } else if recent(app.traffic.last_hit, HOP_FOR) {
         let pose = if alt(5.0) { &art::HOP } else { &art::HAPPY };
         Mood {
             label: "hopping",
@@ -453,10 +454,10 @@ fn draw_stats(app: &App, frame: &mut Frame, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let theme = &app.theme;
-    let average = if app.total == 0 {
+    let average = if app.traffic.total == 0 {
         0
     } else {
-        app.ms_sum / app.total as u64
+        app.traffic.ms_sum / app.traffic.total as u64
     };
     let strong = |value: String, color: Color| {
         Span::styled(value, theme.fg(color).add_modifier(Modifier::BOLD))
@@ -464,38 +465,39 @@ fn draw_stats(app: &App, frame: &mut Frame, area: Rect) {
     let label = |text: &'static str| Span::styled(text, theme.fg(fx::DIM));
     let mut lines = vec![
         Line::from(vec![
-            strong(app.total.to_string(), fx::FG),
+            strong(app.traffic.total.to_string(), fx::FG),
             label(" requests  "),
-            strong(app.visitors.len().to_string(), fx::FG),
-            label(if app.visitors.len() == 1 {
+            strong(app.traffic.visitors.len().to_string(), fx::FG),
+            label(if app.traffic.visitors.len() == 1 {
                 " visitor  "
             } else {
                 " visitors  "
             }),
-            strong(app.sockets.to_string(), fx::FG),
+            strong(app.traffic.sockets.to_string(), fx::FG),
             label(" sockets"),
         ]),
         Line::from(vec![
             label("2xx "),
-            strong(app.classes[0].to_string(), fx::GREEN),
+            strong(app.traffic.classes[0].to_string(), fx::GREEN),
             label("  3xx "),
-            strong(app.classes[1].to_string(), fx::CYAN),
+            strong(app.traffic.classes[1].to_string(), fx::CYAN),
             label("  4xx "),
-            strong(app.classes[2].to_string(), fx::YELLOW),
+            strong(app.traffic.classes[2].to_string(), fx::YELLOW),
             label("  5xx "),
-            strong(app.classes[3].to_string(), fx::RED),
+            strong(app.traffic.classes[3].to_string(), fx::RED),
         ]),
         Line::from(vec![
             label("avg "),
             strong(format!("{average} ms"), fx::FG),
             label("  carrots eaten "),
-            strong(app.classes[0].to_string(), fx::CARROT),
+            strong(app.traffic.classes[0].to_string(), fx::CARROT),
             label("  feedback "),
             strong(app.feedback.to_string(), fx::PINK),
         ]),
     ];
     let width = inner.width as usize;
     let recent: Vec<u64> = app
+        .traffic
         .per_second
         .iter()
         .rev()
@@ -605,7 +607,7 @@ fn draw_log(app: &App, frame: &mut Frame, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let theme = &app.theme;
-    if app.rows.is_empty() {
+    if app.traffic.rows.is_empty() {
         let waiting = Line::from(Span::styled(
             "No visitors yet. Send the link to someone!",
             theme.fg(fx::DIM),
@@ -620,8 +622,13 @@ fn draw_log(app: &App, frame: &mut Frame, area: Rect) {
         frame.render_widget(Paragraph::new(waiting), middle);
         return;
     }
-    let at = app.rows.iter().position(|row| Some(row.n) == app.picked);
+    let at = app
+        .traffic
+        .rows
+        .iter()
+        .position(|row| Some(row.n) == app.traffic.picked);
     let lines: Vec<Line> = app
+        .traffic
         .rows
         .iter()
         .skip(scroll(at, inner.height as usize))
@@ -651,7 +658,7 @@ fn draw_log(app: &App, frame: &mut Frame, area: Rect) {
                 Span::styled(format!(":{:<5} ", hit.port), theme.fg(fx::DIM)),
                 Span::styled(hit.path.clone(), theme.fg(fx::FG)),
             ]);
-            highlight(line, Some(row.n) == app.picked)
+            highlight(line, Some(row.n) == app.traffic.picked)
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), inner);
@@ -812,9 +819,9 @@ fn compact(app: &App, frame: &mut Frame, area: Rect) {
         Line::from(Span::styled(
             format!(
                 "{} · {} · {}",
-                plural(app.total as usize, "request"),
-                plural(app.visitors.len(), "visitor"),
-                plural(app.classes[3] as usize, "error")
+                plural(app.traffic.total as usize, "request"),
+                plural(app.traffic.visitors.len(), "visitor"),
+                plural(app.traffic.classes[3] as usize, "error")
             ),
             theme.fg(fx::FG),
         )),
@@ -961,8 +968,9 @@ fn details_lines(app: &App, row: &Row) -> Vec<Line<'static>> {
 /// Enter on a request: everything that went through, scrollable.
 fn draw_details(app: &mut App, frame: &mut Frame, area: Rect) {
     let Some(row) = app
+        .traffic
         .details
-        .and_then(|n| app.rows.iter().find(|row| row.n == n))
+        .and_then(|n| app.traffic.rows.iter().find(|row| row.n == n))
     else {
         return;
     };
@@ -979,8 +987,11 @@ fn draw_details(app: &mut App, frame: &mut Frame, area: Rect) {
     let inner = block.inner(rect).inner(Margin::new(1, 0));
     frame.render_widget(block, rect);
     let most = lines.len().saturating_sub(inner.height as usize) as u16;
-    app.details_scroll = app.details_scroll.min(most);
-    frame.render_widget(Paragraph::new(lines).scroll((app.details_scroll, 0)), inner);
+    app.traffic.details_scroll = app.traffic.details_scroll.min(most);
+    frame.render_widget(
+        Paragraph::new(lines).scroll((app.traffic.details_scroll, 0)),
+        inner,
+    );
     app.keep_clear = Some(rect);
 }
 
