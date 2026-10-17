@@ -239,8 +239,7 @@ impl Hub {
             return;
         };
         let mut transcript = self.transcript.lock().unwrap();
-        let path = transcript
-            .get_or_insert_with(|| folder.join(format!("session_{}.md", stamp())));
+        let path = transcript.get_or_insert_with(|| folder.join(format!("session_{}.md", stamp())));
         let fresh = !path.exists();
         if widget::folder_ready(folder).is_err() {
             return;
