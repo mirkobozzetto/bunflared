@@ -31,29 +31,6 @@ fn centered(buf: &mut Buffer, area: Rect, y: i32, text: &str, style: Style) {
     );
 }
 
-/// A fire along the whole bottom of the screen, `share` of its height tall,
-/// whose flames climb `reach` of the way up. Returns where it starts.
-fn inferno(
-    app: &mut App,
-    buf: &mut Buffer,
-    area: Rect,
-    share: f32,
-    (fuel, reach): (f32, f32),
-) -> i32 {
-    let height = (area.height as f32 * share) as usize;
-    let top = area.bottom() as i32 - height as i32;
-    if app.theme.calm {
-        return top;
-    }
-    let cooling = (2.0 * fx::FIRE_HOT as f32 / (height as f32 * reach))
-        .round()
-        .max(1.0) as usize;
-    app.inferno
-        .step(&mut app.rng, area.width as usize, height, fuel, cooling);
-    app.inferno.draw(buf, &app.theme, area.x as i32, top);
-    top
-}
-
 fn hint(buf: &mut Buffer, area: Rect, theme: &Theme, text: &str) {
     centered(buf, area, area.bottom() as i32 - 2, text, theme.fg(fx::DIM));
 }
@@ -343,9 +320,6 @@ pub fn launch(app: &mut App, frame: &mut Frame) {
     let area = frame.area();
     let (t, e) = (app.t(), app.elapsed());
     let (cx, cy) = (area.width as f32 / 2.0, area.height as f32 / 2.0);
-    // The fire dies down: the phoenix is made of it.
-    let fuel = (0.9 - t).max(0.0);
-    inferno(app, frame.buffer_mut(), area, 0.3, (fuel, 0.75));
     if app.launch_bursts == 0 {
         app.particles.confetti(&mut app.rng, cx, cy, 160);
         app.launch_bursts = 1;
@@ -360,7 +334,7 @@ pub fn launch(app: &mut App, frame: &mut Frame) {
 
     let buf = frame.buffer_mut();
     let theme = &app.theme;
-    let top = cy as i32 - 9;
+    let top = cy as i32 - 10;
     let live_width = art::big("LIVE!")[0].chars().count() as i32;
     big_text(
         buf,
@@ -374,77 +348,76 @@ pub fn launch(app: &mut App, frame: &mut Frame) {
     );
 
     let jump = (t / 0.9).min(1.0);
-    let hop = ((jump * PI).sin() * 4.0) as i32;
-    let pose = if jump < 1.0 {
-        &art::HOP
-    } else if (t * 4.0) as i32 % 2 == 0 {
-        &art::DANCE_A
+    let hop = ((jump * PI).sin() * 2.0) as i32;
+    let pose = if jump < 1.0 || (t * 4.0) as i32 % 2 == 0 {
+        cast::DANCE_LEFT
     } else {
-        &art::DANCE_B
+        cast::DANCE_RIGHT
     };
-    bunny(
-        buf,
-        center(area, 10),
-        cy as i32 - 2 - hop,
-        pose,
-        theme.fg(fx::FG),
-    );
+    let hands = (center(area, cast::width(pose)), cy as i32 - 3 - hop);
+    let fg = theme.fg(fx::FG);
+    cast::draw(buf, hands, pose, false, |_| fg);
 
-    if let Some(url) = &app.url {
-        let inner = url.chars().count() as i32 + 4;
-        let x = center(area, inner + 2);
-        let y = spectacle::carried(t, cy as i32 + 2, area.bottom() as i32 - 3);
-        let border = theme.fg(fx::rainbow(e * 200.0));
-        app.keep_clear = Some(Rect::new(
-            x.max(0) as u16,
-            y.max(0) as u16,
-            (inner + 2) as u16,
-            3,
-        ));
-        put(
+    let Some(url) = &app.url else {
+        hint(buf, area, theme, "any key for the dashboard");
+        return;
+    };
+    let inner = url.chars().count() as i32 + 4;
+    let rest = center(area, inner + 2);
+    let x = spectacle::delivered(t, rest, area.right() as i32);
+    let y = cy as i32 + 3;
+    let border = theme.fg(fx::rainbow(e * 200.0));
+    app.keep_clear = Some(Rect::new(
+        x.max(0) as u16,
+        y.max(0) as u16,
+        (inner + 2) as u16,
+        3,
+    ));
+    put(
+        buf,
+        x,
+        y,
+        &format!("╭{}╮", "─".repeat(inner as usize)),
+        border,
+    );
+    put(buf, x, y + 1, "│", border);
+    put(
+        buf,
+        x + 3,
+        y + 1,
+        url,
+        theme.fg(fx::CYAN).add_modifier(Modifier::BOLD),
+    );
+    put(buf, x + inner + 1, y + 1, "│", border);
+    put(
+        buf,
+        x,
+        y + 2,
+        &format!("╰{}╯", "─".repeat(inner as usize)),
+        border,
+    );
+    let (note, color) = if app.copied {
+        ("✓ copied to your clipboard", fx::GREEN)
+    } else {
+        ("press c to copy", fx::DIM)
+    };
+    if x == rest {
+        centered(buf, area, y + 4, note, theme.fg(color));
+    }
+    if !app.resolved {
+        centered(
             buf,
-            x,
-            y,
-            &format!("╭{}╮", "─".repeat(inner as usize)),
-            border,
+            area,
+            y + 5,
+            "DNS is slow today: give the link a minute.",
+            theme.fg(fx::YELLOW),
         );
-        put(buf, x, y + 1, "│", border);
-        put(
-            buf,
-            x + 3,
-            y + 1,
-            url,
-            theme.fg(fx::CYAN).add_modifier(Modifier::BOLD),
-        );
-        put(buf, x + inner + 1, y + 1, "│", border);
-        put(
-            buf,
-            x,
-            y + 2,
-            &format!("╰{}╯", "─".repeat(inner as usize)),
-            border,
-        );
-        let (note, color) = if app.copied {
-            ("✓ copied to your clipboard", fx::GREEN)
-        } else {
-            ("press c to copy", fx::DIM)
-        };
-        if y == cy as i32 + 2 {
-            centered(buf, area, y + 4, note, theme.fg(color));
-        }
-        if !app.resolved {
-            centered(
-                buf,
-                area,
-                y + 5,
-                "DNS is slow today: give the link a minute.",
-                theme.fg(fx::YELLOW),
-            );
-        }
     }
     hint(buf, area, theme, "any key for the dashboard");
-    let url_y = spectacle::carried(t, cy as i32 + 2, area.bottom() as i32 - 3);
-    spectacle::phoenix(app, buf, area, url_y);
+    // The dragon stays right of the letters and the bunny.
+    let clear = cx as i32 + live_width / 2 + 2;
+    let held = (x + inner + 2, y);
+    spectacle::delivery(app, buf, area, held, (hands.0 + 6, hands.1 + 1), clear);
 }
 
 pub fn goodbye(app: &mut App, frame: &mut Frame) {

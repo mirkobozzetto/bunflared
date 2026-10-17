@@ -1,13 +1,15 @@
 //! The show over the rabbit hole while the link loads: a dragon flies to and
 //! fro above the burrow, spitting fire on it, and a firefighter bunny puts
-//! out every flame with his water cannon. Then the phoenix brings the link.
+//! out every flame with his water cannon. Then the dragon flies the link in,
+//! and a carrot from the bunny calms it down.
+
+use std::f32::consts::PI;
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier};
 
 use super::App;
-use super::art;
 use super::cast;
 use super::fx::{self, Particle, put};
 
@@ -26,7 +28,14 @@ const FLAME_ROWS: usize = 3;
 const DOUSE: f32 = 0.9;
 const JET_FLIGHT: f32 = 0.45;
 const JET_GRAVITY: f32 = 26.0;
-const RISE: f32 = 1.1;
+// The launch, in seconds: the box flies in, the carrot flies to the dragon,
+// the dragon munches, then flies off.
+const ARRIVE: f32 = 1.2;
+const THROW_AT: f32 = 1.3;
+const THROW: f32 = 0.5;
+const LEAVE_AT: f32 = 2.6;
+// Wings beat slower once the dragon has eaten.
+const CALM_FLAP: f32 = 0.5;
 
 struct Spit {
     from: (f32, f32),
@@ -47,6 +56,23 @@ pub struct Spectacle {
     next_spit: f32,
     spits: Vec<Spit>,
     flames: Vec<Flame>,
+    munched: bool,
+}
+
+/// The dragon's pose at `t` with its top left cell at `at`, and where its
+/// mouth is on screen.
+fn dragon(t: f32, flap: f32, at: (i32, i32), flip: bool) -> (&'static str, (i32, i32)) {
+    let (grid, mouth) = if (t / flap) as i32 % 2 == 0 {
+        (cast::DRAGON_UP, cast::DRAGON_UP_MOUTH)
+    } else {
+        (cast::DRAGON_DOWN, cast::DRAGON_DOWN_MOUTH)
+    };
+    let x = if flip {
+        cast::width(grid) - 1 - mouth.0
+    } else {
+        mouth.0
+    };
+    (grid, (at.0 + x, at.1 + mouth.1))
 }
 
 /// The dragon and the firefighter over a burrow `width` long from `x0`,
@@ -72,20 +98,9 @@ pub fn burrow(app: &mut App, buf: &mut Buffer, area: Rect, (x0, width): (i32, i3
         heading = -1.0;
     }
     show.dragon = Some((x, heading));
-    let (grid, mouth) = if (e / FLAP) as i32 % 2 == 0 {
-        (cast::DRAGON_UP, cast::DRAGON_UP_MOUTH)
-    } else {
-        (cast::DRAGON_DOWN, cast::DRAGON_DOWN_MOUTH)
-    };
     let (flip, left) = (heading < 0.0, x.round() as i32);
-    let mouth = (
-        if flip {
-            left + wide - 1 - mouth.0
-        } else {
-            left + mouth.0
-        } as f32,
-        (sky + mouth.1) as f32,
-    );
+    let (grid, mouth) = dragon(e, FLAP, (left, sky), flip);
+    let mouth = (mouth.0 as f32, mouth.1 as f32);
 
     if e >= show.next_spit && show.flames.len() + show.spits.len() < MAX_FLAMES {
         show.next_spit = e + SPIT_EVERY;
@@ -174,49 +189,70 @@ pub fn burrow(app: &mut App, buf: &mut Buffer, area: Rect, (x0, width): (i32, i3
     }
 }
 
-/// Where the link box stands at `t` seconds into the launch: carried up
-/// from the bottom by the phoenix, then left at `rest`.
-pub fn carried(t: f32, rest: i32, bottom: i32) -> i32 {
-    let done = (t / RISE).min(1.0);
-    let eased = 1.0 - (1.0 - done).powi(3);
-    bottom + ((rest - bottom) as f32 * eased).round() as i32
+/// Where the link box's left edge is at `t` seconds into the launch: flown
+/// in from `right` by the dragon, then left at `rest`.
+pub fn delivered(t: f32, rest: i32, right: i32) -> i32 {
+    let eased = 1.0 - (1.0 - (t / ARRIVE).min(1.0)).powi(3);
+    right + ((rest - right) as f32 * eased).round() as i32
 }
 
-/// The phoenix rises out of the dying fire holding the link box, lets go
-/// of it, and flies off the top of the screen.
-pub fn phoenix(app: &mut App, buf: &mut Buffer, area: Rect, url_y: i32) {
+/// The dragon holds the link box by its right end at `held`, never left of
+/// `clear`. The bunny throws a carrot from `hands`; the dragon eats it,
+/// calms down and flies off.
+pub fn delivery(
+    app: &mut App,
+    buf: &mut Buffer,
+    area: Rect,
+    held: (i32, i32),
+    hands: (i32, i32),
+    clear: i32,
+) {
     if app.theme.calm {
         return;
     }
     let t = app.t();
-    let (mut x, mut y) = (fx::center(area, 17), url_y - 5);
-    if t > RISE {
-        let away = t - RISE;
-        x += (away * 26.0) as i32;
-        y -= (away * 16.0) as i32;
+    let mut at = ((held.0 - 12).max(clear), held.1 - 11);
+    let leaving = t > LEAVE_AT;
+    if leaving {
+        let away = t - LEAVE_AT;
+        at.0 += (away * 30.0) as i32;
+        at.1 -= (away * 14.0) as i32;
     }
-    if y < area.y as i32 - 6 {
+    if at.1 + 11 < area.y as i32 || at.0 > area.right() as i32 {
         return;
     }
-    let wings = if (t * 8.0) as i32 % 2 == 0 {
-        &art::PHOENIX_UP
-    } else {
-        &art::PHOENIX_DOWN
-    };
-    for (row, line) in wings.iter().enumerate() {
-        let hue = 52.0 - row as f32 * 11.0 + (t * 30.0).sin() * 4.0;
-        let style = app
-            .theme
-            .fg(fx::hsv(hue, 0.9, 1.0))
-            .add_modifier(Modifier::BOLD);
-        for (col, ch) in line.chars().enumerate() {
-            if ch != ' ' {
-                put(buf, x + col as i32, y + row as i32, &ch.to_string(), style);
-            }
+    let calm = t > THROW_AT + THROW;
+    let flap = if calm && !leaving { CALM_FLAP } else { FLAP };
+    // It faces the bunny until it flies off.
+    let (grid, mouth) = dragon(t, flap, at, !leaving);
+    let red = app.theme.fg(DRAGON);
+    cast::draw(buf, at, grid, !leaving, |_| red);
+
+    let k = (t - THROW_AT) / THROW;
+    if (0.0..1.0).contains(&k) {
+        let x = hands.0 as f32 + (mouth.0 - hands.0) as f32 * k;
+        let y = hands.1 as f32 + (mouth.1 - hands.1) as f32 * k - (k * PI).sin() * 3.0;
+        let (carrot, leaf) = (app.theme.fg(fx::CARROT), app.theme.fg(fx::LEAF));
+        let at = (x.round() as i32 - 3, y.round() as i32 - 1);
+        cast::draw(buf, at, cast::CARROT, false, |ink| {
+            if ink == b'l' { leaf } else { carrot }
+        });
+    } else if k >= 1.0 && !app.spectacle.munched {
+        app.spectacle.munched = true;
+        let (x, y) = (mouth.0 as f32, mouth.1 as f32);
+        for _ in 0..10 {
+            app.particles.0.push(Particle {
+                x,
+                y,
+                vx: app.rng.range(-6.0, 6.0),
+                vy: app.rng.range(-4.0, 1.0),
+                gravity: 15.0,
+                life: app.rng.range(0.4, 0.8),
+                ch: app.rng.pick("·,'"),
+                color: fx::CARROT,
+                leaf: false,
+            });
         }
-    }
-    for _ in 0..3 {
-        let tail = x as f32 + app.rng.range(6.0, 11.0);
-        app.particles.flare(&mut app.rng, tail, (y + 4) as f32);
+        app.particles.hearts(&mut app.rng, x, y);
     }
 }

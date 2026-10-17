@@ -28,7 +28,7 @@ use crate::state::{Record, uptime};
 use crate::widget::{self, Presence};
 
 const BOOT: f32 = 2.2;
-const LAUNCH: f32 = 3.2;
+const LAUNCH: f32 = 4.0;
 const GOODBYE: f32 = 1.6;
 const SNIFF: f32 = 0.35;
 pub const LANE_TRIP: f32 = 1.4;
@@ -208,7 +208,6 @@ pub struct App {
     pub rng: fx::Rng,
     pub particles: fx::Particles,
     pub fire: fx::Fire,
-    pub inferno: fx::Fire,
     pub spectacle: spectacle::Spectacle,
     shaders: shaders::Shaders,
     pub spots: shaders::Spots,
@@ -331,7 +330,6 @@ impl App {
             rng: fx::Rng::seeded(),
             particles: fx::Particles::default(),
             fire: fx::Fire::default(),
-            inferno: fx::Fire::default(),
             spectacle: spectacle::Spectacle::default(),
             shaders: shaders::Shaders::new(calm),
             spots: shaders::Spots::default(),
