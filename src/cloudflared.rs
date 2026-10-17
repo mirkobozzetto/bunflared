@@ -50,8 +50,15 @@ pub fn install_hint() -> String {
 /// Downloads cloudflared from its GitHub releases with the system's curl,
 /// which ships with macOS, Linux distributions and Windows 10 and later.
 pub async fn fetch() -> Result<PathBuf, String> {
+    // The MCP server opens shares in parallel: one download at a time,
+    // and the ones that waited reuse its result.
+    static FETCHING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _held = FETCHING.lock().await;
     let asset = asset().ok_or("Cloudflare publishes no build for this system")?;
     let target = own_copy().ok_or("no folder to keep it in")?;
+    if target.is_file() {
+        return Ok(target);
+    }
     let dir = target
         .parent()
         .ok_or("no folder to keep it in")?
