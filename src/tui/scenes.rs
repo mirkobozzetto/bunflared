@@ -16,6 +16,8 @@ const JOKE_EVERY: f32 = 2.4;
 const LAUNCH_BURSTS: [f32; 4] = [0.5, 1.1, 1.7, 2.4];
 // Title, jokes, the dragon's sky, the labels, the burrow, the bar.
 const DIGGING_ROWS: i32 = 24;
+// Extra rows the soaked dragon may zigzag through, on a tall terminal.
+const ZIGZAG_ROWS: i32 = 4;
 
 fn bunny(buf: &mut Buffer, x: i32, y: i32, frame: &Frame3, style: Style) {
     fx::art(buf, x, y, frame, style);
@@ -219,7 +221,8 @@ pub fn digging(app: &mut App, frame: &mut Frame) {
     let buf = frame.buffer_mut();
     let width = (area.width as i32 - 8).clamp(24, 72);
     let x0 = center(area, width);
-    let top = area.y as i32 + (area.height as i32 - DIGGING_ROWS).max(0) / 2;
+    let room = (area.height as i32 - DIGGING_ROWS).clamp(0, ZIGZAG_ROWS);
+    let top = area.y as i32 + (area.height as i32 - DIGGING_ROWS - room).max(0) / 2;
     // Sparks and steam stay off the title and the jokes.
     app.keep_clear = Some(Rect::new(area.x, top.max(0) as u16, area.width, 2));
     let theme = &app.theme;
@@ -249,7 +252,7 @@ pub fn digging(app: &mut App, frame: &mut Frame) {
     // Under the dragon's sky, eleven lines tall, and the row of the labels.
     // A terminal too short for it keeps the burrow without the show.
     let roomy = area.height as i32 >= DIGGING_ROWS;
-    let surface = top + if roomy { 14 } else { 3 };
+    let surface = top + if roomy { 14 + room } else { 3 };
     put(buf, x0 - 11, surface - 1, "your machine", theme.fg(fx::DIM));
     put(
         buf,
@@ -312,7 +315,7 @@ pub fn digging(app: &mut App, frame: &mut Frame) {
         );
     }
     if roomy {
-        spectacle::burrow(app, buf, area, (x0, width), surface);
+        spectacle::burrow(app, buf, area, (x0, width), (top + 2, surface));
     }
 }
 

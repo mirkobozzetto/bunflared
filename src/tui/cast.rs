@@ -145,6 +145,7 @@ pub const DRAGON_DOWN: &str = r"
 ";
 
 /// Inks: `r` the helmet, `s` the water cannon.
+pub const FIREFIGHTER_NOZZLE: (i32, i32) = (10, 3);
 pub const FIREFIGHTER: &str = r"
 .........rr...........
 ......rrrr............

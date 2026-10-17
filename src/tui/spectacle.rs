@@ -10,13 +10,12 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier};
 
 use super::App;
-use super::cast;
 use super::fx::{self, Particle, put};
+use super::{cast, hose};
 
 const DRAGON: Color = Color::Rgb(215, 50, 60);
 const STEEL: Color = Color::Rgb(175, 190, 205);
-// The dragon's band: eleven lines, then the row of the labels.
-const SKY: i32 = 12;
+const DRAGON_ROWS: i32 = 11;
 const FLY_SPEED: f32 = 11.0;
 const FLAP: f32 = 0.22;
 const SPIT_EVERY: f32 = 1.3;
@@ -24,10 +23,13 @@ const SPIT_FLIGHT: f32 = 0.4;
 const MAX_FLAMES: usize = 3;
 const FLAME_WIDTH: usize = 4;
 const FLAME_ROWS: usize = 3;
-// Seconds of water a flame takes to go out, the trip included.
+// Seconds of water a flame takes to go out.
 const DOUSE: f32 = 0.9;
-const JET_FLIGHT: f32 = 0.45;
-const JET_GRAVITY: f32 = 26.0;
+// Seconds of water on the dragon before it is as wild as it gets.
+const SOAKED: f32 = 6.0;
+const DRIP: Color = Color::Rgb(200, 240, 255);
+/// Seconds the dragon takes to flee once the link is ready, before LIVE!.
+pub const FLEE: f32 = 1.0;
 // The launch, in seconds: the box flies in, the carrot flies to the dragon,
 // the dragon munches, then flies off.
 const ARRIVE: f32 = 1.2;
@@ -56,6 +58,8 @@ pub struct Spectacle {
     next_spit: f32,
     spits: Vec<Spit>,
     flames: Vec<Flame>,
+    /// Seconds of water the dragon took: the more, the wilder it flies.
+    soaked: f32,
     munched: bool,
 }
 
@@ -75,36 +79,62 @@ fn dragon(t: f32, flap: f32, at: (i32, i32), flip: bool) -> (&'static str, (i32,
     (grid, (at.0 + x, at.1 + mouth.1))
 }
 
-/// The dragon and the firefighter over a burrow `width` long from `x0`,
-/// whose grass is on row `surface`.
-pub fn burrow(app: &mut App, buf: &mut Buffer, area: Rect, (x0, width): (i32, i32), surface: i32) {
+/// The dragon and the firefighter over a burrow `width` long from `x0`:
+/// the dragon flies between row `sky` and the labels above the grass, on
+/// row `surface`.
+pub fn burrow(
+    app: &mut App,
+    buf: &mut Buffer,
+    area: Rect,
+    (x0, width): (i32, i32),
+    (sky, surface): (i32, i32),
+) {
     if app.theme.calm {
         return;
     }
     let (e, dt) = (app.elapsed(), app.dt);
+    let fleeing = app.ready_at.map(|at| (app.now - at).as_secs_f32());
     let fighter = (x0 + 2, surface - 5);
+    let nozzle = (
+        fighter.0 + cast::FIREFIGHTER_NOZZLE.0 + 1,
+        fighter.1 + cast::FIREFIGHTER_NOZZLE.1,
+    );
     let reach = fighter.0 + cast::width(cast::FIREFIGHTER);
     let wide = cast::width(cast::DRAGON_UP);
     let (low, high) = (reach + 2, (x0 + width + 4).min(area.right() as i32) - wide);
     let land = ((reach + 3) as f32, (x0 + width - 6) as f32);
-    let sky = surface - SKY;
+    // Rows the dragon may zigzag through, when the terminal is tall enough.
+    let room = surface - 1 - sky - DRAGON_ROWS;
     let show = &mut app.spectacle;
+    let wild = (show.soaked / SOAKED).min(1.0);
 
     let (mut x, mut heading) = show.dragon.unwrap_or((high as f32, -1.0));
-    x = (x + heading * FLY_SPEED * dt).clamp(low as f32, high.max(low) as f32);
+    if app.rng.range(0.0, 1.0) < wild * dt * 1.5 {
+        heading = -heading;
+    }
+    x = (x + heading * FLY_SPEED * (1.0 + wild) * dt).clamp(low as f32, high.max(low) as f32);
     if x <= low as f32 {
         heading = 1.0;
     } else if x >= high as f32 {
         heading = -1.0;
     }
     show.dragon = Some((x, heading));
-    let (flip, left) = (heading < 0.0, x.round() as i32);
-    let (grid, mouth) = dragon(e, FLAP, (left, sky), flip);
+    let bob = ((e * 6.0).sin() * wild * room as f32 / 2.0).round() as i32;
+    let mut at = (x.round() as i32, sky + room / 2 + bob);
+    if let Some(gone) = fleeing {
+        at.0 += (gone * 45.0) as i32;
+        at.1 -= (gone * 25.0) as i32;
+    }
+    let flip = heading < 0.0 && fleeing.is_none();
+    let (grid, mouth) = dragon(e, FLAP * (1.0 - 0.6 * wild), at, flip);
     let mouth = (mouth.0 as f32, mouth.1 as f32);
+    let seen = at.1 + DRAGON_ROWS > area.y as i32 && at.0 < area.right() as i32;
 
-    if e >= show.next_spit && show.flames.len() + show.spits.len() < MAX_FLAMES {
-        show.next_spit = e + SPIT_EVERY;
-        let ahead = app.rng.range(3.0, 10.0) * heading;
+    // The wetter it gets, the faster it spits, and the worse it aims.
+    if fleeing.is_none() && e >= show.next_spit && show.flames.len() + show.spits.len() < MAX_FLAMES
+    {
+        show.next_spit = e + SPIT_EVERY * (1.0 - 0.5 * wild);
+        let ahead = app.rng.range(3.0, 10.0) * heading + app.rng.range(-10.0, 10.0) * wild;
         let to = (
             (mouth.0 + ahead).clamp(land.0, land.1),
             (surface - 1) as f32,
@@ -129,31 +159,45 @@ pub fn burrow(app: &mut App, buf: &mut Buffer, area: Rect, (x0, width): (i32, i3
         wet: 0.0,
     }));
 
-    // The firefighter always aims at the oldest flame.
-    let nozzle = (reach as f32, (surface - 2) as f32);
-    if let Some(flame) = show.flames.first_mut() {
-        flame.wet += dt;
-        for _ in 0..2 {
-            let flight = JET_FLIGHT + app.rng.range(-0.05, 0.05);
-            let (dx, dy) = (flame.x as f32 - nozzle.0, (surface - 1) as f32 - nozzle.1);
-            app.particles.0.push(Particle {
-                x: nozzle.0,
-                y: nozzle.1,
-                vx: dx / flight + app.rng.range(-1.5, 1.5),
-                vy: dy / flight - JET_GRAVITY * flight / 2.0,
-                gravity: JET_GRAVITY,
-                life: flight,
-                ch: app.rng.pick("·°,'~"),
-                color: fx::hsv(app.rng.range(190.0, 215.0), 0.6, 1.0),
-                leaf: false,
-            });
+    // The firefighter puts out the oldest flame; with none, he hoses the
+    // dragon.
+    let body = (at.0 + wide / 2, at.1 + DRAGON_ROWS / 2);
+    let target = match show.flames.first_mut() {
+        Some(flame) => {
+            flame.wet += dt;
+            Some((flame.x, surface - 1))
         }
-    }
+        None if seen => {
+            show.soaked += dt;
+            Some(body)
+        }
+        None => None,
+    };
     if show.flames.first().is_some_and(|flame| flame.wet >= DOUSE) {
         let out = show.flames.remove(0);
         for _ in 0..10 {
             let x = out.x as f32 + app.rng.range(-1.5, 1.5);
             app.particles.steam(&mut app.rng, x, (surface - 1) as f32);
+        }
+    }
+    if seen && app.rng.range(0.0, 1.0) < wild * 0.5 {
+        // A soaked dragon drips, and steams where the water hits it.
+        let x = (at.0 + 3) as f32 + app.rng.range(0.0, (wide - 6) as f32);
+        let y = (at.1 + 3) as f32 + app.rng.range(0.0, 6.0);
+        app.particles.0.push(Particle {
+            x,
+            y,
+            vx: app.rng.range(-1.0, 1.0),
+            vy: 0.0,
+            gravity: 18.0,
+            life: app.rng.range(0.4, 0.8),
+            ch: app.rng.pick("·',"),
+            color: DRIP,
+            leaf: false,
+        });
+        if target == Some(body) {
+            app.particles
+                .steam(&mut app.rng, body.0 as f32, body.1 as f32);
         }
     }
 
@@ -169,7 +213,9 @@ pub fn burrow(app: &mut App, buf: &mut Buffer, area: Rect, (x0, width): (i32, i3
             .draw(buf, theme, at, surface + 1 - FLAME_ROWS as i32);
     }
     let red = theme.fg(DRAGON);
-    cast::draw(buf, (left, sky), grid, flip, |_| red);
+    if seen {
+        cast::draw(buf, at, grid, flip, |_| red);
+    }
     cast::draw(buf, fighter, cast::FIREFIGHTER, false, |ink| match ink {
         b'r' => theme.fg(fx::RED),
         b's' => theme.fg(STEEL),
@@ -186,6 +232,9 @@ pub fn burrow(app: &mut App, buf: &mut Buffer, area: Rect, (x0, width): (i32, i3
         );
         put(buf, x.round() as i32, y.round() as i32, "●", ball);
         app.particles.flare(&mut app.rng, x, y);
+    }
+    if let Some(to) = target {
+        hose::spray(app, buf, nozzle, to);
     }
 }
 

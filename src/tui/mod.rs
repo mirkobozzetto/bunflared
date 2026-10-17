@@ -3,6 +3,7 @@ mod cast;
 mod dashboard;
 mod fx;
 pub mod home;
+mod hose;
 mod scenes;
 mod shaders;
 mod spectacle;
@@ -707,11 +708,18 @@ impl App {
                     self.go(Phase::Digging);
                 }
             }
-            Phase::Digging if self.ready_at.is_some() => self.go(if calm {
-                Phase::Dashboard
-            } else {
-                Phase::Launch
-            }),
+            // The dragon flees before LIVE!.
+            Phase::Digging
+                if self
+                    .ready_at
+                    .is_some_and(|at| calm || (now - at).as_secs_f32() >= spectacle::FLEE) =>
+            {
+                self.go(if calm {
+                    Phase::Dashboard
+                } else {
+                    Phase::Launch
+                })
+            }
             Phase::Launch if t >= LAUNCH => self.go(Phase::Dashboard),
             Phase::Dissolve if t * 1000.0 >= shaders::DISSOLVE_MS as f32 => self.go(Phase::Goodbye),
             Phase::Goodbye if calm || t >= GOODBYE => self.exit = Some(0),
