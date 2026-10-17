@@ -2,9 +2,11 @@ use ratatui::Frame;
 use ratatui::style::Modifier;
 
 use super::{bunny, centered};
+use crate::clock::uptime;
+use crate::notes;
 use crate::tui::art;
 use crate::tui::fx::{self, center};
-use crate::tui::{App, GOODBYE};
+use crate::tui::{App, GOODBYE, plural};
 
 pub fn goodbye(app: &mut App, frame: &mut Frame) {
     let area = frame.area();
@@ -37,4 +39,65 @@ pub fn goodbye(app: &mut App, frame: &mut Frame) {
             theme.fg(fx::DIM),
         );
     }
+}
+
+/// What stays in the scrollback once the terminal is restored.
+pub fn recap(app: &App) {
+    if let Some(failure) = &app.boot.failure {
+        eprintln!("bunflared: {}", failure.message);
+        return;
+    }
+    let Some(url) = &app
+        .boot
+        .url
+        .as_ref()
+        .filter(|_| app.boot.ready_at.is_some())
+    else {
+        return;
+    };
+    let paint = |code: &str, text: &str| {
+        if app.theme.color {
+            format!("\x1b[{code}m{text}\x1b[0m")
+        } else {
+            text.to_string()
+        }
+    };
+    let badges: Vec<String> = app
+        .show
+        .unlocked
+        .iter()
+        .map(|a| format!("★ {}", a.name))
+        .collect();
+    println!();
+    println!(
+        "  {}      {}",
+        paint("35", r" (\(\ "),
+        paint("1", "bunflared · session recap")
+    );
+    println!(
+        "  {}     {}  {}",
+        paint("35", r" ( ^.^)/"),
+        paint("36", url),
+        paint("2", "(closed)")
+    );
+    println!(
+        "  {}    {} live · {} · {} · {}",
+        paint("35", r#" o_(")(")"#),
+        uptime(app.live_for()),
+        plural(app.traffic.total as usize, "request"),
+        plural(app.traffic.visitors.len(), "visitor"),
+        plural(app.traffic.classes[3] as usize, "error"),
+    );
+    if !badges.is_empty() {
+        println!("               {}", paint("33", &badges.join("  ")));
+    }
+    if app.audience.feedback > 0 {
+        let note = format!(
+            "✎ {} saved in {}/",
+            plural(app.audience.feedback as usize, "feedback note"),
+            notes::FOLDER
+        );
+        println!("               {}", paint("36", &note));
+    }
+    println!();
 }

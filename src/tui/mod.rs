@@ -22,10 +22,8 @@ use ratatui::crossterm::event::{self, Event as Term, KeyEventKind};
 use ratatui::style::{Color, Style};
 use tokio::sync::watch;
 
-use crate::clock::uptime;
 use crate::event::{Event, Hit};
 use crate::live::Hub;
-use crate::notes;
 use crate::proxy::Replayer;
 use audience::Audience;
 use boot::Boot;
@@ -137,7 +135,7 @@ pub fn run(
         }
     };
     ratatui::restore();
-    app.farewell();
+    scenes::recap(&app);
     code
 }
 
@@ -354,67 +352,6 @@ impl App {
                 .draw(frame.buffer_mut(), &self.theme, self.show.keep_clear);
         }
         dashboard::overlays(self, frame);
-    }
-
-    /// What stays in the scrollback once the terminal is restored.
-    fn farewell(&self) {
-        if let Some(failure) = &self.boot.failure {
-            eprintln!("bunflared: {}", failure.message);
-            return;
-        }
-        let Some(url) = &self
-            .boot
-            .url
-            .as_ref()
-            .filter(|_| self.boot.ready_at.is_some())
-        else {
-            return;
-        };
-        let paint = |code: &str, text: &str| {
-            if self.theme.color {
-                format!("\x1b[{code}m{text}\x1b[0m")
-            } else {
-                text.to_string()
-            }
-        };
-        let badges: Vec<String> = self
-            .show
-            .unlocked
-            .iter()
-            .map(|a| format!("★ {}", a.name))
-            .collect();
-        println!();
-        println!(
-            "  {}      {}",
-            paint("35", r" (\(\ "),
-            paint("1", "bunflared · session recap")
-        );
-        println!(
-            "  {}     {}  {}",
-            paint("35", r" ( ^.^)/"),
-            paint("36", url),
-            paint("2", "(closed)")
-        );
-        println!(
-            "  {}    {} live · {} · {} · {}",
-            paint("35", r#" o_(")(")"#),
-            uptime(self.live_for()),
-            plural(self.traffic.total as usize, "request"),
-            plural(self.traffic.visitors.len(), "visitor"),
-            plural(self.traffic.classes[3] as usize, "error"),
-        );
-        if !badges.is_empty() {
-            println!("               {}", paint("33", &badges.join("  ")));
-        }
-        if self.audience.feedback > 0 {
-            let note = format!(
-                "✎ {} saved in {}/",
-                plural(self.audience.feedback as usize, "feedback note"),
-                notes::FOLDER
-            );
-            println!("               {}", paint("36", &note));
-        }
-        println!();
     }
 }
 

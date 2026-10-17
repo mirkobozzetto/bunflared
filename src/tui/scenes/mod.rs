@@ -17,7 +17,7 @@ use super::{App, Theme};
 pub use boot::boot;
 pub use digging::digging;
 pub use failed::failed;
-pub use goodbye::goodbye;
+pub use goodbye::{goodbye, recap};
 pub use launch::launch;
 pub use preflight::preflight;
 
