@@ -63,7 +63,14 @@ note (page, device, message) with its screenshot next to it. A note made with
 screenshot outlines it. A note can point at several elements: each gets a
 `## Point N` section with its comment, `## Overall` holds the general remark,
 and the screenshot numbers them the same way. In `events`, `points` lists them
-with their comments and `element` stays the first one. `session_<date>.md` there keeps the chat, the
+with their comments and `element` stays the first one. A point made with the
+widget's Edit mode carries exact changes in its comment, before and after
+(`Moved from place 3 to place 1 of 4; Margin top and bottom 8 -> 16 px;
+Background #e5e7eb -> #1f6548`), the selector being the element's before the
+move. A move to another block, `Moved out of its block to place 2 of 5 in`,
+gives the new block's selector after the move. The visitor sees them as a
+preview. Make them in the code, then
+`reload` the page (or ask the user to) so the real render replaces it. `session_<date>.md` there keeps the chat, the
 reactions and a link to each note, in order. Read them when the user asks what
 their client thought, or to find what to fix. The folder is git-ignored by
 itself. When the user follows a visitor's pointer from the dashboard, that

@@ -145,9 +145,11 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px
 /* A long selector scrolls sideways in its own row, never the panel. */
 .pin > span { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
 .pin .icon { width: 30px; height: 30px; }
+.pin .adjust { height: 30px; }
 .num { flex: none; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--pink);
   color: var(--ink); font: 700 12px/22px system-ui, -apple-system, sans-serif; text-align: center; }
 .note .comment { min-height: 0; }
+.changes { margin: 0; padding: 0 6px 0 28px; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 /* Point at another, Screenshot and Send on one line; Send wraps below in a narrow window. */
 .tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .chip, .send { height: 36px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -196,3 +198,39 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px
 .flag { position: absolute; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; translate: -50% -50%;
   background: #ff79c6; color: #1f2430; font: 700 12px/22px system-ui, -apple-system, sans-serif; text-align: center;
   box-shadow: 0 0 0 2px #fff, 0 2px 6px rgb(17 20 28 / 25%); }
+
+/* Edit: a bar above or below the element, never over it. */
+.bar { position: absolute; left: 50%; bottom: 12px; translate: -50% 0; width: min(720px, calc(100% - 24px));
+  max-height: calc(100% - 24px); overflow-y: auto; overscroll-behavior: contain; pointer-events: auto;
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 12px 14px 14px; border-radius: 16px;
+  background: var(--bg); color: var(--text); box-shadow: var(--shadow); animation: pop .24s var(--ease); }
+.bar.top { bottom: auto; top: 12px; }
+.bar.faded { opacity: .2; pointer-events: none; transition: opacity .15s; }
+.bar-head { display: flex; gap: 10px; align-items: baseline; }
+.bar-name { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; scrollbar-width: none; font-size: 13px;
+  color: var(--muted); }
+.move { display: flex; gap: 8px; align-items: center; }
+.move .chip:disabled, .bar-head .chip:disabled { opacity: .45; cursor: default; background: none; }
+.bar-head .chip { align-self: center; }
+.place { flex: 1; text-align: center; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.knobs { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px 16px; align-items: end; }
+.knob { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; align-items: center; font-size: 13px; }
+.knob output { color: var(--muted); font-variant-numeric: tabular-nums; }
+.knob input, .knob select { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--pink); }
+.knob input[type=color], .knob select { height: 32px; padding: 2px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
+.knob select { padding: 0 8px; }
+.knob:has(:disabled) { opacity: .45; }
+.tabs { display: flex; gap: 2px; margin-bottom: -4px; border-bottom: 1px solid var(--line); overflow-x: auto;
+  scrollbar-width: none; }
+.tabs button { height: 32px; padding: 0 12px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.tabs button:hover { color: var(--text); }
+.tabs [aria-selected=true] { color: var(--text); box-shadow: inset 0 -2px var(--pink); }
+.bar-end { display: flex; justify-content: flex-end; gap: 8px; }
+.done { height: 36px; padding: 0 14px 0 11px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px;
+  background: var(--pink); color: var(--ink); font-weight: 600; }
+@media (pointer: coarse) {
+  .bar { left: 0; bottom: 0; width: 100%; max-height: 60%; translate: none; border-radius: 16px 16px 0 0; }
+  .bar.top { top: 0; border-radius: 0 0 16px 16px; }
+  .move .chip, .bar-head .chip, .pin .adjust, .bar-end .ghost, .done, .knob input, .knob input[type=color], .knob select, .tabs button { height: 44px; }
+}

@@ -5,8 +5,12 @@ let image = null;
 let wantShot = true;
 let sending = false;
 
-// Without a point the remark is required; with one, any comment will do.
-const written = () => Boolean(textarea.value.trim()) || points.some((point) => point.field.value.trim());
+// Without a point the remark is required; with one, any comment will do, and
+// an edited element speaks for itself.
+const written = () => Boolean(textarea.value.trim()) || points.some((point) => point.edit || point.field.value.trim());
+// An edited element's changes, then what the visitor adds: one line that
+// every reader of the note keeps whole.
+const comment = (point) => [...(point.edit?.changes ?? []), point.field.value.trim()].filter(Boolean).join("; ");
 const ready = () => { send.disabled = sending || !written(); };
 
 // The line under the note: busy, done or failed.
@@ -24,12 +28,19 @@ const show = (blob) => {
   thumb.hidden = !blob;
 };
 
+// Only the latest screenshot counts: an older one finishing late, after a
+// note was sent, must not bring back its picture or erase "Sent".
+let shots = 0;
 const retake = async () => {
+  const turn = ++shots;
   tell("Taking a screenshot...", "busy");
   try {
-    show(await capture());
+    const blob = await capture();
+    if (turn !== shots) return;
+    show(blob);
     tell();
   } catch {
+    if (turn !== shots) return;
     show(null);
     tell("No screenshot this time. You can paste one.", "error");
   }
@@ -83,7 +94,7 @@ form.addEventListener("submit", async (event) => {
     method: "POST",
     body: JSON.stringify({
       sid, page: page(), message, screen: `${innerWidth}x${innerHeight}`, shot,
-      points: points.map((point) => ({ ...point.info, comment: point.field.value.trim() })),
+      points: points.map((point) => ({ ...point.info, comment: comment(point) })),
     }),
   }).catch(() => null);
   sending = false;

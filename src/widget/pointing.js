@@ -32,10 +32,17 @@ const describe = (node) => {
 const ours = (event) => event.composedPath().includes(host);
 let unhover = () => {};
 let hovered = null;
+const clearHover = () => {
+  unhover();
+  unhover = () => {};
+  hovered = null;
+};
+// In Edit, neither the element being edited nor anything while it is dragged.
 const hover = (event) => {
   if (ours(event) || event.target === hovered) return;
-  unhover();
+  clearHover();
   hovered = event.target;
+  if (editing && (dragging || editing.node.contains(hovered))) return;
   unhover = outline(hovered, `2px dashed ${PINK}`);
 };
 const swallow = (event) => {
@@ -44,12 +51,25 @@ const swallow = (event) => {
   event.stopImmediatePropagation();
 };
 const BLOCKED = ["pointerdown", "mousedown", "pointerup", "mouseup", "dblclick", "submit"];
+// What the click picks goes to a note point, or to Edit; the panel reopens
+// on the chip that started it.
+let picked = null;
+let pickedFrom = pointChip;
 // The hover outline goes first: the point's own outline replaces it.
 const choose = (event) => {
   if (ours(event)) return;
   swallow(event);
   endPicking();
-  const point = addPoint(event.target);
+  picked(event.target, event);
+};
+// Edit picks on the press itself with a mouse, so the same press can drag;
+// a finger still taps, its press being free to scroll.
+let pickOnPress = false;
+const press = (event) => {
+  if (event.pointerType !== "touch" && !event.button) choose(event);
+};
+const pickPoint = (node) => {
+  const point = addPoint(node);
   openPanel(phone ? pointChip : point.field);
   if (wantShot) retake();
 };
@@ -60,10 +80,14 @@ const escape = (event) => {
   event.stopPropagation();
   stopPicking();
 };
-const startPicking = () => {
+const startPicking = (then, from, onPress = false) => {
+  picked = then;
+  pickedFrom = from;
+  pickOnPress = onPress;
   closePanel(false);
   showFlags(true);
   picking.hidden = false;
+  if (onPress) addEventListener("pointerdown", press, true);
   addEventListener("pointermove", hover, true);
   addEventListener("click", choose, true);
   addEventListener("keydown", escape, true);
@@ -71,18 +95,17 @@ const startPicking = () => {
   $(".stop").focus({ preventScroll: true });
 };
 function endPicking() {
-  unhover();
-  unhover = () => {};
-  hovered = null;
+  clearHover();
+  if (pickOnPress) removeEventListener("pointerdown", press, true);
   removeEventListener("pointermove", hover, true);
   removeEventListener("click", choose, true);
   removeEventListener("keydown", escape, true);
   for (const type of BLOCKED) removeEventListener(type, swallow, true);
   picking.hidden = true;
 }
-pointChip.addEventListener("click", startPicking);
+pointChip.addEventListener("click", () => startPicking(pickPoint, pointChip));
 const stopPicking = () => {
   endPicking();
-  openPanel(pointChip);
+  openPanel(pickedFrom);
 };
 $(".stop").addEventListener("click", stopPicking);
