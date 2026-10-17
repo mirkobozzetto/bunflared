@@ -20,6 +20,11 @@ const GIF_WIDTH = 1200;
 const FPS = 15;
 // Edit's photos move on most frames: fewer of them keep it under 10 MB.
 const CLIP_FPS: Record<string, number> = { edit: 12 };
+// The last frame's hold, which dropping repeated frames would lose.
+const FINAL_HOLD_CS = 300;
+// How different a frame must be to count, past the recorded video's noise:
+// a pointer or a letter that changes is far above it.
+const STILL = "hi=2048:lo=1024:frac=0.5";
 const COLORS = 256;
 const LOSSY = 40;
 const PORTS = { term: 7681, shell: 7682, agent: 7683 };
@@ -677,14 +682,14 @@ async function cut(browser: Browser, work: string, { shots, starts, videos }: St
     filters.push(
       // A frame no different from the last only lengthens it: still moments
       // weigh nothing.
-      `${own.map((_, i) => `[s${i}]`).join("")}concat=n=${own.length}:v=1:a=0,mpdecimate,split[a][b]`,
+      `${own.map((_, i) => `[s${i}]`).join("")}concat=n=${own.length}:v=1:a=0,mpdecimate=${STILL},split[a][b]`,
       `[a]palettegen=stats_mode=diff:max_colors=${COLORS}[palette]`,
       "[b][palette]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle",
     );
     const raw = join(work, `${clip}.gif`);
     const out = join(import.meta.dir, `${clip}.gif`);
     const steps: [string, string[]][] = [
-      ["ffmpeg", ["-y", "-loglevel", "error", ...inputs, "-filter_complex", filters.join(";"), "-fps_mode", "vfr", raw]],
+      ["ffmpeg", ["-y", "-loglevel", "error", ...inputs, "-filter_complex", filters.join(";"), "-fps_mode", "vfr", "-final_delay", String(FINAL_HOLD_CS), raw]],
       ["gifsicle", ["-O3", `--lossy=${LOSSY}`, raw, "-o", out]],
     ];
     for (const [command, args] of steps) {
