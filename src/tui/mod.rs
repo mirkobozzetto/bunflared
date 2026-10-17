@@ -1,4 +1,5 @@
 mod art;
+mod cast;
 mod dashboard;
 mod fx;
 pub mod home;

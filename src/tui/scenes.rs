@@ -6,6 +6,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 
 use super::art::{self, Frame3};
+use super::cast;
 use super::fx::{self, center, put};
 use super::{App, GOODBYE, SNIFF, Theme, spectacle};
 
@@ -105,8 +106,6 @@ pub fn boot(app: &mut App, frame: &mut Frame) {
     let area = frame.area();
     let t = app.t();
     let buf = frame.buffer_mut();
-    let flames = app.spectacle.flames(app.elapsed());
-    let fire_top = inferno(app, buf, area, 0.5, flames);
     let logo_width = art::big("BUNFLARED")[0].chars().count() as i32;
     let top = area.y as i32 + area.height as i32 / 2 - 7;
     let x0 = center(area, logo_width);
@@ -168,15 +167,17 @@ pub fn boot(app: &mut App, frame: &mut Frame) {
 
     // The bunny dashes across, again and again, trailing sparks.
     let lap = (t % DASH_LAP) / DASH_LAP;
-    let x = area.x as i32 - 10 + ((area.width as i32 + 20) as f32 * lap) as i32;
+    let run = cast::width(cast::RUN_A);
+    let x = area.x as i32 - run + ((area.width as i32 + run) as f32 * lap) as i32;
     let hop = ((t * 18.0).sin().abs() * 1.5) as i32;
     let pose = if app.theme.calm || (t * 14.0) as i32 % 2 == 0 {
-        &art::RUN_A
+        cast::RUN_A
     } else {
-        &art::RUN_B
+        cast::RUN_B
     };
-    bunny(buf, x, top + 9 - hop, pose, app.theme.fg(fx::FG));
-    spectacle::loading(app, buf, area, fire_top);
+    // Both poses keep the head at the same place.
+    let x_pose = x + run - cast::width(pose);
+    cast::draw(buf, x_pose, top + 8 - hop, pose, app.theme.fg(fx::FG));
     if !app.theme.calm {
         for _ in 0..2 {
             app.particles
@@ -191,9 +192,6 @@ pub fn preflight(app: &mut App, frame: &mut Frame) {
     let t = app.t();
     let calm = app.theme.calm;
     let buf = frame.buffer_mut();
-    let flames = app.spectacle.flames(app.elapsed());
-    let fire_top = inferno(app, buf, area, 0.3, flames);
-    spectacle::loading(app, buf, area, fire_top);
     let rows = app.ports.len() as i32;
     let top = area.y as i32 + (area.height as i32 - (3 + rows * 2)) / 2;
     let x0 = center(area, 52);
