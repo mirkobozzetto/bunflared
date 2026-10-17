@@ -39,7 +39,7 @@ const AFTER_HELP: &str = r#"Examples:
   bunflared 5173 3000 --detach    print the ready line, keep sharing in the background
   bunflared 5173 --local          the same, on this computer only: no tunnel, no link
   bunflared 5173 --for 30m        stops by itself after 30 minutes (90s, 2h, 1h30m)
-  bunflared 5173 --password       visitors type a password first, generated here
+  bunflared 5173 --password       a page asks visitors for a password, generated here
   bunflared ls [--json]           list live shares
   bunflared down <id> | --all     stop shares
   bunflared agents                teach your coding agents to use bunflared
