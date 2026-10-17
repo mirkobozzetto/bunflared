@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -35,6 +35,7 @@ pub const REACTIONS: [(&str, &str); 4] = [
 ];
 // Proxies drop quiet WebSockets; a ping now and then keeps this one open.
 const KEEPALIVE: Duration = Duration::from_secs(30);
+const CLOSING_SOON: &str = "This link closes in a minute.";
 
 /// What the dashboard sends to pages.
 #[derive(Serialize)]
@@ -111,6 +112,8 @@ pub struct Hub {
     transcript: Option<Transcript>,
     followed: Mutex<Option<String>>,
     looks: Looks,
+    /// Set in the last minute of `--for`, so pages that connect then hear it too.
+    closing: AtomicBool,
 }
 
 impl Hub {
@@ -122,6 +125,7 @@ impl Hub {
             transcript: folder.map(Transcript::new),
             followed: Mutex::default(),
             looks: Looks::default(),
+            closing: AtomicBool::new(false),
         }
     }
 
@@ -148,6 +152,13 @@ impl Hub {
             self.keep(&format!("**you → {to}**: {text}"));
         }
         reached
+    }
+
+    /// Tells every page, and every page that connects from now on, that the
+    /// link is about to close.
+    pub fn closing_soon(&self) {
+        self.closing.store(true, Ordering::SeqCst);
+        self.say(None, "everyone", CLOSING_SOON);
     }
 
     /// Sends to the pages of one visitor, or of everyone. Returns how many
@@ -305,6 +316,13 @@ impl Hub {
         // A followed visitor's new page is followed too.
         if self.followed.lock().unwrap().as_deref() == Some(sid.as_str())
             && let Ok(text) = serde_json::to_string(&Command::Follow { on: true })
+        {
+            let _ = out.send(text);
+        }
+        if self.closing.load(Ordering::SeqCst)
+            && let Ok(text) = serde_json::to_string(&Command::Chat {
+                text: CLOSING_SOON.into(),
+            })
         {
             let _ = out.send(text);
         }

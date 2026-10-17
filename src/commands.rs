@@ -28,11 +28,17 @@ pub fn list(json: bool) -> i32 {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
-    println!("{:<8} {:<64} {:<16} UPTIME", "ID", "URL", "PORTS");
+    println!(
+        "{:<8} {:<64} {:<16} {:<10} LEFT",
+        "ID", "URL", "PORTS", "UPTIME"
+    );
     for record in records {
         let ports: Vec<String> = record.routes.values().map(u16::to_string).collect();
+        let left = record
+            .expires_at
+            .map_or("-".into(), |at| uptime(at.saturating_sub(now)));
         println!(
-            "{:<8} {:<64} {:<16} {}",
+            "{:<8} {:<64} {:<16} {:<10} {left}",
             record.id,
             record.url,
             ports.join(","),
@@ -92,7 +98,7 @@ pub fn down(id: Option<String>, all: bool) -> i32 {
 
 /// Starts the share in its own session and returns once it prints its ready
 /// line, so the caller's shell is free while the share keeps running.
-pub fn detach(ports: &[u16], no_widget: bool, local: bool) -> i32 {
+pub fn detach(ports: &[u16], no_widget: bool, local: bool, expires_in: Option<Duration>) -> i32 {
     let Ok(exe) = std::env::current_exe() else {
         eprintln!(r#"{{"error":"cannot find the bunflared executable","code":1}}"#);
         return 1;
@@ -103,6 +109,7 @@ pub fn detach(ports: &[u16], no_widget: bool, local: bool) -> i32 {
         .arg("--json")
         .args(no_widget.then_some("--no-widget"))
         .args(local.then_some("--local"))
+        .args(expires_in.map(|left| format!("--for={}s", left.as_secs())))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

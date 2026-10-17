@@ -38,6 +38,7 @@ const AFTER_HELP: &str = r#"Examples:
   bunflared 5173 3000             app at /, its API at /_port/3000
   bunflared 5173 3000 --detach    print the ready line, keep sharing in the background
   bunflared 5173 --local          the same, on this computer only: no tunnel, no link
+  bunflared 5173 --for 30m        stops by itself after 30 minutes (90s, 2h, 1h30m)
   bunflared ls [--json]           list live shares
   bunflared down <id> | --all     stop shares
   bunflared agents                teach your coding agents to use bunflared
@@ -58,7 +59,8 @@ Otherwise, or with --json, the ready line is one JSON object on stdout:
   {"id":"4242","pid":4242,"tunnel_pid":4243,"url":"https://....trycloudflare.com",
    "routes":{"/":5173,"/_port/3000":3000},"started_at":1790000000}
 and a failure is one JSON object on stderr: {"error":"...","code":N}.
-With --local, the url is http://127.0.0.1:<port> and tunnel_pid is 0.
+With --local, the url is http://127.0.0.1:<port> and tunnel_pid is 0. With --for,
+"expires_at" is when the share stops, in Unix seconds, and it then exits with 0.
 
 cloudflared is fetched from Cloudflare's releases on the first run when it is
 not installed.
@@ -106,6 +108,10 @@ struct Cli {
     /// Only on this computer, at http://127.0.0.1:<port>: no tunnel, no link.
     #[arg(short, long)]
     local: bool,
+
+    /// Stop by itself after this long: 90s, 30m, 2h, 1h30m. Visitors hear it a minute before.
+    #[arg(long = "for", value_name = "DURATION", value_parser = clock::duration)]
+    expires_in: Option<Duration>,
 
     /// Colors for a light or dark terminal. Auto asks the terminal.
     #[arg(long, value_enum, default_value_t = ThemeChoice::Auto)]
@@ -173,7 +179,9 @@ fn main() {
         Some(Command::Down { id, all }) => commands::down(id, all),
         Some(Command::Agents { print, remove }) => agents::run(print, remove),
         Some(Command::Mcp) => mcp::run(),
-        None if cli.detach => commands::detach(&cli.ports, cli.no_widget, cli.local),
+        None if cli.detach => {
+            commands::detach(&cli.ports, cli.no_widget, cli.local, cli.expires_in)
+        }
         None => {
             let no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
             let interactive = !cli.json && std::io::stdout().is_terminal();
@@ -216,6 +224,7 @@ fn main() {
                 local: cli.local,
                 id: std::process::id().to_string(),
                 copy: true,
+                expires_in: cli.expires_in,
             };
             share(spec, theme, feedback)
         }
