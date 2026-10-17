@@ -134,13 +134,18 @@ carries its number. A note with one element and no comment under it is
 written exactly as before.
 
 **Edit** shows a change instead of describing it. Click an element, then drag
-it among its neighbours in the same block (or use **Move earlier** and **Move
-later**), and set its text color, background, text size and margins: the page
-previews it at once. **Cancel** or Escape puts it back. **Done** makes it a
-point of the note with each change, before and after: `Moved from place 3 to
-place 1 of 4; Margin top and bottom 8 -> 16 px; Background #e5e7eb -> #1f6548`.
-The selector is the element's before any move. Your agent makes the change in
-the code and reloads the page: the real render replaces the preview.
+it among its neighbours, or out of its block into another one (**Move
+earlier**, **Move later** and Alt with an arrow move it a place). Its settings
+come in four tabs: **Layout** (display, direction, alignment, gap), **Size**
+(width, height, padding, margins, text size), **Colors** and **Look** (corner
+radius, opacity, shadow), and the page previews each one at once. **Parent**
+and **Child** climb to the block around it and back, and a click on another
+element edits that one next. **Cancel** or Escape puts it back. **Done** makes
+each element changed a point of the note, with each change before and after:
+`Moved from place 3 to place 1 of 4; Margin top and bottom 8 -> 16 px;
+Background #e5e7eb -> #1f6548`. **Adjust** on a point opens it again. The
+selector is the element's before any move. Your agent makes the change in the
+code and reloads the page: the real render replaces the preview.
 
 ![A note pinned on the pay button: the element's selector, and a screenshot of the page to send with it](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/note.png)
 
