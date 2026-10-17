@@ -15,6 +15,8 @@ use crate::{clipboard, cloudflared, os, proxy, state, tunnel};
 
 const PORT_TIMEOUT: Duration = Duration::from_secs(3);
 const HEALTH_EVERY: Duration = Duration::from_secs(3);
+/// How long before `--for` runs out the visitors hear the link is closing.
+const WARN_BEFORE: Duration = Duration::from_secs(60);
 
 /// What to share, and how.
 pub struct Spec {
@@ -25,6 +27,8 @@ pub struct Spec {
     pub id: String,
     /// Put the address on the clipboard once it works.
     pub copy: bool,
+    /// Stops the share this long after it is ready.
+    pub expires_in: Option<Duration>,
 }
 
 /// Shares until `stop` flips, a signal arrives, or the tunnel dies.
@@ -49,7 +53,8 @@ pub async fn run(
     Ok(())
 }
 
-/// Runs the share until its tunnel dies; a local share runs until dropped.
+/// Runs the share until its tunnel dies or `expires_in` runs out; a local
+/// share without it runs until dropped.
 pub async fn serve(
     spec: &Spec,
     tx: &Tx,
@@ -96,7 +101,7 @@ pub async fn serve(
         }
     };
 
-    let proxy_port = proxy::start(ports, tx.clone(), feedback, hub)
+    let proxy_port = proxy::start(ports, tx.clone(), feedback, hub.clone())
         .await
         .map_err(|err| {
             Failure::new(EXIT_TUNNEL_FAILED, format!("cannot start the proxy: {err}"))
@@ -116,15 +121,17 @@ pub async fn serve(
         }
     };
 
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
     let record = state::Record {
         id: spec.id.clone(),
         pid: std::process::id(),
         tunnel_pid: tunnel.as_ref().and_then(|t| t.child.id()).unwrap_or(0),
         url,
         routes: proxy::routes(ports),
-        started_at: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs()),
+        started_at: now,
+        expires_at: spec.expires_in.map(|left| now + left.as_secs()),
     };
     let _saved = state::Saved::write(&record);
     let copied = spec.copy && clipboard::copy(&record.url);
@@ -135,12 +142,23 @@ pub async fn serve(
     });
     tokio::spawn(watch_health(ports.to_vec(), tx.clone()));
 
+    let expired = async {
+        let Some(left) = spec.expires_in else {
+            return std::future::pending().await;
+        };
+        sleep(left.saturating_sub(WARN_BEFORE)).await;
+        hub.closing_soon();
+        sleep(left.min(WARN_BEFORE)).await;
+    };
     match &mut tunnel {
-        Some(tunnel) => {
-            let _ = tunnel.child.wait().await;
-            Err(closed())
+        Some(tunnel) => tokio::select! {
+            _ = tunnel.child.wait() => Err(closed()),
+            () = expired => Ok(()),
+        },
+        None => {
+            expired.await;
+            Ok(())
         }
-        None => std::future::pending().await,
     }
 }
 

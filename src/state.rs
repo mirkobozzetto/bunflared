@@ -14,6 +14,9 @@ pub struct Record {
     pub url: String,
     pub routes: BTreeMap<String, u16>,
     pub started_at: u64,
+    /// When `--for` runs out, in Unix seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<u64>,
 }
 
 impl Record {
