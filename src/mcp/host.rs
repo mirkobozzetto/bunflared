@@ -1,33 +1,26 @@
 //! The shares a `bunflared mcp` process runs for its agent, and what happened
 //! on them since the agent last looked.
 
-use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
-use hyper::HeaderMap;
 use serde_json::{Value, json};
 use tokio::sync::watch;
 
-use crate::clock::{clock, uptime};
-use crate::event::{Capture, Event, Hit};
-use crate::live::{self, Command, Hub, REACTIONS};
+use crate::event::Event;
+use crate::live::{Hub, REACTIONS};
 use crate::notes::Feedback;
-use crate::proxy;
 use crate::share::{self, Spec};
-use crate::state::{self, Record};
-use crate::visitors::{Presence, Roster};
+use crate::state;
 
 use super::journal::Journal;
+use super::share::{Share, visitor};
 
-const KEEP_REQUESTS: usize = 200;
 const STOP_GRACE: Duration = Duration::from_secs(1);
 const TICK: Duration = Duration::from_millis(500);
-const REPLAY_TIMEOUT: Duration = Duration::from_secs(30);
 const ENDING_GRACE: Duration = Duration::from_secs(3);
 
 pub struct Host {
@@ -41,31 +34,6 @@ pub struct Host {
     /// call it, and neither may exit while the other still stops shares.
     closing: Mutex<()>,
     journal: Journal,
-}
-
-pub struct Share {
-    record: Record,
-    local: bool,
-    hub: Arc<Hub>,
-    runtime: tokio::runtime::Handle,
-    stop: watch::Sender<bool>,
-    thread: Mutex<Option<JoinHandle<()>>>,
-    /// Whether `bunflared down` can reach it by removing its record.
-    recorded: bool,
-    seen: Mutex<Seen>,
-}
-
-#[derive(Default)]
-struct Seen {
-    visitors: Roster,
-    requests: VecDeque<Row>,
-    total: u32,
-}
-
-struct Row {
-    n: u32,
-    hit: Hit,
-    at: String,
 }
 
 impl Host {
@@ -375,206 +343,4 @@ impl Host {
         }
         self.channel(&note.text(), meta);
     }
-}
-
-impl Share {
-    fn halt(&self) {
-        let _ = self.stop.send(true);
-        if let Some(thread) = self.thread.lock().unwrap().take() {
-            let _ = thread.join();
-        }
-    }
-
-    fn summary(&self) -> Value {
-        let seen = self.seen.lock().unwrap();
-        let here = seen.visitors.len();
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
-        json!({
-            "id": self.record.id,
-            "url": self.record.url,
-            "routes": self.record.routes,
-            "local": self.local,
-            "visitors": here,
-            "requests": seen.total,
-            "uptime": uptime(now.saturating_sub(self.record.started_at)),
-        })
-    }
-
-    pub fn visitors(&self) -> Value {
-        let seen = self.seen.lock().unwrap();
-        let here = seen
-            .visitors
-            .by_arrival()
-            .into_iter()
-            .map(|v| {
-                let mut entry = visitor(&v.presence);
-                entry["status"] = json!(v.presence.status(v.seen.elapsed()));
-                entry["here_for"] = json!(uptime(v.first.elapsed().as_secs()));
-                entry
-            })
-            .collect();
-        Value::Array(here)
-    }
-
-    pub fn say(&self, to: Option<&str>, text: &str) -> Result<Value, String> {
-        let text = text.trim();
-        if text.is_empty() {
-            return Err("Nothing to say: pass the text.".into());
-        }
-        let name = to.map_or_else(|| "everyone".into(), |sid| self.device(sid));
-        reached(self.hub.say(to, &name, text))
-    }
-
-    pub fn go(&self, to: Option<&str>, path: &str) -> Result<Value, String> {
-        let path = path.trim();
-        if path.is_empty() {
-            return Err("Pass the path to send them to.".into());
-        }
-        let path = live::absolute(path);
-        reached(self.hub.send(to, &Command::Go { path }))
-    }
-
-    pub fn reload(&self, to: Option<&str>) -> Result<Value, String> {
-        reached(self.hub.send(to, &Command::Reload))
-    }
-
-    pub fn requests(&self, limit: usize) -> Value {
-        let seen = self.seen.lock().unwrap();
-        let rows = seen
-            .requests
-            .iter()
-            .take(limit)
-            .map(|row| {
-                json!({
-                    "n": row.n,
-                    "method": row.hit.method,
-                    "path": row.hit.path,
-                    "status": row.hit.status,
-                    "ms": row.hit.ms,
-                    "visitor": row.hit.visitor,
-                    "at": row.at,
-                })
-            })
-            .collect();
-        Value::Array(rows)
-    }
-
-    pub fn request(&self, n: u32) -> Result<Value, String> {
-        let (hit, at) = self.row(n)?;
-        let exchange = &hit.exchange;
-        let replay = match hit.unreplayable() {
-            Some(reason) => json!(reason),
-            None => json!(true),
-        };
-        let request = exchange.request_body.lock().unwrap();
-        let response = exchange.response_body.lock().unwrap();
-        Ok(json!({
-            "n": n,
-            "method": hit.method,
-            "path": hit.path,
-            "status": hit.status,
-            "ms": hit.ms,
-            "port": hit.port,
-            "visitor": hit.visitor,
-            "at": at,
-            "replayable": replay,
-            "request": {
-                "headers": headers(&exchange.request_headers),
-                "body": body(&exchange.request_headers, &request),
-            },
-            "response": {
-                "headers": headers(&exchange.response_headers),
-                "body": body(&exchange.response_headers, &response),
-            },
-        }))
-    }
-
-    pub fn replay(&self, n: u32) -> Result<Value, String> {
-        let (hit, _) = self.row(n)?;
-        if let Some(reason) = hit.unreplayable() {
-            return Err(format!("Not replayed. {reason}"));
-        }
-        let started = Instant::now();
-        let status = self
-            .runtime
-            .block_on(async {
-                tokio::time::timeout(
-                    REPLAY_TIMEOUT,
-                    proxy::replay(&hit.method, &hit.path, hit.port, &hit.exchange),
-                )
-                .await
-            })
-            .map_err(|_| "The local server did not answer in time.".to_string())?
-            .map_err(|err| format!("The replay failed: {err}"))?;
-        Ok(json!({
-            "n": n,
-            "before": hit.status,
-            "status": status,
-            "ms": started.elapsed().as_millis(),
-        }))
-    }
-
-    fn row(&self, n: u32) -> Result<(Hit, String), String> {
-        let seen = self.seen.lock().unwrap();
-        seen.requests
-            .iter()
-            .find(|row| row.n == n)
-            .map(|row| (row.hit.clone(), row.at.clone()))
-            .ok_or_else(|| format!("No request {n} in the last {KEEP_REQUESTS}."))
-    }
-
-    fn device(&self, sid: &str) -> String {
-        let seen = self.seen.lock().unwrap();
-        seen.visitors
-            .get(sid)
-            .map_or_else(|| sid.to_string(), |v| v.presence.device.clone())
-    }
-}
-
-impl Seen {
-    fn request(&mut self, hit: Hit) {
-        self.total += 1;
-        let (n, at) = (self.total, clock());
-        self.requests.push_front(Row { n, hit, at });
-        self.requests.truncate(KEEP_REQUESTS);
-    }
-}
-
-fn visitor(presence: &Presence) -> Value {
-    json!({
-        "visitor": presence.sid,
-        "device": presence.device,
-        "page": presence.page,
-    })
-}
-
-fn reached(pages: usize) -> Result<Value, String> {
-    match pages {
-        0 => Err("No page is connected live: nobody got it.".into()),
-        n => Ok(json!({ "pages": n })),
-    }
-}
-
-fn headers(headers: &HeaderMap) -> Vec<String> {
-    headers
-        .iter()
-        .map(|(name, value)| format!("{name}: {}", String::from_utf8_lossy(value.as_bytes())))
-        .collect()
-}
-
-/// A body as the dashboard shows it: the kept start when it is text.
-fn body(headers: &HeaderMap, capture: &Capture) -> Value {
-    if capture.total == 0 {
-        return json!({ "size": 0 });
-    }
-    if !capture.readable(headers) {
-        return json!({ "size": capture.total, "text": null, "note": "not text, not shown" });
-    }
-    json!({
-        "size": capture.total,
-        "text": String::from_utf8_lossy(&capture.bytes),
-        "truncated": !capture.complete(),
-    })
 }

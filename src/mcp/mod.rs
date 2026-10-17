@@ -4,6 +4,7 @@
 
 mod host;
 mod journal;
+mod share;
 
 use std::io::{BufRead, Write};
 use std::sync::Arc;
