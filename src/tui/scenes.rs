@@ -6,6 +6,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 
 use super::art::{self, Frame3};
+use super::cast;
 use super::fx::{self, center, put};
 use super::{App, GOODBYE, SNIFF, Theme, spectacle};
 
@@ -13,6 +14,10 @@ const TAGLINE: &str = "share localhost · dig a tunnel · feed the bunny";
 const DEPTH_METERS: f32 = 42.0;
 const JOKE_EVERY: f32 = 2.4;
 const LAUNCH_BURSTS: [f32; 4] = [0.5, 1.1, 1.7, 2.4];
+// Title, jokes, the dragon's sky, the labels, the burrow, the bar.
+const DIGGING_ROWS: i32 = 24;
+// Extra rows the soaked dragon may zigzag through, on a tall terminal.
+const ZIGZAG_ROWS: i32 = 4;
 
 fn bunny(buf: &mut Buffer, x: i32, y: i32, frame: &Frame3, style: Style) {
     fx::art(buf, x, y, frame, style);
@@ -26,29 +31,6 @@ fn centered(buf: &mut Buffer, area: Rect, y: i32, text: &str, style: Style) {
         text,
         style,
     );
-}
-
-/// A fire along the whole bottom of the screen, `share` of its height tall,
-/// whose flames climb `reach` of the way up. Returns where it starts.
-fn inferno(
-    app: &mut App,
-    buf: &mut Buffer,
-    area: Rect,
-    share: f32,
-    (fuel, reach): (f32, f32),
-) -> i32 {
-    let height = (area.height as f32 * share) as usize;
-    let top = area.bottom() as i32 - height as i32;
-    if app.theme.calm {
-        return top;
-    }
-    let cooling = (2.0 * fx::FIRE_HOT as f32 / (height as f32 * reach))
-        .round()
-        .max(1.0) as usize;
-    app.inferno
-        .step(&mut app.rng, area.width as usize, height, fuel, cooling);
-    app.inferno.draw(buf, &app.theme, area.x as i32, top);
-    top
 }
 
 fn hint(buf: &mut Buffer, area: Rect, theme: &Theme, text: &str) {
@@ -105,8 +87,6 @@ pub fn boot(app: &mut App, frame: &mut Frame) {
     let area = frame.area();
     let t = app.t();
     let buf = frame.buffer_mut();
-    let flames = app.spectacle.flames(app.elapsed());
-    let fire_top = inferno(app, buf, area, 0.5, flames);
     let logo_width = art::big("BUNFLARED")[0].chars().count() as i32;
     let top = area.y as i32 + area.height as i32 / 2 - 7;
     let x0 = center(area, logo_width);
@@ -168,15 +148,18 @@ pub fn boot(app: &mut App, frame: &mut Frame) {
 
     // The bunny dashes across, again and again, trailing sparks.
     let lap = (t % DASH_LAP) / DASH_LAP;
-    let x = area.x as i32 - 10 + ((area.width as i32 + 20) as f32 * lap) as i32;
+    let run = cast::width(cast::RUN_A);
+    let x = area.x as i32 - run + ((area.width as i32 + run) as f32 * lap) as i32;
     let hop = ((t * 18.0).sin().abs() * 1.5) as i32;
     let pose = if app.theme.calm || (t * 14.0) as i32 % 2 == 0 {
-        &art::RUN_A
+        cast::RUN_A
     } else {
-        &art::RUN_B
+        cast::RUN_B
     };
-    bunny(buf, x, top + 9 - hop, pose, app.theme.fg(fx::FG));
-    spectacle::loading(app, buf, area, fire_top);
+    // Both poses keep the head at the same place.
+    let x_pose = x + run - cast::width(pose);
+    let fg = app.theme.fg(fx::FG);
+    cast::draw(buf, (x_pose, top + 8 - hop), pose, false, |_| fg);
     if !app.theme.calm {
         for _ in 0..2 {
             app.particles
@@ -191,9 +174,6 @@ pub fn preflight(app: &mut App, frame: &mut Frame) {
     let t = app.t();
     let calm = app.theme.calm;
     let buf = frame.buffer_mut();
-    let flames = app.spectacle.flames(app.elapsed());
-    let fire_top = inferno(app, buf, area, 0.3, flames);
-    spectacle::loading(app, buf, area, fire_top);
     let rows = app.ports.len() as i32;
     let top = area.y as i32 + (area.height as i32 - (3 + rows * 2)) / 2;
     let x0 = center(area, 52);
@@ -237,13 +217,14 @@ pub fn preflight(app: &mut App, frame: &mut Frame) {
 
 pub fn digging(app: &mut App, frame: &mut Frame) {
     let area = frame.area();
-    let (t, e, calm) = (app.t(), app.elapsed(), app.theme.calm);
+    let (t, calm) = (app.t(), app.theme.calm);
     let buf = frame.buffer_mut();
-    let flames = app.spectacle.flames(app.elapsed());
-    let fire_top = inferno(app, buf, area, 0.3, flames);
     let width = (area.width as i32 - 8).clamp(24, 72);
     let x0 = center(area, width);
-    let top = area.y as i32 + (area.height as i32 - 15).max(0) / 2;
+    let room = (area.height as i32 - DIGGING_ROWS).clamp(0, ZIGZAG_ROWS);
+    let top = area.y as i32 + (area.height as i32 - DIGGING_ROWS - room).max(0) / 2;
+    // Sparks and steam stay off the title and the jokes.
+    app.keep_clear = Some(Rect::new(area.x, top.max(0) as u16, area.width, 2));
     let theme = &app.theme;
 
     centered(
@@ -266,19 +247,12 @@ pub fn digging(app: &mut App, frame: &mut Frame) {
             &typed,
             theme.fg(fx::DIM),
         );
-        for i in 0..width / 6 {
-            let x = x0 + (i * 37) % width;
-            let y = top + 3 + (i * 13) % 2;
-            let star = if (e * 2.5 + i as f32 * 0.7) as i32 % 3 == 0 {
-                "*"
-            } else {
-                "·"
-            };
-            put(buf, x, y, star, theme.fg(fx::YELLOW));
-        }
     }
 
-    let surface = top + 5;
+    // Under the dragon's sky, eleven lines tall, and the row of the labels.
+    // A terminal too short for it keeps the burrow without the show.
+    let roomy = area.height as i32 >= DIGGING_ROWS;
+    let surface = top + if roomy { 14 + room } else { 3 };
     put(buf, x0 - 11, surface - 1, "your machine", theme.fg(fx::DIM));
     put(
         buf,
@@ -292,32 +266,29 @@ pub fn digging(app: &mut App, frame: &mut Frame) {
     for col in 0..width {
         let grass = ["w", "W", "v", "w", "V", "w"][(col * 7 % 6) as usize];
         put(buf, x0 + col, surface, grass, theme.fg(fx::GRASS));
-        for row in 1..=4 {
+        for row in 1..=5 {
             put(buf, x0 + col, surface + row, "░", theme.fg(fx::DIRT));
         }
     }
-    let head = x0 + ((width - 10) as f32 * app.progress) as i32;
-    for col in x0..(head + 9).min(x0 + width) {
-        for row in 1..=3 {
+    let run = cast::width(cast::RUN_A);
+    let head = x0 + ((width - run - 1) as f32 * app.progress) as i32;
+    for col in x0..(head + run).min(x0 + width) {
+        for row in 1..=4 {
             put(buf, col, surface + row, " ", Style::new());
         }
     }
-    // The tunnel burns behind the bunny, who runs for its life.
-    if !calm {
-        let length = (head - x0).max(0) as usize;
-        app.fire.step(&mut app.rng, length, 3, 0.8, 24);
-        app.fire.draw(buf, theme, x0, surface + 1);
-    }
     let pose = if calm || (t * 14.0) as i32 % 2 == 0 {
-        &art::RUN_A
+        cast::RUN_A
     } else {
-        &art::RUN_B
+        cast::RUN_B
     };
-    bunny(buf, head, surface + 1, pose, theme.fg(fx::FG));
+    let fg = theme.fg(fx::FG);
+    let x_pose = head + run - cast::width(pose);
+    cast::draw(buf, (x_pose, surface + 1), pose, false, |_| fg);
 
     let bar = width - 24;
     let filled = (bar as f32 * app.progress) as i32;
-    let y = surface + 6;
+    let y = surface + 7;
     put(buf, x0, y, "[", theme.fg(fx::DIM));
     for i in 0..bar {
         let (ch, color) = if i < filled {
@@ -343,21 +314,15 @@ pub fn digging(app: &mut App, frame: &mut Frame) {
             theme.fg(fx::CYAN).add_modifier(Modifier::DIM),
         );
     }
-
-    if !calm {
-        app.particles
-            .flare(&mut app.rng, (head - 1) as f32, surface as f32);
+    if roomy {
+        spectacle::burrow(app, buf, area, (x0, width), (top + 2, surface));
     }
-    spectacle::loading(app, buf, area, fire_top);
 }
 
 pub fn launch(app: &mut App, frame: &mut Frame) {
     let area = frame.area();
     let (t, e) = (app.t(), app.elapsed());
     let (cx, cy) = (area.width as f32 / 2.0, area.height as f32 / 2.0);
-    // The fire dies down: the phoenix is made of it.
-    let fuel = (0.9 - t).max(0.0);
-    inferno(app, frame.buffer_mut(), area, 0.3, (fuel, 0.75));
     if app.launch_bursts == 0 {
         app.particles.confetti(&mut app.rng, cx, cy, 160);
         app.launch_bursts = 1;
@@ -372,7 +337,7 @@ pub fn launch(app: &mut App, frame: &mut Frame) {
 
     let buf = frame.buffer_mut();
     let theme = &app.theme;
-    let top = cy as i32 - 9;
+    let top = cy as i32 - 10;
     let live_width = art::big("LIVE!")[0].chars().count() as i32;
     big_text(
         buf,
@@ -386,77 +351,76 @@ pub fn launch(app: &mut App, frame: &mut Frame) {
     );
 
     let jump = (t / 0.9).min(1.0);
-    let hop = ((jump * PI).sin() * 4.0) as i32;
-    let pose = if jump < 1.0 {
-        &art::HOP
-    } else if (t * 4.0) as i32 % 2 == 0 {
-        &art::DANCE_A
+    let hop = ((jump * PI).sin() * 2.0) as i32;
+    let pose = if jump < 1.0 || (t * 4.0) as i32 % 2 == 0 {
+        cast::DANCE_LEFT
     } else {
-        &art::DANCE_B
+        cast::DANCE_RIGHT
     };
-    bunny(
-        buf,
-        center(area, 10),
-        cy as i32 - 2 - hop,
-        pose,
-        theme.fg(fx::FG),
-    );
+    let hands = (center(area, cast::width(pose)), cy as i32 - 3 - hop);
+    let fg = theme.fg(fx::FG);
+    cast::draw(buf, hands, pose, false, |_| fg);
 
-    if let Some(url) = &app.url {
-        let inner = url.chars().count() as i32 + 4;
-        let x = center(area, inner + 2);
-        let y = spectacle::carried(t, cy as i32 + 2, area.bottom() as i32 - 3);
-        let border = theme.fg(fx::rainbow(e * 200.0));
-        app.keep_clear = Some(Rect::new(
-            x.max(0) as u16,
-            y.max(0) as u16,
-            (inner + 2) as u16,
-            3,
-        ));
-        put(
+    let Some(url) = &app.url else {
+        hint(buf, area, theme, "any key for the dashboard");
+        return;
+    };
+    let inner = url.chars().count() as i32 + 4;
+    let rest = center(area, inner + 2);
+    let x = spectacle::delivered(t, rest, area.right() as i32);
+    let y = cy as i32 + 3;
+    let border = theme.fg(fx::rainbow(e * 200.0));
+    app.keep_clear = Some(Rect::new(
+        x.max(0) as u16,
+        y.max(0) as u16,
+        (inner + 2) as u16,
+        3,
+    ));
+    put(
+        buf,
+        x,
+        y,
+        &format!("╭{}╮", "─".repeat(inner as usize)),
+        border,
+    );
+    put(buf, x, y + 1, "│", border);
+    put(
+        buf,
+        x + 3,
+        y + 1,
+        url,
+        theme.fg(fx::CYAN).add_modifier(Modifier::BOLD),
+    );
+    put(buf, x + inner + 1, y + 1, "│", border);
+    put(
+        buf,
+        x,
+        y + 2,
+        &format!("╰{}╯", "─".repeat(inner as usize)),
+        border,
+    );
+    let (note, color) = if app.copied {
+        ("✓ copied to your clipboard", fx::GREEN)
+    } else {
+        ("press c to copy", fx::DIM)
+    };
+    if x == rest {
+        centered(buf, area, y + 4, note, theme.fg(color));
+    }
+    if !app.resolved {
+        centered(
             buf,
-            x,
-            y,
-            &format!("╭{}╮", "─".repeat(inner as usize)),
-            border,
+            area,
+            y + 5,
+            "DNS is slow today: give the link a minute.",
+            theme.fg(fx::YELLOW),
         );
-        put(buf, x, y + 1, "│", border);
-        put(
-            buf,
-            x + 3,
-            y + 1,
-            url,
-            theme.fg(fx::CYAN).add_modifier(Modifier::BOLD),
-        );
-        put(buf, x + inner + 1, y + 1, "│", border);
-        put(
-            buf,
-            x,
-            y + 2,
-            &format!("╰{}╯", "─".repeat(inner as usize)),
-            border,
-        );
-        let (note, color) = if app.copied {
-            ("✓ copied to your clipboard", fx::GREEN)
-        } else {
-            ("press c to copy", fx::DIM)
-        };
-        if y == cy as i32 + 2 {
-            centered(buf, area, y + 4, note, theme.fg(color));
-        }
-        if !app.resolved {
-            centered(
-                buf,
-                area,
-                y + 5,
-                "DNS is slow today: give the link a minute.",
-                theme.fg(fx::YELLOW),
-            );
-        }
     }
     hint(buf, area, theme, "any key for the dashboard");
-    let url_y = spectacle::carried(t, cy as i32 + 2, area.bottom() as i32 - 3);
-    spectacle::phoenix(app, buf, area, url_y);
+    // The dragon stays right of the letters and the bunny.
+    let clear = cx as i32 + live_width / 2 + 2;
+    let held = (x + inner + 2, y);
+    spectacle::delivery(app, buf, area, held, (hands.0 + 6, hands.1 + 1), clear);
 }
 
 pub fn goodbye(app: &mut App, frame: &mut Frame) {

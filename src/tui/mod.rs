@@ -1,7 +1,9 @@
 mod art;
+mod cast;
 mod dashboard;
 mod fx;
 pub mod home;
+mod hose;
 mod scenes;
 mod shaders;
 mod spectacle;
@@ -27,7 +29,7 @@ use crate::state::{Record, uptime};
 use crate::widget::{self, Presence};
 
 const BOOT: f32 = 2.2;
-const LAUNCH: f32 = 3.2;
+const LAUNCH: f32 = 4.0;
 const GOODBYE: f32 = 1.6;
 const SNIFF: f32 = 0.35;
 pub const LANE_TRIP: f32 = 1.4;
@@ -207,7 +209,6 @@ pub struct App {
     pub rng: fx::Rng,
     pub particles: fx::Particles,
     pub fire: fx::Fire,
-    pub inferno: fx::Fire,
     pub spectacle: spectacle::Spectacle,
     shaders: shaders::Shaders,
     pub spots: shaders::Spots,
@@ -330,7 +331,6 @@ impl App {
             rng: fx::Rng::seeded(),
             particles: fx::Particles::default(),
             fire: fx::Fire::default(),
-            inferno: fx::Fire::default(),
             spectacle: spectacle::Spectacle::default(),
             shaders: shaders::Shaders::new(calm),
             spots: shaders::Spots::default(),
@@ -708,11 +708,18 @@ impl App {
                     self.go(Phase::Digging);
                 }
             }
-            Phase::Digging if self.ready_at.is_some() => self.go(if calm {
-                Phase::Dashboard
-            } else {
-                Phase::Launch
-            }),
+            // The dragon flees before LIVE!.
+            Phase::Digging
+                if self
+                    .ready_at
+                    .is_some_and(|at| calm || (now - at).as_secs_f32() >= spectacle::FLEE) =>
+            {
+                self.go(if calm {
+                    Phase::Dashboard
+                } else {
+                    Phase::Launch
+                })
+            }
             Phase::Launch if t >= LAUNCH => self.go(Phase::Dashboard),
             Phase::Dissolve if t * 1000.0 >= shaders::DISSOLVE_MS as f32 => self.go(Phase::Goodbye),
             Phase::Goodbye if calm || t >= GOODBYE => self.exit = Some(0),
@@ -1190,14 +1197,6 @@ impl App {
             scenes::fun(self, frame);
             self.particles
                 .draw(frame.buffer_mut(), &self.theme, self.keep_clear);
-            if self.spectacle.shaking(self.now) {
-                let dx = if (self.elapsed() * 30.0) as i32 % 2 == 0 {
-                    1
-                } else {
-                    -1
-                };
-                fx::shake(frame.buffer_mut(), dx);
-            }
         }
         dashboard::overlays(self, frame);
     }
