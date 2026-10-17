@@ -177,7 +177,8 @@ pub fn boot(app: &mut App, frame: &mut Frame) {
     };
     // Both poses keep the head at the same place.
     let x_pose = x + run - cast::width(pose);
-    cast::draw(buf, x_pose, top + 8 - hop, pose, app.theme.fg(fx::FG));
+    let fg = app.theme.fg(fx::FG);
+    cast::draw(buf, (x_pose, top + 8 - hop), pose, false, |_| fg);
     if !app.theme.calm {
         for _ in 0..2 {
             app.particles
