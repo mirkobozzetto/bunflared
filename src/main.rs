@@ -2,6 +2,7 @@ mod agents;
 mod clipboard;
 mod clock;
 mod cloudflared;
+mod commands;
 mod event;
 mod http;
 mod live;
@@ -166,11 +167,11 @@ fn main() {
         usage(err);
     }
     let code = match cli.command {
-        Some(Command::Ls { json }) => state::list(json),
-        Some(Command::Down { id, all }) => state::down(id, all),
+        Some(Command::Ls { json }) => commands::list(json),
+        Some(Command::Down { id, all }) => commands::down(id, all),
         Some(Command::Agents { print, remove }) => agents::run(print, remove),
         Some(Command::Mcp) => mcp::run(),
-        None if cli.detach => state::detach(&cli.ports, cli.no_widget, cli.local),
+        None if cli.detach => commands::detach(&cli.ports, cli.no_widget, cli.local),
         None => {
             let no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
             let interactive = !cli.json && std::io::stdout().is_terminal();
