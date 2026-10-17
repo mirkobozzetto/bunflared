@@ -2,7 +2,6 @@
 // development on 5174 (so pointed elements carry their source file), and its
 // API on 3000.
 import react from "@vitejs/plugin-react";
-import { join } from "node:path";
 import { createServer } from "vite";
 
 const SHOP_PORT = 5174;
@@ -11,7 +10,9 @@ const SLOTS = ["Thursday 18:00-20:00", "Thursday 20:00-22:00"];
 
 const shop = await createServer({
   configFile: false,
-  root: join(import.meta.dir, "shop"),
+  // Its own folder, node_modules included: no module is served under this
+  // computer's full path.
+  root: import.meta.dir,
   plugins: [react()],
   // Visitors come through the tunnel's host name.
   server: { port: SHOP_PORT, strictPort: true, allowedHosts: true },

@@ -1,9 +1,10 @@
 // Films the README clips and captures. A recording plays one story on its own
 // share, filming the browser and the terminals at the same time, then cuts it
 // into clips that go back and forth between them.
-// Needs ttyd, ffmpeg, gifsicle and chafa. From docs/demo, with `bun apps.ts` running:
-//   bun install && bun story.ts <recording>   live, inspect, agent or password
-//   bun story.ts <folder>                     cuts again from a kept recording
+// Needs ttyd, ffmpeg, gifsicle and chafa. From docs/demo, after
+// `bun install && bun install --cwd shop`, with `bun shop/apps.ts` running:
+//   bun story.ts <recording>   live, inspect, agent or password
+//   bun story.ts <folder>      cuts again from a kept recording
 // live films dashboard.gif and drive.gif on a public link; inspect films
 // inspect.gif; agent films edit.gif and agent.gif and takes note.png; password
 // takes password.png on a public link.
@@ -367,7 +368,7 @@ async function inspect(take: Take) {
   const before = new Set(shares().map((share) => String(share.id)));
   const term = await take.terminal("term", ["bunf", String(SHOP), String(API), "--local"], sandbox(take.work));
   const shell = await take.terminal("shell", ["bash", "--noprofile", "--norc", "-i"], {
-    PS1: "\\[\\e[32m\\]verdure\\[\\e[0m\\] $ ",
+    PS1: "\\n\\[\\e[32m\\]verdure\\[\\e[0m\\] $ ",
     BASH_SILENCE_DEPRECATION_WARNING: "1",
   });
   let traffic = true;

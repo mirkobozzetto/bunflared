@@ -21,4 +21,6 @@ export const placeOrder = () =>
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ lines: BASKET.map((line) => line.name), slot: "Thursday 18:00-20:00" }),
-  }).catch(() => {});
+  })
+    .then((response) => response.ok)
+    .catch(() => false);
