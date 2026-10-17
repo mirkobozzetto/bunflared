@@ -29,6 +29,10 @@ On success it prints one JSON line:
 
 Give the user the `url`. Keep the `id` to stop it later.
 
+For a link that should not outlive the demo, add `--for 30m` (or `90s`,
+`2h`, `1h30m`): the share stops by itself, and the JSON line carries
+`expires_at`, in Unix seconds. The MCP `open` tool takes the same as `for`.
+
 Without `--detach` the command never returns until stopped: in a terminal it
 opens an interactive dashboard, elsewhere it prints the JSON line and waits.
 

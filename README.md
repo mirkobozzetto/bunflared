@@ -82,7 +82,12 @@ bunf 5173                       # share one app
 bunf 5173 3000                  # app at /, its API at /_port/3000
 bunf 5173 --calm                # same dashboard, no animations
 bunf 5173 --local               # on this computer only, no tunnel, no link
+bunf 5173 --for 30m             # stops by itself after 30 minutes
 ```
+
+`--for` takes `90s`, `30m`, `2h` or `1h30m`. The dashboard shows the time
+left, visitors hear a minute before that the link closes, and the share then
+stops as if you had pressed Ctrl+C.
 
 `--local` serves the app with the widget on `http://127.0.0.1:<port>`, in
 well under a second: the same dashboard, notes and live session, for you and
