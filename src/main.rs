@@ -71,8 +71,8 @@ Exit codes: 0 ok, 1 tunnel closed, 2 bad arguments, 3 cloudflared missing and
 not downloadable, 4 a port is not answering, 5 ~/.cloudflared/config.yaml blocks quick tunnels,
 6 the tunnel failed to start.
 
-Limits: anyone with the link reaches your app, unless --password is set. Quick tunnels allow 200
-requests in flight and do not carry Server-Sent Events."#;
+Limits: anyone with the link reaches your app, unless --password is set.
+Quick tunnels allow 200 requests in flight and do not carry Server-Sent Events."#;
 
 #[derive(Parser)]
 #[command(
