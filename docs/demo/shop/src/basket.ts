@@ -4,7 +4,11 @@ export const BASKET = [
   { name: "Heirloom carrots", detail: "Add-on, purple and yellow, 1 kg", image: "/box-chef.webp", price: 6.5 },
 ];
 
-// Codes the shop accepts. The demo's bug: an unknown code has no entry.
+// The demo's bugs: the slot is spelled "Evening" where it is used, so the pay
+// button adds undefined and says NaN; an unknown code has no entry.
+export const DELIVERY_FEES: Record<string, number> = { evening: 0, late: 2.5 };
+
+// Codes the shop accepts.
 export const CODES: Record<string, { percent: number }> = {
   WELCOME10: { percent: 10 },
 };

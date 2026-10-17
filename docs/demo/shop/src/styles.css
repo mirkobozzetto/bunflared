@@ -146,12 +146,10 @@ main { max-width: 1200px; margin: 0 auto; padding: 0 40px; }
 .summary dd { margin: 0; text-align: right; }
 .summary .total { padding-top: 14px; border-top: 1px solid var(--line); font: 500 26px/1.1 var(--display); }
 .when { margin: 16px 0 20px; font-size: 14px; color: var(--muted); }
-.pay button {
-  padding: 16px 28px; border: 0; border-radius: 999px; background: var(--carrot); color: #fff;
+.pay {
+  width: 100%; padding: 17px 28px; border: 0; border-radius: 999px; background: var(--carrot); color: #fff;
   font: 600 17px/1 var(--body); white-space: nowrap; cursor: pointer;
 }
-/* The bug the demo is about: the pay button does not fit. */
-.pay { width: 150px; overflow: hidden; }
 .code { display: grid; grid-template-columns: 1fr auto; gap: 8px 10px; margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--line); }
 .code label { grid-column: 1 / -1; font-size: 14px; font-weight: 600; }
 .code input {

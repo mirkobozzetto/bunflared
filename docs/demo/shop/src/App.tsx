@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BASKET, CODES, euros } from "./basket";
+import { BASKET, CODES, DELIVERY_FEES, euros } from "./basket";
 import { Header } from "./Header";
 import { Home } from "./Home";
 
@@ -8,6 +8,7 @@ function Summary() {
   const [percent, setPercent] = useState(0);
   const subtotal = BASKET.reduce((sum, line) => sum + line.price, 0);
   const total = subtotal * (1 - percent / 100);
+  const slot = "Evening";
   return (
     <aside className="summary">
       <h2>Summary</h2>
@@ -20,9 +21,9 @@ function Summary() {
         <dd className="total">{euros(total)}</dd>
       </dl>
       <p className="when">Charged on Wednesday, once the harvest is confirmed.</p>
-      <div className="pay">
-        <button type="button">Pay {euros(total)} now</button>
-      </div>
+      <button className="pay" type="button">
+        Pay {euros(total + DELIVERY_FEES[slot])} now
+      </button>
       <form className="code" onSubmit={(event) => event.preventDefault()}>
         <label htmlFor="code">Gift or promo code</label>
         <input id="code" value={code} onChange={(event) => setCode(event.target.value)} placeholder="WELCOME10" />
