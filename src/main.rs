@@ -39,6 +39,7 @@ const AFTER_HELP: &str = r#"Examples:
   bunflared 5173 3000 --detach    print the ready line, keep sharing in the background
   bunflared 5173 --local          the same, on this computer only: no tunnel, no link
   bunflared 5173 --for 30m        stops by itself after 30 minutes (90s, 2h, 1h30m)
+  bunflared 5173 --password       a page asks visitors for a password, generated here
   bunflared ls [--json]           list live shares
   bunflared down <id> | --all     stop shares
   bunflared agents                teach your coding agents to use bunflared
@@ -61,6 +62,7 @@ Otherwise, or with --json, the ready line is one JSON object on stdout:
 and a failure is one JSON object on stderr: {"error":"...","code":N}.
 With --local, the url is http://127.0.0.1:<port> and tunnel_pid is 0. With --for,
 "expires_at" is when the share stops, in Unix seconds, and it then exits with 0.
+With --password, "password" is what visitors type.
 
 cloudflared is fetched from Cloudflare's releases on the first run when it is
 not installed.
@@ -69,8 +71,8 @@ Exit codes: 0 ok, 1 tunnel closed, 2 bad arguments, 3 cloudflared missing and
 not downloadable, 4 a port is not answering, 5 ~/.cloudflared/config.yaml blocks quick tunnels,
 6 the tunnel failed to start.
 
-Limits: anyone with the link reaches your app. Quick tunnels allow 200
-requests in flight and do not carry Server-Sent Events."#;
+Limits: anyone with the link reaches your app, unless --password is set.
+Quick tunnels allow 200 requests in flight and do not carry Server-Sent Events."#;
 
 #[derive(Parser)]
 #[command(
@@ -112,6 +114,11 @@ struct Cli {
     /// Stop by itself after this long: 90s, 30m, 2h, 1h30m. Visitors hear it a minute before.
     #[arg(long = "for", value_name = "DURATION", value_parser = clock::duration)]
     expires_in: Option<Duration>,
+
+    /// Visitors type this before reaching the app: --password=secret, or a
+    /// generated one when left empty. Public links only.
+    #[arg(long, num_args = 0..=1, default_missing_value = "", conflicts_with = "local")]
+    password: Option<String>,
 
     /// Colors for a light or dark terminal. Auto asks the terminal.
     #[arg(long, value_enum, default_value_t = ThemeChoice::Auto)]
@@ -174,14 +181,25 @@ fn main() {
     {
         usage(err);
     }
+    let password = cli.password.take().map(|password| {
+        if password.is_empty() {
+            proxy::gate::generate()
+        } else {
+            password
+        }
+    });
     let code = match cli.command {
         Some(Command::Ls { json }) => commands::list(json),
         Some(Command::Down { id, all }) => commands::down(id, all),
         Some(Command::Agents { print, remove }) => agents::run(print, remove),
         Some(Command::Mcp) => mcp::run(),
-        None if cli.detach => {
-            commands::detach(&cli.ports, cli.no_widget, cli.local, cli.expires_in)
-        }
+        None if cli.detach => commands::detach(
+            &cli.ports,
+            cli.no_widget,
+            cli.local,
+            cli.expires_in,
+            password.as_deref(),
+        ),
         None => {
             let no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
             let interactive = !cli.json && std::io::stdout().is_terminal();
@@ -225,6 +243,8 @@ fn main() {
                 id: std::process::id().to_string(),
                 copy: true,
                 expires_in: cli.expires_in,
+                // A local share stays on this computer: the home screen's choice drops it.
+                password: password.filter(|_| !cli.local),
             };
             share(spec, theme, feedback)
         }

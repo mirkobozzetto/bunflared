@@ -17,6 +17,9 @@ pub struct Record {
     /// When `--for` runs out, in Unix seconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<u64>,
+    /// The `--password` visitors type.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
 }
 
 impl Record {

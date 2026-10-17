@@ -23,6 +23,7 @@ use crate::http::{Body, full, html, plain};
 use crate::live::Hub;
 use crate::widget;
 
+pub mod gate;
 mod rewrite;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -50,6 +51,7 @@ struct Ctx {
     /// Where feedback lands; `None` keeps the widget out of the pages.
     feedback: Option<PathBuf>,
     hub: Arc<Hub>,
+    gate: Option<gate::Gate>,
 }
 
 /// Passes a body through untouched, keeping a copy of its start.
@@ -146,6 +148,7 @@ pub async fn start(
     tx: Tx,
     feedback: Option<PathBuf>,
     hub: Arc<Hub>,
+    password: Option<String>,
 ) -> std::io::Result<u16> {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     let port = listener.local_addr()?.port();
@@ -155,6 +158,7 @@ pub async fn start(
         tx,
         feedback,
         hub,
+        gate: password.map(gate::Gate::new),
     });
     tokio::spawn(async move {
         loop {
@@ -241,6 +245,12 @@ async fn handle(
     ctx: Arc<Ctx>,
     peer: SocketAddr,
 ) -> Result<Response<Body>, Infallible> {
+    if let Some(gate) = &ctx.gate {
+        request = match gate.check(request).await {
+            Ok(request) => request,
+            Err(answer) => return Ok(*answer),
+        };
+    }
     if let Some(folder) = &ctx.feedback
         && request.uri().path().starts_with(widget::PREFIX)
     {

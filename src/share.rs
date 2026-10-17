@@ -29,6 +29,8 @@ pub struct Spec {
     pub copy: bool,
     /// Stops the share this long after it is ready.
     pub expires_in: Option<Duration>,
+    /// Asked of every visitor before the app, public shares only.
+    pub password: Option<String>,
 }
 
 /// Shares until `stop` flips, a signal arrives, or the tunnel dies.
@@ -101,11 +103,15 @@ pub async fn serve(
         }
     };
 
-    let proxy_port = proxy::start(ports, tx.clone(), feedback, hub.clone())
-        .await
-        .map_err(|err| {
-            Failure::new(EXIT_TUNNEL_FAILED, format!("cannot start the proxy: {err}"))
-        })?;
+    let proxy_port = proxy::start(
+        ports,
+        tx.clone(),
+        feedback,
+        hub.clone(),
+        spec.password.clone(),
+    )
+    .await
+    .map_err(|err| Failure::new(EXIT_TUNNEL_FAILED, format!("cannot start the proxy: {err}")))?;
     let closed = || Failure::new(EXIT_TUNNEL_CLOSED, "The tunnel closed.");
     let (url, mut tunnel, resolved) = match cloudflared {
         None => (format!("http://127.0.0.1:{proxy_port}"), None, true),
@@ -132,6 +138,7 @@ pub async fn serve(
         routes: proxy::routes(ports),
         started_at: now,
         expires_at: spec.expires_in.map(|left| now + left.as_secs()),
+        password: spec.password.clone(),
     };
     let _saved = state::Saved::write(&record);
     let copied = spec.copy && clipboard::copy(&record.url);

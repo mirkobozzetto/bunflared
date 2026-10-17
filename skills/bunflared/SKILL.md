@@ -33,6 +33,11 @@ For a link that should not outlive the demo, add `--for 30m` (or `90s`,
 `2h`, `1h30m`): the share stops by itself, and the JSON line carries
 `expires_at`, in Unix seconds. The MCP `open` tool takes the same as `for`.
 
+For a link only the right people should open, add `--password` (generated)
+or `--password=secret`: the JSON line carries `password`, give it to the
+user with the `url`. Visitors type it on a page first; without it every
+request gets a 401. Not with `--local`.
+
 Without `--detach` the command never returns until stopped: in a terminal it
 opens an interactive dashboard, elsewhere it prints the JSON line and waits.
 
@@ -106,6 +111,6 @@ One JSON line on stderr, `{"error":"...","code":N}`, with the same exit code:
 
 ## Tell the user
 
-- Anyone with the link reaches the app. There is no password.
+- Anyone with the link reaches the app, unless it was shared with `--password`.
 - Quick tunnels do not carry Server-Sent Events and allow 200 requests in
   flight at most.
