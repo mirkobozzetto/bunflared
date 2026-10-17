@@ -8,10 +8,11 @@ use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 use super::art::{self, Frame3};
 use super::boot::Qr;
 use super::fx::{self, put};
+use super::keys::{Ask, Focus};
 use super::scenes::wrap;
 use super::show::LANE_TRIP;
 use super::traffic::{Replay, Row};
-use super::{App, Ask, Focus, Theme, plural};
+use super::{App, Theme, plural};
 use crate::event::{CAPTURE, Capture};
 use crate::live::REACTIONS;
 use crate::visitors::Visitor;
@@ -65,7 +66,7 @@ fn hms(secs: u64) -> String {
 /// A panel whose border shows it has the keyboard focus.
 fn focusable<'a>(app: &App, title: &str, focus: Focus) -> Block<'a> {
     let block = panel(app, title);
-    if app.focus == Some(focus) {
+    if app.keys.focus == Some(focus) {
         block.border_style(app.theme.fg(fx::PINK))
     } else {
         block
@@ -1013,7 +1014,7 @@ fn draw_details(app: &mut App, frame: &mut Frame, area: Rect) {
 
 /// The text box of `g`, low on the screen so the panels stay readable.
 fn draw_prompt(app: &App, frame: &mut Frame, area: Rect) {
-    let Some(prompt) = &app.prompt else {
+    let Some(prompt) = &app.keys.prompt else {
         return;
     };
     let suggestions = app.audience.suggestions(prompt);
@@ -1072,7 +1073,7 @@ fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
 
 pub fn overlays(app: &mut App, frame: &mut Frame) {
     let area = frame.area();
-    if app.qr
+    if app.keys.qr
         && let Some(qr) = &app.boot.qr_code
     {
         let rect = centered_rect(area, qr.size as u16 + 4, qr.size.div_ceil(2) as u16 + 4);
@@ -1089,7 +1090,7 @@ pub fn overlays(app: &mut App, frame: &mut Frame) {
         );
         app.show.keep_clear = Some(rect);
     }
-    if app.help {
+    if app.keys.help {
         let rect = centered_rect(area, HELP_WIDTH, HELP.len() as u16 + 4);
         frame.render_widget(Clear, rect);
         let block = panel(app, "keys");

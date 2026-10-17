@@ -2,7 +2,8 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
 
-use super::{Ask, Prompt, plural};
+use super::keys::{Ask, Prompt};
+use super::plural;
 use crate::clock;
 use crate::event::{Pointer, Reacted, Said};
 use crate::live::{Command, Hub, REACTIONS};
