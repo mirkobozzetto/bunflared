@@ -296,7 +296,7 @@ fn tools() -> Value {
         },
         {
             "name": "request",
-            "description": "One request in full: headers, and bodies kept up to 32 KiB.",
+            "description": "One request in full: headers, bodies kept up to 32 KiB, and a curl command that sends it again to the local server.",
             "inputSchema": { "type": "object", "properties": { "n": n, "share": share }, "required": ["n"] },
         },
         {

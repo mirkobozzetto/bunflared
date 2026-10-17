@@ -157,6 +157,14 @@ impl App {
             KeyCode::PageUp => self.traffic.details_scroll = scroll.saturating_sub(10),
             KeyCode::PageDown => self.traffic.details_scroll = scroll.saturating_add(10),
             KeyCode::Char('p') => self.replay(n),
+            KeyCode::Char('c') => match self.traffic.curl(n) {
+                Some(Ok(curl)) if clipboard::copy(&curl) => {
+                    self.toast("Copied as curl", "It goes to your local server.", false)
+                }
+                Some(Ok(_)) => self.toast("✖ Not copied", "No clipboard tool found.", false),
+                Some(Err(reason)) => self.toast("✖ No curl for it", reason, false),
+                None => {}
+            },
             _ => {}
         }
     }

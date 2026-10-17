@@ -2,6 +2,7 @@ use std::collections::{HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use crate::clock;
+use crate::curl;
 use crate::event::Hit;
 use crate::proxy::Replayer;
 
@@ -151,6 +152,12 @@ impl Traffic {
         self.replayer.replay(n, &row.hit);
         row.replayed = Some(Replay::Pending);
         Ok(())
+    }
+
+    /// A request of the log as a curl command, or why there is none.
+    pub fn curl(&self, n: u32) -> Option<Result<String, String>> {
+        let row = self.rows.iter().find(|row| row.n == n)?;
+        Some(curl::curl(&row.hit))
     }
 
     /// Notes how a replay went; returns the toast that tells it.
