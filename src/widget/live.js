@@ -45,6 +45,7 @@ const handlers = {
   reload: () => location.reload(),
   follow: ({ on }) => follow(on),
   react: ({ emoji }) => cheered(emoji),
+  look: (request) => (request.reload ? lookAfterReload(request) : look(request)),
 };
 let retry = RETRY_MIN_MS;
 const connect = () => {
@@ -59,6 +60,7 @@ const connect = () => {
     live = socket;
     reactRow.hidden = false;
     retry = RETRY_MIN_MS;
+    lookIfAsked();
   });
   socket.addEventListener("message", (event) => {
     let message;

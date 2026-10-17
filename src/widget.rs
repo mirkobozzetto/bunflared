@@ -42,6 +42,7 @@ const SCRIPT: &str = concat!(
     include_str!("widget/note.js"),
     include_str!("widget/chat.js"),
     include_str!("widget/reactions.js"),
+    include_str!("widget/look.js"),
     include_str!("widget/live.js"),
     include_str!("widget/boot.js"),
     "})();\n",
