@@ -83,7 +83,14 @@ bunf 5173 3000                  # app at /, its API at /_port/3000
 bunf 5173 --calm                # same dashboard, no animations
 bunf 5173 --local               # on this computer only, no tunnel, no link
 bunf 5173 --for 30m             # stops by itself after 30 minutes
+bunf 5173 --password            # visitors type a password first
 ```
+
+`--password` alone generates one, like `k7fp-2mxa-q9rt`; `--password=secret`
+picks it. The dashboard shows it next to the link and the JSON line carries
+it as `"password"`. Visitors get a small page that asks for it, then a
+cookie lets their browser through; anything else without the cookie,
+`curl` included, gets a 401. A `--local` share has no use for it.
 
 `--for` takes `90s`, `30m`, `2h` or `1h30m`. The dashboard shows the time
 left, visitors hear a minute before that the link closes, and the share then
@@ -291,8 +298,8 @@ npx skills add mirkobozzetto/bunflared -g
 
 ## Limits
 
-- Anyone with the link reaches your dev server. The random name is the only
-  protection.
+- Anyone with the link reaches your dev server, unless `--password` is set.
+  Otherwise the random name is the only protection.
 - Quick tunnels allow 200 requests in flight and do not carry Server-Sent
   Events ([Cloudflare docs](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)).
 - Quick tunnels refuse to start while `~/.cloudflared/config.yaml` exists.
