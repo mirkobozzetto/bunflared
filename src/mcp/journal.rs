@@ -21,6 +21,7 @@ pub struct Journal {
 struct Log {
     last: u64,
     events: VecDeque<Value>,
+    ended: bool,
 }
 
 impl Journal {
@@ -40,7 +41,7 @@ impl Journal {
                 .cloned()
                 .collect();
             let left = deadline.saturating_duration_since(Instant::now());
-            if !found.is_empty() || left.is_zero() {
+            if !found.is_empty() || left.is_zero() || log.ended {
                 let cursor = found
                     .last()
                     .and_then(|event| event["seq"].as_u64())
@@ -49,6 +50,12 @@ impl Journal {
             }
             log = self.logged.wait_timeout(log, left).unwrap().0;
         }
+    }
+
+    /// Wakes the calls still waiting, so the session can end without them.
+    pub fn end(&self) {
+        self.log.lock().unwrap().ended = true;
+        self.logged.notify_all();
     }
 
     pub fn log(&self, share: &str, kind: &str, mut event: Value) {

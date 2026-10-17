@@ -221,6 +221,11 @@ impl Host {
         self.journal.events(since, wait, share)
     }
 
+    /// Answers the `events` calls still waiting with what they have.
+    pub fn end_waits(&self) {
+        self.journal.end();
+    }
+
     fn log(&self, share: &str, kind: &str, event: Value) {
         self.journal.log(share, kind, event);
     }

@@ -10,7 +10,7 @@ mod share;
 use std::io::{BufRead, Write};
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
@@ -21,6 +21,8 @@ use host::Host;
 const PROTOCOLS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 const MAX_WAIT: u64 = 300;
 const REQUESTS_SHOWN: usize = 20;
+/// How long the requests still running get to reply once stdin closes.
+const REPLY_GRACE: Duration = Duration::from_secs(5);
 
 const INSTRUCTIONS: &str = "bunflared shares local ports with a widget in the pages: \
 a feedback button and a live chat with whoever is on them. `open` starts a share, \
@@ -59,6 +61,7 @@ pub fn run() -> i32 {
         signalled.close_all();
         std::process::exit(0);
     });
+    let mut running = Vec::new();
     // Bytes, not lines: a stray non-UTF-8 byte gets a parse error back
     // instead of ending the session.
     for line in std::io::stdin().lock().split(b'\n') {
@@ -71,11 +74,18 @@ pub fn run() -> i32 {
         }
         // A call can wait for visitors: the next ones must not queue behind it.
         let host = host.clone();
-        std::thread::spawn(move || {
+        running.retain(|thread: &std::thread::JoinHandle<()>| !thread.is_finished());
+        running.push(std::thread::spawn(move || {
             if let Some(reply) = answer(&host, &line) {
                 send(&reply);
             }
-        });
+        }));
+    }
+    // Piped requests still get their replies before the process exits.
+    host.end_waits();
+    let deadline = Instant::now() + REPLY_GRACE;
+    while running.iter().any(|thread| !thread.is_finished()) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
     }
     host.close_all();
     0
