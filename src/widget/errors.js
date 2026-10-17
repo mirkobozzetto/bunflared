@@ -32,6 +32,7 @@ const noteError = (kind, message, source = "", stack = "") => {
 };
 
 const flushErrors = () => {
+  if (!agreed) return;
   let sent = 0;
   const now = Date.now();
   for (const [key, error] of heldErrors) {

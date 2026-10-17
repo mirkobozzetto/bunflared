@@ -39,6 +39,7 @@ const around = (node) => {
 
 const look = async ({ id, selector: wanted }) => {
   const answer = (fields) => say({ type: "shot", id, ...fields });
+  if (!(await allowed())) return answer({ error: "declined" });
   try {
     const node = wanted ? await findLater(wanted) : null;
     const blob = await crop(node ? around(node) : { x: 0, y: scrollY, w: innerWidth, h: innerHeight });

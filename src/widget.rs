@@ -28,6 +28,7 @@ const SCRIPT: &str = concat!(
     include_str!("widget/presence.js"),
     include_str!("widget/errors.js"),
     include_str!("widget/markup.js"),
+    include_str!("widget/consent.js"),
     include_str!("widget/frame.js"),
     include_str!("widget/capture.js"),
     include_str!("widget/tab.js"),

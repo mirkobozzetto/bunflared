@@ -175,10 +175,12 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px
 @keyframes rot { to { transform: rotate(1turn); } }
 
 /* "Point at it": the next click on the page picks an element. */
-.picking { position: absolute; left: 50%; bottom: 22px; translate: -50% 0; margin: 0; pointer-events: auto;
+.picking, .consent { position: absolute; left: 50%; bottom: 22px; translate: -50% 0; margin: 0; pointer-events: auto;
   display: flex; gap: 10px; align-items: center; padding: 6px 6px 6px 14px; border-radius: 999px; white-space: nowrap;
   background: var(--ink); color: #fff; box-shadow: var(--shadow); font-size: 14px; animation: pop .25s var(--ease); }
-.picking button { height: 32px; padding: 0 14px; border-radius: 999px; background: var(--pink); color: var(--ink); font-weight: 600; }
+.consent { white-space: normal; width: max-content; max-width: calc(100vw - 24px); }
+.consent .deny { background: transparent; color: #fff; }
+.picking button, .consent button { height: 32px; padding: 0 14px; border-radius: 999px; background: var(--pink); color: var(--ink); font-weight: 600; }
 
 /* Touch screens: 44 px targets, Send across, and 16px fields so iOS does not zoom. */
 @media (pointer: coarse) {
@@ -190,7 +192,7 @@ textarea:focus { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px
   .tools { flex-wrap: wrap; }
   .send { flex: 1 0 100%; justify-content: center; margin-left: 0; }
   .hint { display: none; }
-  .picking button { height: 40px; }
+  .picking button, .consent button { height: 40px; }
 }
 
 /* Each point's number on the page, on its outline's corner. Clicks go through. */
