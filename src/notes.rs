@@ -249,6 +249,15 @@ impl Transcript {
     }
 }
 
+/// A screenshot this module saved: only a name it gave out, never a path from
+/// the browser.
+pub fn kept(folder: &Path, name: &str) -> bool {
+    name.chars()
+        .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+        && !name.contains("..")
+        && folder.join(name).is_file()
+}
+
 /// Returns the note's file name, and its screenshot's.
 pub fn save_note(
     folder: &Path,
@@ -256,13 +265,7 @@ pub fn save_note(
     device: &str,
 ) -> std::io::Result<(String, Option<String>)> {
     folder_ready(folder)?;
-    // Only a name this module gave out, never a path from the browser.
-    let shot = note.shot.as_deref().filter(|name| {
-        name.chars()
-            .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
-            && !name.contains("..")
-            && folder.join(name).is_file()
-    });
+    let shot = note.shot.as_deref().filter(|name| kept(folder, name));
     let mut text = format!(
         "# Feedback, {}\n\n- Page: `{}`\n- Device: {device}\n- Screen: {}\n- Visitor: {}\n",
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),

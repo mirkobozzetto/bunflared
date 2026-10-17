@@ -125,6 +125,7 @@ impl Host {
             recorded: state::recorded(&id),
             record,
             local: !public,
+            folder: self.folder.clone(),
             hub,
             runtime: handle,
             stop,

@@ -21,6 +21,7 @@ use tokio_tungstenite::tungstenite::protocol::{Message, Role, WebSocketConfig};
 
 use crate::event::{Event, Pointer, Reacted, Said, Tx};
 use crate::http::{Body, status};
+use crate::look::{Looked, Looks};
 use crate::notes::Transcript;
 
 const MAX_MESSAGE: usize = 16 * 1024;
@@ -55,6 +56,14 @@ pub enum Command {
     React {
         emoji: String,
     },
+    /// A screenshot for the agent, of the screen or of one element, after a
+    /// reload when asked.
+    Look {
+        id: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        selector: Option<String>,
+        reload: bool,
+    },
 }
 
 /// What pages send to the dashboard.
@@ -76,6 +85,7 @@ enum Incoming {
         #[serde(default)]
         page: String,
     },
+    Shot(Looked),
 }
 
 struct Socket {
@@ -90,6 +100,7 @@ pub struct Hub {
     /// In the feedback folder, when there is one.
     transcript: Option<Transcript>,
     followed: Mutex<Option<String>>,
+    looks: Looks,
 }
 
 impl Hub {
@@ -100,6 +111,7 @@ impl Hub {
             tx,
             transcript: folder.map(Transcript::new),
             followed: Mutex::default(),
+            looks: Looks::default(),
         }
     }
 
@@ -142,6 +154,47 @@ impl Hub {
             .count()
     }
 
+    /// Asks the visitor's latest page for a screenshot and waits for it.
+    pub fn look(
+        &self,
+        sid: &str,
+        selector: Option<&str>,
+        reload: bool,
+        wait: Duration,
+    ) -> Result<Looked, String> {
+        self.looks.ask(wait, |id| {
+            let selector = selector.map(str::to_string);
+            let command = Command::Look {
+                id,
+                selector,
+                reload,
+            };
+            self.send_latest(sid, &command)
+        })
+    }
+
+    /// The visitors with a page connected live, each once.
+    pub fn connected(&self) -> Vec<String> {
+        let sockets = self.sockets.lock().unwrap();
+        let mut sids: Vec<String> = sockets.values().map(|s| s.sid.clone()).collect();
+        sids.sort();
+        sids.dedup();
+        sids
+    }
+
+    /// Sends to the page a visitor opened last, so only one answers.
+    fn send_latest(&self, sid: &str, command: &Command) -> bool {
+        let Ok(text) = serde_json::to_string(command) else {
+            return false;
+        };
+        let sockets = self.sockets.lock().unwrap();
+        sockets
+            .iter()
+            .filter(|(_, socket)| socket.sid == sid)
+            .max_by_key(|(id, _)| **id)
+            .is_some_and(|(_, socket)| socket.out.send(text).is_ok())
+    }
+
     fn receive(&self, sid: &str, device: &str, message: &str, reacted: &mut Option<Instant>) {
         match serde_json::from_str(message) {
             Ok(Incoming::React { emoji, page }) => {
@@ -156,6 +209,7 @@ impl Hub {
                 }
             }
             Ok(Incoming::Chat { text, page }) => self.chat(sid, device, text, page),
+            Ok(Incoming::Shot(looked)) => self.looks.answer(looked),
             Ok(Incoming::Pointer { x, y, w, h }) => {
                 let sid = sid.to_string();
                 let _ = self.tx.send(Event::Pointer(Pointer { sid, x, y, w, h }));
