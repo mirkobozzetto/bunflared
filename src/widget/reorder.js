@@ -1,15 +1,25 @@
-// Edit moves the element among the visible children of its block, never out
-// of it: dragged, its siblings make room as it goes; or one place at a time.
+// Edit moves the element among the visible children of its block: dragged,
+// its siblings make room as it goes; or one place at a time. Dragged out of
+// its block's edge, it goes into the block under the pointer.
 const UNSEEN = ["script", "style", "template", "link", "meta", "noscript"];
+// Never a block for another element: the element goes beside them instead.
+const LEAVES = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "a", "button", "label", "span", "strong", "em", "b", "i",
+  "small", "code", "img", "svg", "picture", "video", "canvas", "iframe", "input", "textarea", "select"];
+// A list item stays in a list, a table row in a table.
+const KINDS = ["ul", "ol", "menu", "dl", "table", "thead", "tbody", "tfoot", "tr", "select"];
 const SHIFT_MS = 160;
 const LIFT_PX = 4;
 const EDGE_PX = 48;
+// After a jump to another block, the pointer must go this far for the next
+// one: both blocks change size, and the element would bounce between them.
+const SETTLE_PX = 24;
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
 const seen = (node) => node !== host && !UNSEEN.includes(node.localName) && getComputedStyle(node).display !== "none";
 
 // The node and its visible siblings, in page order.
 const blockOf = (node) =>
   node.parentElement ? [...node.parentElement.children].filter((child) => child === node || seen(child)) : [node];
+const kidsOf = (parent, node) => [...parent.children].filter((child) => child !== node && seen(child));
 const placeOf = (node) => {
   const all = blockOf(node);
   return { at: all.indexOf(node) + 1, of: all.length };
@@ -43,17 +53,21 @@ const glide = (nodes, change) => {
   });
 };
 
-// To a place in its block, 1 being the first. A dragged node stays under the
-// pointer: only the others glide.
-function moveTo(node, at, dragged = false) {
-  const others = blockOf(node).filter((child) => child !== node);
+// To a place in a block, 1 being the first. A dragged node stays under the
+// pointer: only the others glide, in the block it leaves and the one it joins.
+function moveInto(node, parent, at, dragged = false) {
+  const others = kidsOf(parent, node);
   const index = Math.max(0, Math.min(at - 1, others.length));
-  if (!others.length || index + 1 === placeOf(node).at) return;
-  glide(dragged ? others : [...others, node], () => {
+  const same = parent === node.parentElement;
+  if (same && (!others.length || index + 1 === placeOf(node).at)) return;
+  const moving = [...new Set([...others, ...blockOf(node)])];
+  glide(dragged ? moving.filter((child) => child !== node) : moving, () => {
     if (index < others.length) others[index].before(node);
-    else others.at(-1).after(node);
+    else if (others.length) others.at(-1).after(node);
+    else parent.append(node);
   });
 }
+const moveTo = (node, at, dragged = false) => moveInto(node, node.parentElement, at, dragged);
 
 // Back between the same neighbours as before, hidden ones included.
 const putBack = ({ node, parent, next }) => {
@@ -63,20 +77,43 @@ const putBack = ({ node, parent, next }) => {
 
 // The place under the pointer: in a row, siblings are passed at their middle
 // from left to right, line by line; in a column, from top to bottom.
-const placeUnder = (node, x, y) => {
-  const parent = node.parentElement;
+const placeIn = (parent, node, x, y) => {
   const look = getComputedStyle(parent);
   const row = (look.display.includes("flex") && !look.flexDirection.startsWith("column"))
     || (look.display.includes("grid") && look.gridTemplateColumns.split(" ").length > 1)
     || getComputedStyle(node).display.startsWith("inline");
   const bounds = parent.getBoundingClientRect();
   y = Math.max(bounds.top + 1, Math.min(y, bounds.bottom - 1));
-  const others = blockOf(node).filter((child) => child !== node);
+  const others = kidsOf(parent, node);
   const index = others.findIndex((child) => {
     const box = layoutBox(child);
     return row ? y < box.top || (y <= box.top + box.height && x < box.left + box.width / 2) : y < box.top + box.height / 2;
   });
   return (index < 0 ? others.length : index) + 1;
+};
+
+const depthOf = (node) => {
+  let depth = 0;
+  for (; node.parentElement; node = node.parentElement) depth++;
+  return depth;
+};
+// The block under the pointer at `level`, the depth of the node's block when
+// the drag began: a button goes from row to row, a card from column to
+// column. Clearly out of its block, else the block one level up. Never body,
+// where a framework's root would lose track of the node.
+// ponytail: an empty block never takes the node; it goes beside it.
+const blockUnder = (node, x, y, level) => {
+  const own = node.parentElement;
+  const takes = (block) => block === own || (block && ![document.body, document.documentElement].includes(block)
+    && !LEAVES.includes(block.localName) && !node.contains(block) && kidsOf(block, node).length > 0
+    && (KINDS.includes(own.localName) || KINDS.includes(block.localName) ? block.localName === own.localName : true));
+  const line = [];
+  const under = document.elementsFromPoint(x, y).find((child) => child !== host && !node.contains(child));
+  for (let at = under; at; at = at.parentElement) line.unshift(at);
+  if (takes(line[level])) return line[level];
+  const box = own.getBoundingClientRect();
+  const away = Math.max(box.left - x, x - box.right, box.top - y, y - box.bottom);
+  return away > SETTLE_PX && takes(line[level - 1]) ? line[level - 1] : own;
 };
 
 // A press on the element: past a few pixels it is lifted and follows the
@@ -90,9 +127,13 @@ function grabNode(node, event, dragged) {
   const start = { x: event.clientX, y: event.clientY };
   const hold = { x: event.clientX - box.left, y: event.clientY - box.top };
   const kept = keepInline(node, ["translate"]);
-  let [moving, last, frame] = [false, null, 0];
+  const level = depthOf(node.parentElement);
+  let [moving, last, frame, jumped] = [false, null, 0, null];
   const place = ({ clientX: x, clientY: y }) => {
-    moveTo(node, placeUnder(node, x, y), true);
+    const settled = !jumped || Math.hypot(x - jumped.x, y - jumped.y) >= SETTLE_PX;
+    const block = settled ? blockUnder(node, x, y, level) : node.parentElement;
+    if (block !== node.parentElement) jumped = { x, y };
+    moveInto(node, block, placeIn(block, node, x, y), true);
     const slot = layoutBox(node);
     node.style.setProperty("translate", `${x - hold.x - slot.left}px ${y - hold.y - slot.top}px`, "important");
     dragged(false);

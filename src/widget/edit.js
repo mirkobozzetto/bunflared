@@ -91,7 +91,9 @@ function whileDragged(done) {
   dragging = !done;
   bar.classList.toggle("faded", !done);
   showPlace(done);
-  if (done) placeBar();
+  if (!done) return;
+  showFamily();
+  placeBar();
 }
 // Parent stops below body; Child goes back down the way Parent came.
 function showFamily() {
@@ -162,10 +164,14 @@ function closeBar() {
   trail = [];
 }
 
-// What a point says: each change, before and after.
+// What a point says: each change, before and after. Out of its block, the
+// new block's selector is taken after the move.
 const editChanges = () => {
-  const { at, of } = placeOf(editing.node);
-  const moved = at === editing.from.at ? [] : [`Moved from place ${editing.from.at} to place ${at} of ${of}`];
+  const { node, from, home } = editing;
+  const { at, of } = placeOf(node);
+  const moved = node.parentNode !== home.parent
+    ? [`Moved out of its block to place ${at} of ${of} in \`${selector(node.parentElement)}\` (was place ${from.at} of ${from.of})`]
+    : at === from.at ? [] : [`Moved from place ${from.at} to place ${at} of ${of}`];
   return [...moved, ...knobChanges()];
 };
 
