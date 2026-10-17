@@ -18,8 +18,12 @@ const SIZE = { width: 1280, height: 760 };
 const BAND = 56;
 const GIF_WIDTH = 1200;
 const FPS = 15;
-// Edit's photos move on most frames: fewer of them keep it under 10 MB.
-const CLIP_FPS: Record<string, number> = { edit: 12 };
+const DITHER = "bayer:bayer_scale=5";
+// Edit's photos move on most frames: fewer of them, and no dithering, keep
+// it under 10 MB.
+const CLIP: Record<string, { fps?: number; dither?: string; lossy?: number }> = {
+  edit: { fps: 10, dither: "none", lossy: 80 },
+};
 // The last frame's hold, which dropping repeated frames would lose.
 const FINAL_HOLD_CS = 300;
 // How different a frame must be to count, past the recorded video's noise:
@@ -657,7 +661,7 @@ async function password(browser: Browser) {
 async function cut(browser: Browser, work: string, { shots, starts, videos }: Story) {
   const bands = await browser.newPage({ viewport: { width: SIZE.width, height: BAND } });
   for (const clip of new Set(shots.map((s) => s.clip))) {
-    const fps = CLIP_FPS[clip] ?? FPS;
+    const { fps = FPS, dither = DITHER, lossy = LOSSY } = CLIP[clip] ?? {};
     const inputs: string[] = [];
     const filters: string[] = [];
     const own = shots.filter((s) => s.clip === clip);
@@ -684,13 +688,13 @@ async function cut(browser: Browser, work: string, { shots, starts, videos }: St
       // weigh nothing.
       `${own.map((_, i) => `[s${i}]`).join("")}concat=n=${own.length}:v=1:a=0,mpdecimate=${STILL},split[a][b]`,
       `[a]palettegen=stats_mode=diff:max_colors=${COLORS}[palette]`,
-      "[b][palette]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle",
+      `[b][palette]paletteuse=dither=${dither}:diff_mode=rectangle`,
     );
     const raw = join(work, `${clip}.gif`);
     const out = join(import.meta.dir, `${clip}.gif`);
     const steps: [string, string[]][] = [
       ["ffmpeg", ["-y", "-loglevel", "error", ...inputs, "-filter_complex", filters.join(";"), "-fps_mode", "vfr", "-final_delay", String(FINAL_HOLD_CS), raw]],
-      ["gifsicle", ["-O3", `--lossy=${LOSSY}`, raw, "-o", out]],
+      ["gifsicle", ["-O3", `--lossy=${lossy}`, raw, "-o", out]],
     ];
     for (const [command, args] of steps) {
       if (spawnSync(command, args, { stdio: "inherit" }).status !== 0) throw new Error(`${command} failed on ${clip}`);
