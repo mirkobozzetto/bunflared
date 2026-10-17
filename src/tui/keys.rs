@@ -37,6 +37,7 @@ pub enum Ask {
     Go,
     Chat,
     React,
+    Filter,
 }
 
 /// A text box open over the dashboard: while it is, keys are text.
@@ -156,6 +157,14 @@ impl App {
             KeyCode::PageUp => self.traffic.details_scroll = scroll.saturating_sub(10),
             KeyCode::PageDown => self.traffic.details_scroll = scroll.saturating_add(10),
             KeyCode::Char('p') => self.replay(n),
+            KeyCode::Char('c') => match self.traffic.curl(n) {
+                Some(Ok(curl)) if clipboard::copy(&curl) => {
+                    self.toast("Copied as curl", "It goes to your local server.", false)
+                }
+                Some(Ok(_)) => self.toast("✖ Not copied", "No clipboard tool found.", false),
+                Some(Err(reason)) => self.toast("✖ No curl for it", reason, false),
+                None => {}
+            },
             _ => {}
         }
     }
@@ -193,6 +202,13 @@ impl App {
                 None => self.toast("Pick a request first", "Tab, then ↑ ↓.", false),
             },
             KeyCode::Char('e') if dashboard => self.keys.prompt = Some(Prompt::new(Ask::React)),
+            KeyCode::Char('/') if dashboard => {
+                let text = self.traffic.filter.clone();
+                self.keys.prompt = Some(Prompt {
+                    text,
+                    ..Prompt::new(Ask::Filter)
+                });
+            }
             KeyCode::Char('x') if dashboard => self.audience.chat.clear(),
             KeyCode::Char('R') if dashboard => {
                 let reached = self.audience.send(&Command::Reload);
@@ -267,7 +283,7 @@ impl App {
                 self.audience.select(next);
             }
             Focus::Log => {
-                let ranks: Vec<u32> = self.traffic.rows.iter().map(|row| row.n).collect();
+                let ranks: Vec<u32> = self.traffic.shown().map(|row| row.n).collect();
                 self.traffic.picked = stepped(&ranks, self.traffic.picked.as_ref(), down);
             }
         }
@@ -301,7 +317,12 @@ impl App {
             return;
         };
         match key.code {
-            KeyCode::Esc => self.keys.prompt = None,
+            KeyCode::Esc => {
+                if prompt.ask == Ask::Filter {
+                    self.traffic.filter.clear();
+                }
+                self.keys.prompt = None;
+            }
             KeyCode::Enter => {
                 if let Some(prompt) = self.keys.prompt.take() {
                     self.submit(prompt);
@@ -338,6 +359,11 @@ impl App {
                 let path = live::absolute(&path);
                 let reached = self.audience.send(&Command::Go { path: path.clone() });
                 self.sent(&format!("→ {path}"), reached);
+            }
+            Ask::Filter => {
+                self.traffic.filter = prompt.text.trim().to_string();
+                self.traffic.picked = None;
+                self.keys.focus = Some(Focus::Log);
             }
             Ask::React => {
                 let kind = prompt.pick.unwrap_or(0);

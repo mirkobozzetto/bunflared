@@ -110,6 +110,7 @@ In the dashboard:
 | `x` | clear the chat panel (the session file keeps everything) |
 | `Enter` | on a request: its headers and bodies |
 | `p` | replay the picked request to your local server |
+| `/` | filter the requests by method, status or path (`Esc` in it clears) |
 | `?` | help |
 | `q` | stop sharing |
 
@@ -117,6 +118,18 @@ Colors follow your terminal: bunflared asks it for its background and picks a
 light or dark palette. `--theme light` or `--theme dark` forces one. `NO_COLOR`
 is respected. When a shared port stops answering, visitors get a
 small bunny page that retries by itself.
+
+## Testing webhooks
+
+Give Stripe, GitHub or Slack the public link as the webhook URL, then send a
+test event. In the dashboard, `/` then `POST` or the webhook's path keeps
+only its requests. `Tab` and `Enter` open one: its headers and JSON body as
+they came in. `p` sends it again to your local server, as many times as your
+fix needs. `c` copies it as a curl command aimed at the local server, to run
+it again from a terminal or a script, without waiting for a new event.
+
+An agent gets the same command in the `curl` field of the MCP `request` tool.
+A request whose body is over 32 KiB, or is not text, has no curl.
 
 ## Feedback from the people you share with
 

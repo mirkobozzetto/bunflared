@@ -3,6 +3,7 @@ mod clipboard;
 mod clock;
 mod cloudflared;
 mod commands;
+mod curl;
 mod event;
 mod http;
 mod live;

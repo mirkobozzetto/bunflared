@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use tokio::sync::watch;
 
 use crate::clock::{clock, uptime};
+use crate::curl;
 use crate::event::{Capture, Hit};
 use crate::live::{self, Command, Hub};
 use crate::look::NOBODY;
@@ -205,6 +206,8 @@ impl Share {
             Some(reason) => json!(reason),
             None => json!(true),
         };
+        // Before the locks below: it takes the request body's own.
+        let curl = curl::curl(&hit).unwrap_or_else(|reason| format!("No curl: {reason}"));
         let request = exchange.request_body.lock().unwrap();
         let response = exchange.response_body.lock().unwrap();
         Ok(json!({
@@ -217,6 +220,7 @@ impl Share {
             "visitor": hit.visitor,
             "at": at,
             "replayable": replay,
+            "curl": curl,
             "request": {
                 "headers": headers(&exchange.request_headers),
                 "body": body(&exchange.request_headers, &request),

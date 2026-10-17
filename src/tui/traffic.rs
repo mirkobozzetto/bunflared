@@ -2,6 +2,7 @@ use std::collections::{HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use crate::clock;
+use crate::curl;
 use crate::event::Hit;
 use crate::proxy::Replayer;
 
@@ -39,6 +40,8 @@ pub struct Traffic {
     /// The request whose details are open, by rank.
     pub details: Option<u32>,
     pub details_scroll: u16,
+    /// What the shown rows contain in `method status path`, any case.
+    pub filter: String,
     replayer: Replayer,
 }
 
@@ -68,6 +71,7 @@ impl Traffic {
             picked: None,
             details: None,
             details_scroll: 0,
+            filter: String::new(),
             replayer,
         }
     }
@@ -115,6 +119,17 @@ impl Traffic {
         reached
     }
 
+    /// The rows the filter lets through, newest first.
+    pub fn shown(&self) -> impl Iterator<Item = &Row> {
+        let filter = self.filter.to_lowercase();
+        self.rows.iter().filter(move |row| {
+            let hit = &row.hit;
+            format!("{} {} {}", hit.method, hit.status, hit.path)
+                .to_lowercase()
+                .contains(&filter)
+        })
+    }
+
     /// A bar of the sparkline per second.
     pub fn tick(&mut self, now: Instant) {
         while now.duration_since(self.bucket_at) >= Duration::from_secs(1) {
@@ -137,6 +152,12 @@ impl Traffic {
         self.replayer.replay(n, &row.hit);
         row.replayed = Some(Replay::Pending);
         Ok(())
+    }
+
+    /// A request of the log as a curl command, or why there is none.
+    pub fn curl(&self, n: u32) -> Option<Result<String, String>> {
+        let row = self.rows.iter().find(|row| row.n == n)?;
+        Some(curl::curl(&row.hit))
     }
 
     /// Notes how a replay went; returns the toast that tells it.

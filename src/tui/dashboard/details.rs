@@ -133,7 +133,7 @@ pub fn draw_details(app: &mut App, frame: &mut Frame, area: Rect) {
     frame.render_widget(Clear, rect);
     let block = panel(app, "request")
         .border_style(app.theme.fg(fx::PINK))
-        .title_bottom(Line::from(" ↑ ↓ scroll · p replay · esc close ").right_aligned());
+        .title_bottom(Line::from(" ↑ ↓ scroll · p replay · c curl · esc close ").right_aligned());
     let inner = block.inner(rect).inner(Margin::new(1, 0));
     frame.render_widget(block, rect);
     let most = lines.len().saturating_sub(inner.height as usize) as u16;
