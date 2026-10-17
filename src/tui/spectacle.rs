@@ -16,11 +16,12 @@ use super::{cast, hose};
 const DRAGON: Color = Color::Rgb(215, 50, 60);
 const STEEL: Color = Color::Rgb(175, 190, 205);
 // A Paris firefighter in a red helmet. Navy and black are lifted a little so
-// they still show on a dark terminal.
+// they still show on a dark terminal. The boots are a warm gray, not a pure
+// one: the light theme inverts pure grays, and would turn them pale.
 const HELMET: Color = Color::Rgb(230, 50, 50);
 const NAVY: Color = Color::Rgb(45, 70, 140);
 const FLUO: Color = Color::Rgb(220, 255, 40);
-const BOOTS: Color = Color::Rgb(60, 60, 66);
+const BOOTS: Color = Color::Rgb(68, 62, 56);
 const FIGHTER_ROWS: i32 = 7;
 const DRAGON_ROWS: i32 = 11;
 const FLY_SPEED: f32 = 11.0;
