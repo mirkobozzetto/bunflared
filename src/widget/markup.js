@@ -27,6 +27,9 @@ root.innerHTML = `
   <button class="toast" type="button" hidden><b>From the developer</b><span></span></button>
   <p class="picking" role="status" hidden>${ICON.point}<span>${phone ? "Tap" : "Click"} what you mean</span>
     <button class="stop" type="button">Cancel</button></p>
+  <p class="consent" role="alertdialog" aria-labelledby="consent-text" hidden><span id="consent-text">The developer's
+    assistant asks to see this page and its errors.</span><button class="deny" type="button">No</button><button
+    class="allow" type="button">Allow</button></p>
   <div class="scrim" hidden></div>
   <div class="panel ${phone ? "sheet" : "pop"}" id="panel" role="dialog" aria-modal="${phone}" aria-labelledby="title" hidden>
     ${phone ? `<div class="grab" aria-hidden="true"></div>` : ""}

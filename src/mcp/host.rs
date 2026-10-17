@@ -125,6 +125,7 @@ impl Host {
             recorded: state::recorded(&id),
             record,
             local: !public,
+            folder: self.folder.clone(),
             hub,
             runtime: handle,
             stop,
@@ -280,6 +281,31 @@ impl Host {
                     self.channel(&said.text, meta);
                 }
                 Event::Feedback(note) => self.noted(id, note),
+                Event::PageError(error) => {
+                    self.log(
+                        id,
+                        "error",
+                        json!({
+                            "visitor": error.sid,
+                            "device": error.device,
+                            "page": error.page,
+                            "type": error.kind,
+                            "message": error.message,
+                            "source": error.source,
+                            "stack": error.stack,
+                            "count": error.count,
+                        }),
+                    );
+                    let meta = json!({
+                        "kind": "error",
+                        "share": id,
+                        "visitor": error.sid,
+                        "page": error.page,
+                        "source": error.source,
+                        "count": error.count,
+                    });
+                    self.channel(&error.message, meta);
+                }
                 Event::Reacted(reaction) => {
                     let (emoji, label) = REACTIONS[reaction.kind];
                     let reacted =
@@ -307,11 +333,13 @@ impl Host {
         let element = note
             .points
             .first()
-            .map(|e| json!({ "selector": e.selector, "text": e.text }));
+            .map(|e| json!({ "selector": e.selector, "text": e.text, "source": e.source }));
         let points: Vec<Value> = note
             .points
             .iter()
-            .map(|e| json!({ "selector": e.selector, "text": e.text, "comment": e.comment }))
+            .map(|e| {
+                json!({ "selector": e.selector, "text": e.text, "comment": e.comment, "source": e.source })
+            })
             .collect();
         self.log(
             id,
@@ -340,6 +368,9 @@ impl Host {
         }
         if let Some(element) = note.points.first() {
             meta["element"] = json!(element.selector);
+            if let Some(source) = &element.source {
+                meta["source"] = json!(source.at());
+            }
         }
         self.channel(&note.text(), meta);
     }

@@ -31,21 +31,40 @@ const drawNumber = (context, n, x, y) => {
 };
 
 // The whole page without the widget, on a background that never comes out
-// transparent. Each point is outlined and numbered over the picture: the page
-// itself is left alone while it is taken.
-const capture = async () => {
+// transparent.
+const pageCanvas = async () => {
   const { domToCanvas } = await import(SCREENSHOT_LIB);
   const page = document.documentElement;
   const background = getComputedStyle(document.body).backgroundColor;
-  const boxes = points.map(({ node }, index) => ({ n: index + 1, shown: node.isConnected, rect: node.getBoundingClientRect() }));
-  const [left, top] = [scrollX, scrollY];
-  const canvas = await domToCanvas(page, {
+  return domToCanvas(page, {
     scale: 1,
     width: innerWidth,
     height: Math.max(page.scrollHeight, innerHeight),
     backgroundColor: background === "rgba(0, 0, 0, 0)" ? "#ffffff" : background,
     filter: (node) => node !== host,
   });
+};
+const png = (canvas) =>
+  new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("no picture"))), "image/png");
+  });
+
+// A part of the page, in page coordinates.
+const crop = async ({ x, y, w, h }) => {
+  const canvas = await pageCanvas();
+  const ratio = canvas.width / innerWidth;
+  const part = document.createElement("canvas");
+  [part.width, part.height] = [Math.max(1, Math.round(w * ratio)), Math.max(1, Math.round(h * ratio))];
+  part.getContext("2d").drawImage(canvas, x * ratio, y * ratio, w * ratio, h * ratio, 0, 0, part.width, part.height);
+  return png(part);
+};
+
+// Each point is outlined and numbered over the picture: the page itself is
+// left alone while it is taken.
+const capture = async () => {
+  const boxes = points.map(({ node }, index) => ({ n: index + 1, shown: node.isConnected, rect: node.getBoundingClientRect() }));
+  const [left, top] = [scrollX, scrollY];
+  const canvas = await pageCanvas();
   const ratio = canvas.width / innerWidth;
   const context = canvas.getContext("2d");
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -57,7 +76,5 @@ const capture = async () => {
     context.strokeRect(x - 3.5, y - 3.5, rect.width + 7, rect.height + 7);
     drawNumber(context, n, Math.max(12, x - 5), Math.max(12, y - 5));
   }
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("no picture"))), "image/png");
-  });
+  return png(canvas);
 };

@@ -6,6 +6,7 @@ mod commands;
 mod event;
 mod http;
 mod live;
+mod look;
 mod mcp;
 mod notes;
 mod os;

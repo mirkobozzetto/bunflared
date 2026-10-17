@@ -90,11 +90,12 @@ form.addEventListener("submit", async (event) => {
     const response = await fetch(`${BASE}/shot`, { method: "POST", body: image }).catch(() => null);
     if (response?.ok) shot = (await response.json()).shot;
   }
+  const sources = await Promise.all(points.map((point) => point.source));
   const response = await fetch(`${BASE}/feedback`, {
     method: "POST",
     body: JSON.stringify({
       sid, page: page(), message, screen: `${innerWidth}x${innerHeight}`, shot,
-      points: points.map((point) => ({ ...point.info, comment: comment(point) })),
+      points: points.map((point, index) => ({ ...point.info, comment: comment(point), source: sources[index] })),
     }),
   }).catch(() => null);
   sending = false;

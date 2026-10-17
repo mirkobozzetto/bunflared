@@ -233,6 +233,8 @@ impl App {
                 self.toast(title, excerpt, false);
             }
             Event::Pointer(pointer) => self.audience.pointer(pointer, now),
+            // For the agent; the dashboard shows the traffic instead.
+            Event::PageError(_) => {}
             Event::Reacted(reaction) => {
                 let (title, label) = self.audience.reacted(&reaction);
                 self.toast(title, label, false);

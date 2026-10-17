@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::clock::stamp;
 
@@ -73,14 +73,45 @@ pub struct Element {
     pub text: String,
     #[serde(default)]
     pub comment: String,
+    #[serde(default)]
+    pub source: Option<Source>,
     x: f64,
     y: f64,
     w: f64,
     h: f64,
 }
 
+/// The file, line and component a development build says an element comes from.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Source {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
+    pub file: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column: Option<u32>,
+}
+
+impl Source {
+    /// `src/App.tsx:12:5 in App`, as far as the build tells.
+    pub fn at(&self) -> String {
+        let mut at = self.file.clone();
+        if let Some(line) = self.line {
+            at.push_str(&format!(":{line}"));
+            if let Some(column) = self.column {
+                at.push_str(&format!(":{column}"));
+            }
+        }
+        if let Some(component) = &self.component {
+            at.push_str(&format!(" in {component}"));
+        }
+        at
+    }
+}
+
 impl Element {
-    /// `2. #buy "Buy now": make it green`, on one line.
+    /// `2. #buy "Buy now": make it green [src/App.tsx:12 in App]`, on one line.
     pub fn line(&self, number: usize) -> String {
         let mut line = format!("{number}. {}", self.selector);
         let quoted: String = self.text.chars().take(40).collect();
@@ -94,6 +125,10 @@ impl Element {
             .join(" ");
         if !comment.is_empty() {
             line.push_str(&format!(": {comment}"));
+        }
+        if let Some(source) = &self.source {
+            let at: String = source.at().chars().take(MAX_PINNED).collect();
+            line.push_str(&format!(" [{at}]"));
         }
         line
     }
@@ -113,6 +148,9 @@ impl Element {
         let mut lines = format!("- Element: `{}`\n", clean(&self.selector));
         if !self.text.trim().is_empty() {
             lines.push_str(&format!("- Text: \"{}\"\n", clean(&self.text)));
+        }
+        if let Some(source) = &self.source {
+            lines.push_str(&format!("- Source: `{}`\n", clean(&source.at())));
         }
         lines.push_str(&format!(
             "- Position: {}, {} ({}×{}) from the top left of the page\n",
@@ -211,6 +249,15 @@ impl Transcript {
     }
 }
 
+/// A screenshot this module saved: only a name it gave out, never a path from
+/// the browser.
+pub fn kept(folder: &Path, name: &str) -> bool {
+    name.chars()
+        .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+        && !name.contains("..")
+        && folder.join(name).is_file()
+}
+
 /// Returns the note's file name, and its screenshot's.
 pub fn save_note(
     folder: &Path,
@@ -218,13 +265,7 @@ pub fn save_note(
     device: &str,
 ) -> std::io::Result<(String, Option<String>)> {
     folder_ready(folder)?;
-    // Only a name this module gave out, never a path from the browser.
-    let shot = note.shot.as_deref().filter(|name| {
-        name.chars()
-            .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
-            && !name.contains("..")
-            && folder.join(name).is_file()
-    });
+    let shot = note.shot.as_deref().filter(|name| kept(folder, name));
     let mut text = format!(
         "# Feedback, {}\n\n- Page: `{}`\n- Device: {device}\n- Screen: {}\n- Visitor: {}\n",
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
