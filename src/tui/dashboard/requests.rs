@@ -8,19 +8,28 @@ use super::{focusable, highlight, scroll, status_color};
 use crate::tui::App;
 use crate::tui::fx;
 use crate::tui::keys::Focus;
-use crate::tui::traffic::Replay;
+use crate::tui::traffic::{Replay, Row};
 
 pub fn draw_log(app: &App, frame: &mut Frame, area: Rect) {
-    let block = focusable(app, "requests", Focus::Log);
+    let title = match app.traffic.filter.as_str() {
+        "" => "requests".to_string(),
+        filter => format!("requests · /{filter}"),
+    };
+    let block = focusable(app, &title, Focus::Log);
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let theme = &app.theme;
-    if app.traffic.rows.is_empty() {
-        let waiting = Line::from(Span::styled(
-            "No visitors yet. Send the link to someone!",
-            theme.fg(fx::DIM),
-        ))
-        .centered();
+    let rows: Vec<&Row> = app.traffic.shown().collect();
+    if rows.is_empty() {
+        let empty = if app.traffic.rows.is_empty() {
+            "No visitors yet. Send the link to someone!".to_string()
+        } else {
+            format!(
+                "Nothing matches /{}. / then esc shows all.",
+                app.traffic.filter
+            )
+        };
+        let waiting = Line::from(Span::styled(empty, theme.fg(fx::DIM))).centered();
         let [_, middle, _] = Layout::vertical([
             Constraint::Min(0),
             Constraint::Length(1),
@@ -30,14 +39,10 @@ pub fn draw_log(app: &App, frame: &mut Frame, area: Rect) {
         frame.render_widget(Paragraph::new(waiting), middle);
         return;
     }
-    let at = app
-        .traffic
-        .rows
+    let at = rows
         .iter()
         .position(|row| Some(row.n) == app.traffic.picked);
-    let lines: Vec<Line> = app
-        .traffic
-        .rows
+    let lines: Vec<Line> = rows
         .iter()
         .skip(scroll(at, inner.height as usize))
         .take(inner.height as usize)

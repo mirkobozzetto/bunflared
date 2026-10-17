@@ -10,7 +10,7 @@ use crate::tui::App;
 use crate::tui::fx;
 use crate::tui::keys::Ask;
 
-const HELP: [&str; 19] = [
+const HELP: [&str; 20] = [
     "c    copy the link",
     "o    open it in your browser",
     "r    big QR code for phones",
@@ -19,6 +19,7 @@ const HELP: [&str; 19] = [
     "↑ ↓  pick a visitor",
     "tab  switch to the requests",
     "     enter: its details, p: replay it",
+    "/    filter the requests",
     "esc  pick nobody: everyone again",
     "m    message them",
     "g    send them to a page",
@@ -51,6 +52,10 @@ fn draw_prompt(app: &App, frame: &mut Frame, area: Rect) {
         Ask::React => (
             format!("react to {}", app.audience.target()),
             " 1-4 or tab, enter send · esc cancel ",
+        ),
+        Ask::Filter => (
+            "requests with".to_string(),
+            " method, status or path · enter filter · esc clear ",
         ),
     };
     let typed = prompt.ask != Ask::React;

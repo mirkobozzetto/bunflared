@@ -147,7 +147,7 @@ impl Audience {
     /// the reactions to pick from.
     pub fn suggestions(&self, prompt: &Prompt) -> Vec<String> {
         match prompt.ask {
-            Ask::Chat => return Vec::new(),
+            Ask::Chat | Ask::Filter => return Vec::new(),
             Ask::React => {
                 return REACTIONS
                     .iter()

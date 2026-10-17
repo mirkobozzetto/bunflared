@@ -39,6 +39,8 @@ pub struct Traffic {
     /// The request whose details are open, by rank.
     pub details: Option<u32>,
     pub details_scroll: u16,
+    /// What the shown rows contain in `method status path`, any case.
+    pub filter: String,
     replayer: Replayer,
 }
 
@@ -68,6 +70,7 @@ impl Traffic {
             picked: None,
             details: None,
             details_scroll: 0,
+            filter: String::new(),
             replayer,
         }
     }
@@ -113,6 +116,17 @@ impl Traffic {
         });
         self.rows.truncate(LOG_KEEP);
         reached
+    }
+
+    /// The rows the filter lets through, newest first.
+    pub fn shown(&self) -> impl Iterator<Item = &Row> {
+        let filter = self.filter.to_lowercase();
+        self.rows.iter().filter(move |row| {
+            let hit = &row.hit;
+            format!("{} {} {}", hit.method, hit.status, hit.path)
+                .to_lowercase()
+                .contains(&filter)
+        })
     }
 
     /// A bar of the sparkline per second.
