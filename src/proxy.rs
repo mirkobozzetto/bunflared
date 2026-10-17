@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -17,18 +16,18 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use regex::{Captures, Regex};
+use regex::Regex;
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::live::Hub;
 use crate::share::{Event, Hit, Tx};
 use crate::widget;
 
+mod rewrite;
+
 pub type Body = BoxBody<Bytes, hyper::Error>;
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
-static LOCAL_URL: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"https?://(?:localhost|127\.0\.0\.1):(\d+)").unwrap());
 static TEXT_TYPES: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"javascript|json|html|css|text/plain").unwrap());
 
@@ -246,22 +245,15 @@ impl Ctx {
         (self.main, format!("{path}{query}"))
     }
 
-    fn rewrite<'a>(&self, text: &'a str) -> Cow<'a, str> {
-        LOCAL_URL.replace_all(text, |caps: &Captures| match caps[1].parse::<u16>() {
-            Ok(port) if port == self.main => String::new(),
-            Ok(port) if self.others.contains(&port) => mount(port),
-            _ => caps[0].to_string(),
-        })
-    }
-
-    async fn adapt(&self, response: Response<Incoming>, method: &Method) -> Response<Body> {
+    async fn adapt(
+        self: &Arc<Self>,
+        response: Response<Incoming>,
+        method: &Method,
+    ) -> Response<Body> {
         let (mut parts, body) = response.into_parts();
         strip_hop_by_hop(&mut parts.headers);
-        if let Some(location) = parts
-            .headers
-            .get(header::LOCATION)
-            .and_then(|v| v.to_str().ok())
-            && let Ok(value) = HeaderValue::from_str(&self.rewrite(location))
+        if let Some(location) = parts.headers.get(header::LOCATION)
+            && let Ok(value) = HeaderValue::from_bytes(&self.rewrite(location.as_bytes()))
         {
             parts.headers.insert(header::LOCATION, value);
         }
@@ -276,16 +268,20 @@ impl Ctx {
         if !textual {
             return Response::from_parts(parts, body.boxed());
         }
+        parts.headers.remove(header::CONTENT_LENGTH);
+        // Only a page needs its whole body, for the widget tag before </body>.
+        if !page {
+            return Response::from_parts(parts, rewrite::stream(body, self.clone()));
+        }
         let Ok(collected) = body.collect().await else {
             return plain(DOWN, "The shared app stopped mid-answer.");
         };
         let bytes = collected.to_bytes();
-        let bytes = match std::str::from_utf8(&bytes).map(|text| self.rewrite(text)) {
-            Ok(text) if page => Bytes::from(widget::inject(&text)),
-            Ok(Cow::Owned(text)) => Bytes::from(text),
-            _ => bytes,
+        let text = self.rewrite(&bytes);
+        let bytes = match std::str::from_utf8(&text) {
+            Ok(text) => Bytes::from(widget::inject(text)),
+            Err(_) => Bytes::from(text.into_owned()),
         };
-        parts.headers.remove(header::CONTENT_LENGTH);
         Response::from_parts(parts, full(bytes))
     }
 }
