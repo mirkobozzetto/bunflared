@@ -42,6 +42,7 @@ const MESSAGE = "Hi! The checkout is ready, have a look";
 const ANSWER = "Nice! But the pay button says NaN €";
 const BAD_CODE = "SPRING24";
 const ASK_FILE = "ask";
+const AGENT_FONT = 18;
 
 type Side = "term" | "web" | "shell" | "agent";
 const SIDES: Record<Side, [string, string]> = {
@@ -110,13 +111,13 @@ class Take {
     return { context, page };
   }
 
-  async terminal(side: Exclude<Side, "web">, argv: string[], env: Record<string, string> = {}) {
+  async terminal(side: Exclude<Side, "web">, argv: string[], env: Record<string, string> = {}, fontSize = 15) {
     this.servers.push(
       spawn(
         "ttyd",
         [
           "-p", String(PORTS[side]), "-W", "-o",
-          "-t", "fontSize=15", "-t", "fontFamily=Menlo", "-t", `theme=${JSON.stringify(DRACULA)}`,
+          "-t", `fontSize=${fontSize}`, "-t", "fontFamily=Menlo", "-t", `theme=${JSON.stringify(DRACULA)}`,
           "-t", "disableLeaveAlert=true", "-t", "disableResizeOverlay=true", "-t", "disableReconnect=true",
           "-t", "enableSixel=true",
           ...argv,
@@ -456,19 +457,15 @@ async function inspect(take: Take) {
 // next to the page it watches. Then Edit, whose changes reach it as a note.
 async function agent(take: Take) {
   const asked = (tool: string) => writeFileSync(join(take.work, ASK_FILE), tool);
-  const term = await take.terminal("agent", ["bun", import.meta.path, "mcp-client"]);
+  const term = await take.terminal("agent", ["bun", import.meta.path, "mcp-client"], {}, AGENT_FONT);
   const opened = await term.wait(/http:\/\/127\.0\.0\.1:\d+/);
   const url = opened.text.match(/http:\/\/127\.0\.0\.1:\d+/)![0];
-  const web = await take.visitor(url);
+  const web = await take.visitor(`${url}/checkout`);
   await web.page.waitForLoadState("networkidle");
   await term.wait(/arrived/);
 
   // 1. A note on the pay button names its file and line.
-  const basket = web.page.locator(".basket-link");
   const going = now();
-  await sleep(1200);
-  await web.click(basket);
-  await web.page.waitForURL(/checkout/);
   await web.glide(980, 300);
   await sleep(READ_MS);
   take.shot("agent", "web", going, now(), "Your app in the browser: the pay button says NaN");
@@ -516,8 +513,8 @@ async function agent(take: Take) {
   await web.click(web.widget(".tab"));
   const points: [string, string][] = [
     [".hero h1", "Three lines on a laptop, keep it to two"],
-    [".offer.chosen .price", "Show the price per delivery too"],
     [".hero-actions .button", "Say where it takes me"],
+    [".hero-image", "A fuller crate would sell it better"],
   ];
   for (const [index, [selector, comment]] of points.entries()) {
     await web.click(web.widget(".point"));
@@ -527,12 +524,13 @@ async function agent(take: Take) {
     await web.click(web.widget(".points textarea").nth(index));
     await web.type(comment);
   }
-  await web.glide(560, 640);
+  // The pointer's dot out of the way, in a corner.
+  await web.glide(SIZE.width - 4, SIZE.height - 4);
   await sleep(800);
   const page = join(take.work, "note-page.png");
   await web.page.screenshot({ path: page });
   await web.click(web.widget(".note .send"));
-  await term.wait(/Say where it takes me/);
+  await term.wait(/fuller crate/);
   await compose(take.browser, take.work, page);
   await web.page.keyboard.press("Escape");
 
@@ -556,10 +554,11 @@ async function agent(take: Take) {
   await sleep(READ_MS - 500);
   take.shot("edit", "web", picking - 200, now(), "Edit, then a click picks a block, Parent climbs to the card");
 
+  // By its title: the top of the card may be above the window.
   const dragging = now();
-  const grip = await web.center(chef.locator("img"));
-  const first = await web.center(web.page.locator(".offer").first());
-  await web.drag({ x: grip.x, y: grip.y }, { x: first.box.x + 40, y: first.y });
+  const grip = await web.center(chef.locator("h3"));
+  const first = await web.center(web.page.locator(".offer").first().locator("h3"));
+  await web.drag({ x: grip.x, y: grip.y }, { x: first.box.x + 30, y: first.y });
   await sleep(READ_MS);
   take.shot("edit", "web", dragging - 200, now(), "Dragged first among its neighbours");
 
@@ -609,7 +608,10 @@ async function compose(browser: Browser, work: string, page: string) {
   const newest = readdirSync(feedback)
     .filter((name) => name.endsWith(".md") && !name.startsWith("session_"))
     .sort((a, b) => statSync(join(feedback, b)).mtimeMs - statSync(join(feedback, a)).mtimeMs)[0];
-  const sources = [...readFileSync(join(feedback, newest), "utf8").matchAll(/- Source: `([^`]+)`/g)].map((m) => m[1]);
+  const sources = readFileSync(join(feedback, newest), "utf8")
+    .split("\n## Point ")
+    .slice(1)
+    .map((point) => point.match(/- Source: `([^`]+)`/)?.[1] ?? "no source");
   const card = await browser.newPage({ viewport: { width: SIZE.width, height: SIZE.height + 72 } });
   const image = readFileSync(page).toString("base64");
   await card.setContent(
@@ -732,7 +734,7 @@ async function mcpClient() {
       say(`${C.tool}▸ screenshot${C.off}`);
       const seen = await call("screenshot");
       say(`  ${seen.title} · ${seen.page} · ${seen.screen}`);
-      spawnSync("chafa", ["-f", "sixels", "-s", "60x18", seen.screenshot], { stdio: "inherit" });
+      spawnSync("chafa", ["-f", "sixels", "-s", "56x16", seen.screenshot], { stdio: "inherit" });
       say(`  ${C.dim}visible text: ${String(seen.text).replace(/\s+/g, " ").slice(0, 70)}…${C.off}`);
       say();
       waiting = false;
