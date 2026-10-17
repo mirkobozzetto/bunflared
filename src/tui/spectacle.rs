@@ -121,9 +121,10 @@ pub fn burrow(
     show.dragon = Some((x, heading));
     let bob = ((e * 6.0).sin() * wild * room as f32 / 2.0).round() as i32;
     let mut at = (x.round() as i32, sky + room / 2 + bob);
+    // It flees off to the right, under the title and the jokes.
     if let Some(gone) = fleeing {
-        at.0 += (gone * 45.0) as i32;
-        at.1 -= (gone * 25.0) as i32;
+        at.0 += (gone * 60.0) as i32;
+        at.1 = (at.1 - (gone * 6.0) as i32).max(sky);
     }
     let flip = heading < 0.0 && fleeing.is_none();
     let (grid, mouth) = dragon(e, FLAP * (1.0 - 0.6 * wild), at, flip);
@@ -167,7 +168,7 @@ pub fn burrow(
             flame.wet += dt;
             Some((flame.x, surface - 1))
         }
-        None if seen => {
+        None if seen && fleeing.is_none() => {
             show.soaked += dt;
             Some(body)
         }
@@ -234,7 +235,7 @@ pub fn burrow(
         app.particles.flare(&mut app.rng, x, y);
     }
     if let Some(to) = target {
-        hose::spray(app, buf, nozzle, to);
+        hose::spray(app, buf, (nozzle, to), sky);
     }
 }
 

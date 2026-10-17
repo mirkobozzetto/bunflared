@@ -15,8 +15,9 @@ const DROP: Color = Color::Rgb(200, 240, 255);
 const DROPS: usize = 3;
 const SPLASHES: usize = 2;
 
-/// Sprays from the nozzle at `from` to `to`, both in cells.
-pub fn spray(app: &mut App, buf: &mut Buffer, from: (i32, i32), to: (i32, i32)) {
+/// Sprays from the nozzle at `from` to `to`, both in cells, arcing no
+/// higher than row `ceiling`.
+pub fn spray(app: &mut App, buf: &mut Buffer, (from, to): ((i32, i32), (i32, i32)), ceiling: i32) {
     let e = app.elapsed();
     // In dots: two across a cell, four down.
     let start = (from.0 as f32 * 2.0, from.1 as f32 * 4.0 + 1.5);
@@ -24,7 +25,11 @@ pub fn spray(app: &mut App, buf: &mut Buffer, from: (i32, i32), to: (i32, i32)) 
         to.0 as f32 * 2.0 + (e * 5.0).sin() * 2.0,
         to.1 as f32 * 4.0 + 2.0,
     );
-    let arc = ((end.0 - start.0).hypot(end.1 - start.1) * 0.2).max(4.0);
+    // Two dots of margin for the jet's thickness and its wave.
+    let headroom = (start.1.min(end.1) - ceiling as f32 * 4.0 - 2.0).max(0.0);
+    let arc = ((end.0 - start.0).hypot(end.1 - start.1) * 0.2)
+        .max(4.0)
+        .min(headroom);
     let point = |s: f32| {
         let wave = (s * 9.0 - e * 16.0).sin() * 0.8 * s;
         (
