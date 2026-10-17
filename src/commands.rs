@@ -98,7 +98,13 @@ pub fn down(id: Option<String>, all: bool) -> i32 {
 
 /// Starts the share in its own session and returns once it prints its ready
 /// line, so the caller's shell is free while the share keeps running.
-pub fn detach(ports: &[u16], no_widget: bool, local: bool, expires_in: Option<Duration>) -> i32 {
+pub fn detach(
+    ports: &[u16],
+    no_widget: bool,
+    local: bool,
+    expires_in: Option<Duration>,
+    password: Option<&str>,
+) -> i32 {
     let Ok(exe) = std::env::current_exe() else {
         eprintln!(r#"{{"error":"cannot find the bunflared executable","code":1}}"#);
         return 1;
@@ -110,6 +116,8 @@ pub fn detach(ports: &[u16], no_widget: bool, local: bool, expires_in: Option<Du
         .args(no_widget.then_some("--no-widget"))
         .args(local.then_some("--local"))
         .args(expires_in.map(|left| format!("--for={}s", left.as_secs())))
+        // ponytail: on the command line, so `ps` shows it to this computer's users.
+        .args(password.map(|password| format!("--password={password}")))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

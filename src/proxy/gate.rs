@@ -64,31 +64,25 @@ impl Gate {
     pub async fn check(
         &self,
         request: Request<Incoming>,
-    ) -> Result<Request<Incoming>, Response<Body>> {
+    ) -> Result<Request<Incoming>, Box<Response<Body>>> {
         if self.opened(request.headers()) {
             return Ok(request);
         }
         if request.method() == Method::POST && request.uri().path() == FORM {
-            return Err(self.submit(request).await);
+            return Err(Box::new(self.submit(request).await));
         }
-        let wants_page = request.method() == Method::GET
-            && request
-                .headers()
-                .get(header::ACCEPT)
-                .and_then(|v| v.to_str().ok())
-                .is_some_and(|v| v.contains("text/html"));
-        if !wants_page {
-            return Err(plain(
+        if request.method() != Method::GET || !super::accepts_html(request.headers()) {
+            return Err(Box::new(plain(
                 StatusCode::UNAUTHORIZED,
                 "This share needs a password.",
-            ));
+            )));
         }
         let next = request
             .uri()
             .path_and_query()
             .map_or("/", |p| p.as_str())
             .to_string();
-        Err(page(&next, ""))
+        Err(Box::new(page(&next, "")))
     }
 
     fn opened(&self, headers: &HeaderMap) -> bool {
@@ -102,7 +96,10 @@ impl Gate {
     }
 
     async fn submit(&self, request: Request<Incoming>) -> Response<Body> {
-        let Ok(body) = Limited::new(request.into_body(), FORM_LIMIT).collect().await else {
+        let Ok(body) = Limited::new(request.into_body(), FORM_LIMIT)
+            .collect()
+            .await
+        else {
             return plain(StatusCode::PAYLOAD_TOO_LARGE, "The form is too long.");
         };
         let body = body.to_bytes();
@@ -129,7 +126,10 @@ impl Gate {
         if let Ok(location) = HeaderValue::from_str(&next) {
             headers.insert(header::LOCATION, location);
         }
-        let cookie = format!("{COOKIE}={}; Path=/; HttpOnly; Secure; SameSite=Lax", self.token);
+        let cookie = format!(
+            "{COOKIE}={}; Path=/; HttpOnly; Secure; SameSite=Lax",
+            self.token
+        );
         if let Ok(cookie) = HeaderValue::from_str(&cookie) {
             headers.insert(header::SET_COOKIE, cookie);
         }
@@ -151,7 +151,8 @@ fn page(next: &str, error: &str) -> Response<Body> {
 /// Compares in time that does not depend on where the strings differ.
 fn same(a: &str, b: &str) -> bool {
     let (a, b) = (a.as_bytes(), b.as_bytes());
-    a.len() == b.len() && std::hint::black_box(a.iter().zip(b).fold(0, |acc, (x, y)| acc | (x ^ y))) == 0
+    a.len() == b.len()
+        && std::hint::black_box(a.iter().zip(b).fold(0, |acc, (x, y)| acc | (x ^ y))) == 0
 }
 
 /// `application/x-www-form-urlencoded` back to text.

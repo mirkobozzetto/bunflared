@@ -50,6 +50,10 @@ fn hms(secs: u64) -> String {
     format!("{:02}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60)
 }
 
+fn password(app: &App) -> Option<String> {
+    app.boot.record.as_ref()?.password.clone()
+}
+
 /// " · 12m 04s left" while `--for` runs, nothing otherwise.
 fn left(app: &App) -> String {
     let Some(at) = app.boot.record.as_ref().and_then(|r| r.expires_at) else {
@@ -218,16 +222,22 @@ fn draw_header(app: &App, frame: &mut Frame, area: Rect) {
     } else {
         ("press c to copy", fx::DIM)
     };
-    let line = Line::from(vec![
-        Span::styled(
-            url,
-            app.theme
-                .fg(fx::CYAN)
-                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-        ),
-        Span::raw("   "),
-        Span::styled(note, app.theme.fg(color)),
-    ]);
+    let mut spans = vec![Span::styled(
+        url,
+        app.theme
+            .fg(fx::CYAN)
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+    )];
+    if let Some(password) = password(app) {
+        spans.push(Span::styled("   password ", app.theme.fg(fx::DIM)));
+        spans.push(Span::styled(
+            password,
+            app.theme.fg(fx::PINK).add_modifier(Modifier::BOLD),
+        ));
+    }
+    spans.push(Span::raw("   "));
+    spans.push(Span::styled(note, app.theme.fg(color)));
+    let line = Line::from(spans);
     frame.render_widget(Paragraph::new(line), inner);
 }
 
@@ -267,10 +277,16 @@ fn compact(app: &App, frame: &mut Frame, area: Rect) {
             ),
             Span::styled(status, theme.fg(fx::RED)),
         ]),
-        Line::from(Span::styled(
-            app.boot.url.clone().unwrap_or_default(),
-            theme.fg(fx::CYAN).add_modifier(Modifier::BOLD),
-        )),
+        Line::from(vec![
+            Span::styled(
+                app.boot.url.clone().unwrap_or_default(),
+                theme.fg(fx::CYAN).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                password(app).map_or(String::new(), |p| format!("  password {p}")),
+                theme.fg(fx::PINK),
+            ),
+        ]),
         Line::from(Span::styled(
             format!(
                 "{} here now · {} feedback",

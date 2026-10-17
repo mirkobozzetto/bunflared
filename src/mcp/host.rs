@@ -93,6 +93,7 @@ impl Host {
             id: id.clone(),
             copy: false,
             expires_in,
+            password: None,
         };
         let (folder, served) = (self.folder.clone(), hub.clone());
         let thread = std::thread::spawn(move || {
