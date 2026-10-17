@@ -110,3 +110,18 @@ fn cut(text: &[u8]) -> usize {
             .unwrap_or(text.len()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::cut;
+
+    #[test]
+    fn holds_back_only_a_local_url_cut_in_two() {
+        assert_eq!(cut(b"trois, lien http://local"), b"trois, lien ".len());
+        assert_eq!(cut(b"lien http://localhost:80"), b"lien ".len());
+        assert_eq!(cut(b"https://127.0.0.1:"), 0);
+        for whole in [&b"un\n"[..], b"lien http://localhost:8765/doc\n", b"h1 {}"] {
+            assert_eq!(cut(whole), whole.len());
+        }
+    }
+}
