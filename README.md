@@ -149,7 +149,7 @@ A request whose body is over 32 KiB, or is not text, has no curl.
 
 ## Feedback from the people you share with
 
-![A note with three numbered points on a shop's home page, each with its own comment, and under it the source file and line each point came with](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/note.png)
+![A note on a shop's pricing cards: the pointed card moved to first place, its padding and background changed, each change listed in the note with a comment, ready to send](https://raw.githubusercontent.com/mirkobozzetto/bunflared/main/docs/demo/note.png)
 
 Every shared page gets a small tab on its edge. It tucks half away while the
 page scrolls, your client can drag it up, down or to the other edge, or push it
